@@ -9,3 +9,5 @@ target_link_libraries(testAll PUBLIC
     session-util
     libsodium-internal
     Catch2::Catch2WithMain)
+
+add_custom_target(check COMMAND testAll)
