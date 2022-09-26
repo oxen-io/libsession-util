@@ -10,3 +10,5 @@ add_executable(testAll
 target_link_libraries(testAll PRIVATE
     config
     Catch2::Catch2WithMain)
+
+add_custom_target(check COMMAND testAll)
