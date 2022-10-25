@@ -9,7 +9,8 @@ The way this is implemented here is as follows:
   current message data (whether or not it knows the interpretation of that data), increments the
   `seqno`, and includes the intended modifications.
 - the client creates a batch request that pushes the new configuration and simultaneously deletes
-  any known, older configuration message(s).
+  (if permitted) any known, older configuration message(s) that are obsoleted by the new
+  configuration message.
 - every client need to agree exactly on which message "wins" in the case of 2 (or more) competing
   messages, and so for tie-breaking we use string comparison on the two (encoded) config messages.
 - whichever one wins, any client that observes a conflict (i.e. same seqno) needs to merge the two
@@ -17,9 +18,14 @@ The way this is implemented here is as follows:
 
 # Structure of a config message
 
-A config message consists of outer data (which contains generic information about the config
-message), and the inner message data, which contains the actual application-specific configuration
-data, embedded within the outer data.
+A decrypted config message consists of outer data (which contains generic information about the
+config message), and the inner message data, which contains the actual application-specific
+configuration data, embedded within the outer data.
+
+This config message is encrypted when stored, using an encryption key that is known to anyone who
+needs to decrypt it.  (How to obtain that key is use-case dependent and outside the scope of this
+document).  The specifics of encryption are covered in the [Message Encryption](#message-encryption)
+section, below.
 
 ## Application-side config data
 
@@ -116,24 +122,36 @@ When there are multiple conflicting config messages clients resolve according to
 
 Clients ignore updates according to two criteria:
 
-- "within five": a client ignores any update with a seqno value that is not within the last five
-  seqnos.  For instance if current seqno is 123 then the client ignores any config message with a
-  seqno of 118 or earlier.
+- "within N": a client ignores any update with a seqno value that is not within the last N seqnos.
+  For instance if current seqno is 123 and N=5 then the client only considers messages with a seqno
+  in {119, 120, 121, 122, 123}, ignoring any config message with a seqno of 118 or earlier.
+
+  This choice is configurable: higher values allow for a larger conflict window before data is
+  dropped, while lower values reduce the overhead of the diffs that are included in messages to
+  handle conflicts.
 
 - "ignore included": if a client sees two config messages with different seqno values and the
   smaller one is contained within the diff of the larger one then the smaller one is stale and will
   be ignored.
 
-## Simple updates
+- invalid messages: messages that are unparseable or fail some of the other requirements shall be
+  ignored; for example:
+  - duplicates or improperly sorted data inside a application data list
+  - missing required fields
+  - keys before `"#"` in the config message
+  - improperly sorted lagged config diffs
+  - etc.
+
+## Non-conflicting updates
 
 If a client is making a configuration change and there is only a single current valid config message
 (i.e. no conflicts to resolve) then the update procedure is straightforward:
 
 1. A new seqno is assigned that is 1 higher than the current largest seqno.
 2. The lagged config diffs from the existing config message are copied into the new message,
-   omitting config messages with seqno values less than (newseqno-4).  The client should ensure
-   the values are sorted by seqno, hash.  (They should be sorted already, but clients should not
-   propagate wrongly sorted lists if they encounter one).
+   omitting config messages with seqno values less than or equal to (newseqno-N).  The client should
+   ensure the values are sorted by seqno, hash.  (They should be sorted already, but clients should
+   not propagate wrongly sorted lists if they encounter one).
 3. The current config message's diff is appended to the lagged config diff (using the message's
    seqno value and calculating a hash of the message to complete the 3-tuple).
 4. A current diff is constructed for any values being assigned, and stored under the `"="` key of
@@ -182,6 +200,8 @@ Hash values listed in the form `"(hashXXX)"` would be the actual 32-byte BLAKE2b
 relevant messages.  When multiple competing messages with the same seqno are involved the hash will
 be noted as "(hashXXXa)", "(hashXXXb)", etc. where `a`, `b`, etc. reflect the byte-string sorted
 order of the hashes with the same XXX seqno value (lower letters = earlier-sorting hash).
+
+All examples use a "within 5" rule for determining how the seqno cutoff for conflict resolution.
 
 ## Ordinary update
 
@@ -573,4 +593,17 @@ Its update becomes:
     }
 ```
 
+# Message Encryption
 
+All messages are stored in encrypted form; we select XChaCha20-Poly1305 encryption for its excellent
+properties.
+
+One complication in the above-described mechanism is that it is explicitly designed to allow clients
+to race to resolve conflicts by assuring that racing clients are all racing to publish identical
+data.  This race is intended to be resolved at the server level through server-side de-duplication
+of identical messages.  When adding encryption on top, however, this means we also need
+deterministic encryption so that the *encrypted* version of the data is also unconflicted.
+
+Thus for encryption we compute the XChaCha20 nonce by not using a pure random nonce but rather using
+a 24-byte BLAKE2b keyed hash of the plaintext config message data, keys using 32-byte key
+`"libsession-config-nonce-hash-key"`.
