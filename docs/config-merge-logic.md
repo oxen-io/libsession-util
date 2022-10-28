@@ -65,6 +65,10 @@ feasible and deterministic.
   - `"&"` = a dict of the actual inner application config data.
   - `"<"` = lagged config diffs of past updates (see [Config diffs](#config-diffs) below)
   - `"="` = config diff of changes applied in this update (see [Config diffs](#config-diffs) below)
+  - `"~"` = (Sometimes) Ed25519 signature of the entire (encoded) config message, but with this
+    value set to 32 null bytes when signing/verifying.  This field is only used for certain types of
+    config messages (such as closed group messages) where authentication of the message creator is
+    required.
 
 # Config diffs
 
@@ -108,7 +112,7 @@ A diff update itself is a dict such that:
 - a dict value indicates that there were changes within an existing sub-dict of the given name.
   This diff specification recurses for changes within that dict.  Sub-dicts are created or removed
   as needed (created when the first subkey is added; removed when the last subkey is removed).
-- a value that is a list must be a pair of sublists which indicates that the reference key is a set
+- a value that is a list must be a pair of sublists which indicates that the referenced key is a set
   and that changes were applied to it.  The first element of the sublist is the subset of the list's
   new values; the second is a subset of removed values.  Both are always required, but one can be
   empty if there were only additions or only removals.  Similarly to dict handling, removing *all*
@@ -140,6 +144,7 @@ Clients ignore updates according to two criteria:
   - missing required fields
   - keys before `"#"` in the config message
   - improperly sorted lagged config diffs
+  - missing or invalid signature (in contexts where signatures are required)
   - etc.
 
 ## Non-conflicting updates
