@@ -68,7 +68,8 @@ feasible and deterministic.
   - `"~"` = (Sometimes) Ed25519 signature of the entire (encoded) config message, but with this
     value set to 32 null bytes when signing/verifying.  This field is only used for certain types of
     config messages (such as closed group messages) where authentication of the message creator is
-    required.
+    required.  This field, when present, *must* be the last key (i.e. no top-level keys that sort
+    after `~` are permitted).
 
 # Config diffs
 
@@ -77,12 +78,14 @@ not understand) any config changes are included in the "diff" section of the con
 `"="`).  These data are structured as follows:
 
 - key `"<"` contains the lagged diffs, that is, all diffs embedded in this update within the last
-  four `seqno` increments (e.g. for an update with seqno 20, this contains the diffs for all
-  absorbed updates with a seqno from 16 through 19).  This value is a list where each element is a
-  3-tuple (i.e.  three-element list when encoded) of `[seqno, "hash", {...diff...}]`, where `seqno`
-  was the integer seqno of the update; `"hash"` is the 32-byte, unkeyed BLAKE2b hash of its overall
-  config message; and `"diff"` is as described in the [Config diff updates](#config-diff-updates)
-  section below.
+  few `seqno` increments (e.g. for an update with seqno 20, this contains the diffs for all absorbed
+  updates with a seqno from 16 through 19, when using a "within 5" rule; see the [ignored
+  updates](#ignored-updates) section below for the "within N" rule).
+
+  The value here is a list of which each element is a 3-tuple (i.e.  three-element list when
+  encoded) of `[seqno, "hash", {...diff...}]`, where `seqno` was the integer seqno of the update;
+  `"hash"` is the 32-byte, unkeyed BLAKE2b hash of its overall config message; and `"diff"` is as
+  described in the [Config diff updates](#config-diff-updates) section below.
 
   This list must be ordered by seqno (primary) and hash (secondary) and gives an ability to "replay"
   recent changes during conflict resolution to merge competing changes, as described in the
@@ -329,7 +332,7 @@ The client modifies it quite substantially to the following:
 
 The overall record of this change looks as follows.
 
-```jason
+```json
     {
         "#": 124,
         "&": {  // The current full data

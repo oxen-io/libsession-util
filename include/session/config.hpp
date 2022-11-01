@@ -4,10 +4,13 @@
 #include <oxenc/bt_value.h>
 
 #include <cassert>
+#include <optional>
 #include <set>
 #include <variant>
 
 namespace session::config {
+
+inline constexpr int MAX_MESSAGE_SIZE = 76800;  // 76.8kB = Storage server's limit
 
 // Application data data types:
 using scalar = std::variant<int64_t, std::string>;
@@ -37,7 +40,15 @@ class config_dict_proxy_value {
 class ConfigMessage {
   protected:
     dict orig_data_;
-    std::map<int64_t, oxenc::bt_dict> lagged_diffs_;
+
+    using lagged_diff_tuple = std::tuple<int64_t, std::array<unsigned char, 32>, oxenc::bt_dict>;
+    struct lagged_diff_less {
+        bool operator()(const lagged_diff_tuple& a, const lagged_diff_tuple& b) const {
+            return std::tie(std::get<0>(a), std::get<1>(a)) <
+                   std::tie(std::get<0>(b), std::get<1>(b));
+        }
+    };
+    std::set<lagged_diff_tuple, lagged_diff_less> lagged_diffs_;
 
   public:
     /// The application data
@@ -73,15 +84,23 @@ class ConfigMessage {
     /// new config message's diff will reflect changes made after this construction.
     ConfigMessage increment() const;
 
-    // Prunes empty dicts/sets from data.  This is called automatically when serializing or
-    // calculating a diff.
+    /// Prunes empty dicts/sets from data.  This is called automatically when serializing or
+    /// calculating a diff.
     void prune();
 
-    // Returns the current diff for this data relative to its original data.  The data is pruned
-    // implicitly by this call.
+    /// Returns the current diff for this data relative to its original data.  The data is pruned
+    /// implicitly by this call.
     oxenc::bt_dict diff();
 
     /// TODO: construct by merging
+
+    /// Serializes the config message data to the final binary, bt-encoded string.  If `sign` is set
+    /// this includes a signature, otherwise it does not.  Calls prune().
+    std::string serialize();
+
+    /// Calculates the hash of the current message.  Can optionally be given the already-serialized
+    /// value, if available; if empty/omitted, `serialize()` will be called to compute it.
+    std::array<unsigned char, 32> hash(std::string_view serialized = "");
 };
 
 }  // namespace session::config
