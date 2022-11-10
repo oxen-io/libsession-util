@@ -106,9 +106,9 @@ class ConfigMessage {
     /// Initializes a config message by parsing a serialized message.  See the vector version below
     /// for argument descriptions.
     /// If verifier is given then the
-    /// message must contain a signature for which verifier returns true.  `allow_missing_signature`
-    /// can be set to true for optional signatures: the signature is verified if present (and throws
-    /// if it fails), but a missing signature is considered acceptable as well.  `lag` sets the lag
+    /// message must contain a signature for which verifier returns true.  `signature_optional` can
+    /// be set to true for optional signatures: the signature is verified if present (and throws if
+    /// it fails), but a missing signature is considered acceptable as well.  `lag` sets the lag
     /// value for the constructed object and *also* discards excess lag info if found in the parsed
     /// config message.
     explicit ConfigMessage(
@@ -116,7 +116,7 @@ class ConfigMessage {
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
             int lag = DEFAULT_DIFF_LAGS,
-            bool allow_missing_signature = false);
+            bool signature_optional = false);
 
     /// Constructs a new ConfigMessage by loading and potentially merging multiple serialized
     /// ConfigMessages together, according to the config conflict resolution rules.  The result

@@ -523,7 +523,7 @@ ConfigMessage::ConfigMessage(
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
-        bool allow_missing_signature) :
+        bool signature_optional) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     oxenc::bt_dict_consumer dict{serialized};
@@ -573,7 +573,7 @@ ConfigMessage::ConfigMessage(
 
         if (verifier) {
             if (sig.empty()) {
-                if (!allow_missing_signature)
+                if (!signature_optional)
                     throw missing_signature{"Config signature is missing"};
             } else if (verified_signature_ = verifier(to_verify, sig); !verified_signature_) {
                 throw signature_error{"Config signature failed verification"};
@@ -589,14 +589,14 @@ ConfigMessage::ConfigMessage(
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
-        bool allow_missing_signature,
+        bool signature_optional,
         std::function<void(const config_error&)> error_handler) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     std::vector<std::pair<ConfigMessage, bool>> configs;  // [[config, redundant], ...]
     for (const auto& data : serialized_confs) {
         try {
-            ConfigMessage m{data, verifier, signer, lag, allow_missing_signature};
+            ConfigMessage m{data, verifier, signer, lag, signature_optional};
             configs.emplace_back(std::move(m), false);
         } catch (const config_error& e) {
             if (error_handler)
@@ -691,14 +691,14 @@ MutableConfigMessage::MutableConfigMessage(
         verify_callable verifier,
         sign_callable signer,
         int lag,
-        bool allow_missing_signature,
+        bool signature_optional,
         std::function<void(const config_error&)> error_handler) :
         ConfigMessage{
                 serialized_confs,
                 std::move(verifier),
                 std::move(signer),
                 lag,
-                allow_missing_signature,
+                signature_optional,
                 std::move(error_handler)} {
     if (!merged())
         increment_impl();

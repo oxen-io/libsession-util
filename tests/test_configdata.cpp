@@ -4,12 +4,16 @@
 #include <sodium/crypto_sign.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
 #include <session/config.hpp>
 
 #include "session/bt_merge.hpp"
 
 using namespace session;
 using namespace std::literals;
+using config::ConfigMessage;
+using config::MutableConfigMessage;
+using config::ustring_view;
 using oxenc::bt_dict;
 using oxenc::bt_list;
 
@@ -46,7 +50,7 @@ TEST_CASE("config data dict encoding", "[config][data][dict]") {
 }
 
 TEST_CASE("config pruning", "[config][prune]") {
-    config::MutableConfigMessage m;
+    MutableConfigMessage m;
     m.data()["a"] = 123;
 
     CHECK(m.data() == config::dict{{"a", 123}});
@@ -127,7 +131,7 @@ std::string printable(std::string_view x) {
 }
 
 TEST_CASE("config diff", "[config][diff]") {
-    config::MutableConfigMessage m;
+    MutableConfigMessage m;
     m.data()["foo"] = 123;
     m.data()["empty"] = config::set{};
     m.data()["empty2"] = config::dict{};
@@ -175,7 +179,7 @@ TEST_CASE("config diff", "[config][diff]") {
 }
 
 TEST_CASE("config message serialization", "[config][serialization]") {
-    config::MutableConfigMessage m;
+    MutableConfigMessage m;
     m.seqno(10);
     m.data()["foo"] = 123;
     m.data()["bar"] =
@@ -330,7 +334,7 @@ TEST_CASE("config message serialization", "[config][serialization]") {
 }
 
 TEST_CASE("config message signature", "[config][signing]") {
-    config::MutableConfigMessage m;
+    MutableConfigMessage m;
     m.seqno(10);
     m.data()["foo"] = 123;
     m.data()["bar"] =
@@ -340,7 +344,7 @@ TEST_CASE("config message signature", "[config][signing]") {
             "4384261cdd338f5820ca9cbbe3fc72ac8944ee60d3b795b797fbbf5597b09f17"sv;
     std::array<unsigned char, 64> secretkey;
     oxenc::from_hex(skey_hex.begin(), skey_hex.end(), secretkey.begin());
-    m.signer = [&secretkey](config::ustring_view data) {
+    auto signer = [&secretkey](ustring_view data) {
         std::string result;
         result.resize(64);
         crypto_sign_ed25519_detached(
@@ -351,6 +355,12 @@ TEST_CASE("config message signature", "[config][signing]") {
                 secretkey.data());
         return result;
     };
+    auto verifier = [&secretkey](ustring_view data, ustring_view signature) {
+        return 0 == crypto_sign_verify_detached(
+                            signature.data(), data.data(), data.size(), secretkey.data() + 32);
+    };
+
+    m.signer = signer;
 
     // clang-format off
     auto m_signing_value =
@@ -379,7 +389,6 @@ TEST_CASE("config message signature", "[config][signing]") {
         ;
     // clang-format on
 
-    auto m_expected = m_signing_value;
     auto expected_sig = oxenc::from_hex(
             "77267f4de7701ae348eba0ef73175281512ba3f1051cfed22dc3e31b9c699330"
             "2938863e09bc8b33638161071bd8dc397d5c1d3f674120d08fbb9c64dde2e907");
@@ -392,10 +401,66 @@ TEST_CASE("config message signature", "[config][signing]") {
             m_signing_value.size(),
             secretkey.data());
     CHECK(oxenc::to_hex(sig) == oxenc::to_hex(expected_sig));
+    auto m_expected = m_signing_value;
     m_expected += "1:~64:";
     m_expected += expected_sig;
     m_expected += 'e';
     CHECK(printable(m.serialize()) == printable(m_expected));
+
+    ConfigMessage msg{m_expected, verifier, signer};
+    CHECK(msg.verified_signature());
+    CHECK(msg.hash() == m.hash());
+    CHECK(printable(msg.serialize()) == printable(m_expected));
+
+    auto m_broken = m_expected;
+    REQUIRE(m_broken[m_broken.size() - 2] == 0x07);
+    m_broken[m_broken.size() - 2] = 0x17;
+
+    using Catch::Matchers::Message;
+    CHECK_THROWS_AS(ConfigMessage(m_broken, verifier), config::signature_error);
+    CHECK_THROWS_MATCHES(
+            ConfigMessage({m_broken, m_broken}, verifier),
+            config::config_error,
+            Message("Config initialization failed: no valid config messages given"));
+
+    CHECK_NOTHROW(ConfigMessage({m_broken, m_expected}, verifier));
+    CHECK_NOTHROW(ConfigMessage({m_expected, m_broken}, verifier));
+
+    ConfigMessage m2{{m_broken, m_expected}, verifier, signer};
+    CHECK_FALSE(m2.merged());
+    CHECK(m2.seqno() == 10);
+    CHECK(view_hex(m2.hash()) == view_hex(m.hash()));
+
+    CHECK_THROWS_MATCHES(
+            ConfigMessage(
+                    {m_broken, m_expected},
+                    verifier,
+                    nullptr,
+                    ConfigMessage::DEFAULT_DIFF_LAGS,
+                    false,
+                    [](const auto& exc) { throw exc; }),
+            config::config_error,
+            Message("Config signature failed verification"));
+
+    auto m_unsigned = m_signing_value + 'e';
+    CHECK_THROWS_MATCHES(
+            ConfigMessage(m_unsigned, verifier),
+            config::missing_signature,
+            Message("Config signature is missing"));
+
+    ConfigMessage m_no_sig{m_unsigned, verifier, nullptr, ConfigMessage::DEFAULT_DIFF_LAGS, true};
+    CHECK(m_no_sig.seqno() == 10);
+    CHECK(m_no_sig.data() == m.data());
+    // The hash will differ because of the lack of signature
+    CHECK(m_no_sig.hash() != m.hash());
+
+    CHECK(printable(m_no_sig.serialize()) == m_unsigned);
+
+    // If we set a signer and serialize again, we're going to get the *signed* message.  (This is
+    // not something that should be done, really, because this message does not agree with the
+    // hash).
+    m_no_sig.signer = signer;
+    CHECK(printable(m_no_sig.serialize()) == printable(m_expected));
 }
 
 const config::dict data118{
@@ -457,7 +522,7 @@ constexpr auto h123 = "d9398c597b058ac7e28e3febb76ed68eb8c5b6c369610562ab5f2b596
 
 TEST_CASE("config message example 1", "[config][example]") {
     /// This is the "Ordinary update" example described in docs/config-merge-logic.md
-    config::MutableConfigMessage m118{118, 5};
+    MutableConfigMessage m118{118, 5};
     CHECK(m118.seqno() == 118);
     CHECK(m118.lag == 5);
     m118.data() = data118;
@@ -550,7 +615,7 @@ TEST_CASE("config message example 1", "[config][example]") {
 }
 
 TEST_CASE("config message deserialization", "[config][deserialization]") {
-    config::ConfigMessage m{m123_expected};
+    ConfigMessage m{m123_expected};
 
     CHECK(m.seqno() == 123);
     CHECK(view_hex(m.hash()) == h123);
@@ -570,7 +635,7 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
 
     // This is the same, but because it's mutable, we deserialize and then implicit get a
     // increment()
-    config::MutableConfigMessage mut{{m123_expected}};
+    MutableConfigMessage mut{{m123_expected}};
     CHECK(mut.seqno() == 124);
     CHECK(view_hex(mut.hash()) == "3ea36410cf7086ce816eb193b0c94e88632abfb75771d82f8ddb3a909124c580");
     CHECK(mut.diff() == oxenc::bt_dict{});
@@ -623,7 +688,7 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
     // clang-format on
 }
 
-void updates_124(config::MutableConfigMessage& m) {
+void updates_124(MutableConfigMessage& m) {
     m.data()["dictA"] = config::dict{
             {"hello", 123},
             {"goodbye", config::set{{123, 456}}},
@@ -650,7 +715,7 @@ constexpr auto h124 = "8b73f316178765b9b3b37168e865c84bb5a78610cbb59b84d0fa4d3b4
 TEST_CASE("config message example 2", "[config][example]") {
     /// This is the "Large, but still ordinary, update" example described in
     /// docs/config-merge-logic.md
-    config::MutableConfigMessage m{{m123_expected}};
+    MutableConfigMessage m{{m123_expected}};
     REQUIRE(m.seqno() == 124);
 
     updates_124(m);
@@ -827,7 +892,7 @@ const auto m126_expected =
 
 TEST_CASE("config message example 3 - simple conflict", "[config][example][conflict]") {
     /// This is the "Simple conflict resolution" example described in docs/config-merge-logic.md
-    config::MutableConfigMessage m124{{m123_expected}};
+    MutableConfigMessage m124{{m123_expected}};
     REQUIRE(m124.seqno() == 124);
 
     updates_124(m124);
@@ -846,7 +911,7 @@ TEST_CASE("config message example 3 - simple conflict", "[config][example][confl
     REQUIRE(view_hex(m125_b.hash()) == h125b);
     REQUIRE(m125_a.hash() < m125_b.hash());
 
-    config::ConfigMessage m{{m125_a.serialize(), m125_b.serialize()}};
+    ConfigMessage m{{m125_a.serialize(), m125_b.serialize()}};
     CHECK(m.merged());
     CHECK(m.seqno() == 126);
 
@@ -865,28 +930,29 @@ TEST_CASE("config message example 3 - simple conflict", "[config][example][confl
     CHECK(printable(m.serialize()) == printable(m126_expected));
 
     // Loading them in the opposite order shouldn't make any difference:
-    config::ConfigMessage m_alt1{{m125_b.serialize(), m125_a.serialize()}};
+    ConfigMessage m_alt1{{m125_b.serialize(), m125_a.serialize()}};
     CHECK(printable(m_alt1.serialize()) == printable(m.serialize()));
 
     // Throwing in an already-included message also shouldn't matter:
-    config::ConfigMessage m_alt2{{m124.serialize(), m125_b.serialize(), m125_a.serialize()}};
-    config::ConfigMessage m_alt3{{m125_b.serialize(), m125_a.serialize(), m124.serialize()}};
+    ConfigMessage m_alt2{{m124.serialize(), m125_b.serialize(), m125_a.serialize()}};
+    ConfigMessage m_alt3{{m125_b.serialize(), m125_a.serialize(), m124.serialize()}};
 
     CHECK(printable(m_alt2.serialize()) == printable(m.serialize()));
     CHECK(printable(m_alt3.serialize()) == printable(m.serialize()));
 
     // 120b should get dropped, since it is too far before the top seqno (125).
-    auto m120b = config::MutableConfigMessage{118, 5}.increment().increment();
+    auto m120b = MutableConfigMessage{118, 5}.increment().increment();
     m120b.data()["too old"] = "won't see";
 
-    config::ConfigMessage m_alt4{{m125_b.serialize(), m120b.serialize(), m125_a.serialize()}};
+    ConfigMessage m_alt4{{m125_b.serialize(), m120b.serialize(), m125_a.serialize()}};
     CHECK(printable(m_alt4.serialize()) == printable(m.serialize()));
 }
 
 TEST_CASE("config message example 4 - complex conflict resolution", "[config][example][conflict]") {
-    /// This is the "Complex conflict resolution" example described in docs/config-merge-logic.md
+    /// This is the "Complex conflict resolution" example described in
+    /// docs/config-merge-logic.md
 
-    config::ConfigMessage m123{m123_expected};
+    ConfigMessage m123{m123_expected};
 
     auto m124a = m123.increment();
 
@@ -904,14 +970,14 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
     auto m125b = m124b.increment();
     m125b.data()["int1"] = 5;
 
-    config::ConfigMessage m126a{{m125a.serialize(), m125b.serialize()}};
+    ConfigMessage m126a{{m125a.serialize(), m125b.serialize()}};
 
-    auto m120b = config::MutableConfigMessage{118, 5}.increment().increment();
+    auto m120b = MutableConfigMessage{118, 5}.increment().increment();
     m120b.data()["too old"] = "won't see";
 
-    // Throw some irrelevant ones in, which should get ignored (124b, 123, 120b: the first two are
-    // already included in the ancestry of 125a and b; and the last is too old to be used).
-    config::ConfigMessage m126b{
+    // Throw some irrelevant ones in, which should get ignored (124b, 123, 120b: the first two
+    // are already included in the ancestry of 125a and b; and the last is too old to be used).
+    ConfigMessage m126b{
             {m125b.serialize(),
              m124a.serialize(),
              m125a.serialize(),
@@ -923,7 +989,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
     REQUIRE(m126a.hash() < m126b.hash());
 
     // Now we merge m126a and m126b together and should end up with the final merged result.
-    config::MutableConfigMessage m127{{m126a.serialize(), m126b.serialize()}};
+    MutableConfigMessage m127{{m126a.serialize(), m126b.serialize()}};
     s(d(m127.data()["dictA"])["goodbye"]).insert(789);
 
     REQUIRE(m127.seqno() == 127);
@@ -1050,7 +1116,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
         "e"));
     // clang-format on
 
-    config::ConfigMessage m_alt1{{m127.serialize(), m125a.serialize(), m126b.serialize()}};
+    ConfigMessage m_alt1{{m127.serialize(), m125a.serialize(), m126b.serialize()}};
     CHECK(m_alt1.seqno() == 127);
     CHECK(m_alt1.hash() == m127.hash());
 }
