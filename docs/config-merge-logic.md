@@ -65,11 +65,15 @@ feasible and deterministic.
   - `"&"` = a dict of the actual inner application config data.
   - `"<"` = lagged config diffs of past updates (see [Config diffs](#config-diffs) below)
   - `"="` = config diff of changes applied in this update (see [Config diffs](#config-diffs) below)
-  - `"~"` = (Sometimes) Ed25519 signature of the entire (encoded) config message, but with this
-    value set to 32 null bytes when signing/verifying.  This field is only used for certain types of
-    config messages (such as closed group messages) where authentication of the message creator is
-    required.  This field, when present, *must* be the last key (i.e. no top-level keys that sort
-    after `~` are permitted).
+  - `"~"` = (Sometimes) Ed25519 signature of the encoded config message, not including this
+    signature keypair.  If present this key *must* be the last field of the data and the value
+    *must* be exactly 64 bytes.  The signature itself will be over the encoded value up to but not
+    including the final `1:~64:[64bytes]e`: that is, it omits the signing pair and the final `e`
+    ending the overall data structure.
+
+    This field is only used for certain types of config messages (such as closed group messages)
+    where authentication of the message creator is required.  This field, when present, *must* be
+    the last key (i.e. no top-level keys that sort after `~` are permitted).
 
 # Config diffs
 
@@ -209,7 +213,8 @@ relevant messages.  When multiple competing messages with the same seqno are inv
 be noted as "(hashXXXa)", "(hashXXXb)", etc. where `a`, `b`, etc. reflect the byte-string sorted
 order of the hashes with the same XXX seqno value (lower letters = earlier-sorting hash).
 
-All examples use a "within 5" rule for determining how the seqno cutoff for conflict resolution.
+All examples use a "within 5" rule for determining how the seqno cutoff for conflict resolution, and
+are not using signatures.
 
 ## Ordinary update
 
@@ -264,18 +269,16 @@ like this:
             "string1": "hello",
             "string2": "goodbye"
         },
-        "*": {
-            "<": [
-                [119, "(hash119)", {...changes-in-seqno-119...}],
-                [120, "(hash120)", {...changes-in-seqno-120...}],
-                [121, "(hash121)", {...changes-in-seqno-121...}],
-                [122, "(hash122)", {...changes-in-seqno-122...}],
-            ],
-            "=": {
-                "int0": "-", // removed
-                "int1": "",  // changed
-                "int2": ""   // added
-            }
+        "<": [
+            [119, "(hash119)", {...changes-in-seqno-119...}],
+            [120, "(hash120)", {...changes-in-seqno-120...}],
+            [121, "(hash121)", {...changes-in-seqno-121...}],
+            [122, "(hash122)", {...changes-in-seqno-122...}],
+        ],
+        "=": {
+            "int0": "-", // removed
+            "int1": "",  // changed
+            "int2": ""   // added
         }
     }
 ```
@@ -337,8 +340,8 @@ The overall record of this change looks as follows.
         "#": 124,
         "&": {  // The current full data
             "dictA": {
-                "hello": 123,
-                "goodbye": [123, 456]
+                "goodbye": [123, 456],
+                "hello": 123
             },
             "dictB": {
                 "added": 9999,
@@ -351,47 +354,46 @@ The overall record of this change looks as follows.
             "good": [99, 123, "Foo", "bar"],
             "int1": 42,
             "int2": 2,
-            "string2": "hello"
+            "string2": "hello",
+            "string3": "omg"
         },
-        "*": {
-            "<": [
-                [120, "(hash120)", {...changes-in-seqno-120...}],
-                [121, "(hash121)", {...changes-in-seqno-121...}],
-                [122, "(hash122)", {...changes-in-seqno-122...}],
-                [123, "(hash123)", {...changes-in-seqno-123...}]
+        "<": [
+            [120, "(hash120)", {...changes-in-seqno-120...}],
+            [121, "(hash121)", {...changes-in-seqno-121...}],
+            [122, "(hash122)", {...changes-in-seqno-122...}],
+            [123, "(hash123)", {...changes-in-seqno-123...}]
+        ],
+        "=": {
+            "dictA": {
+                "goodbye": "",
+                "hello": ""
+            },
+            "dictB": {
+                "added": "",
+                "changed": "",
+                "nested": {
+                    "a": ""
+                },
+                "removed": "-",
+                "removed2": "-"
+            },
+            "dictC": {
+                "x": {
+                    "y": "-"  // last key of dictC.x removes it
+                }
+            }, // And since "x" was the only key in distC, distC now gets removed too
+            "good": [ // a list here indicates changes to a set
+                [123, "Foo"], // Additions
+                [456],        // Removals
             ],
-            "=": {
-                "dictA": {
-                    "hello": "",
-                    "goodbye": ""
-                },
-                "dictB": {
-                    "added": "",
-                    "changed": "",
-                    "removed": "-",
-                    "removed2": "-",
-                    "nested": {
-                        "a": ""
-                    }
-                },
-                "dictC": {
-                    "x": {
-                        "y": "-"  // last key of dictC.x removes it
-                    }
-                }, // And since "x" was the only key in distC, distC now gets removed too
-                "good": [ // a list here indicates changes to a set
-                    [123, "Foo"], // Additions
-                    [456],        // Removals
-                ],
-                "great": [
-                    [],
-                    [-42, "omg"]
-                ], // Removed all elements so also removes "great"
-                "int1": "",     // changed
-                "string1": "-", // removed
-                "string2": "",  // changed
-                "string3": ""   // added
-            }
+            "great": [
+                [],
+                [-42, "omg"]
+            ], // Removed all elements so also removes "great"
+            "int1": "",     // changed
+            "string1": "-", // removed
+            "string2": "",  // changed
+            "string3": ""   // added
         }
     }
 ```
@@ -409,14 +411,15 @@ update will be:
         "]": { "int1", "" }
 ```
 
-for the first client, with message hash "(hash125a)"; and
+for the first client, with message hash "(hash125b)"; and
 
 ```json
     ...
         "]": { "dictB": { "foo": "-" } }
 ```
 
-for the second client, with message hash "(hash125b)".
+for the second client, with message hash "(hash125a)".  (Note that the second client's message sorts
+before the first client's message by virtual of having a "smaller" hash value).
 
 A client (which could be either of the publishers, or some third client) can resolve this by
 publishing an update with `seqno=126` that resolves the conflict; regardless of which client
@@ -440,19 +443,18 @@ publishes, the client will merge the two into the exact same update which consis
             "good": [99, 123, "Foo", "bar"],
             "int1": 5,
             "int2": 2,
-            "string2": "hello"
+            "string2": "hello",
+            "string3": "omg"
         },
-        "*": {
-            "<": [
-                [122, "(hash122)", {...changes-in-seqno-122...}],
-                [123, "(hash123)", {...changes-in-seqno-123...}],
-                [124, "(hash124)", {...changes-in-seqno-124...}],
-                // NB: we have *two* 125 entries here:
-                [125, "(hash125a)", { "int1", "" }],
-                [125, "(hash125b)", { "dictB": { "foo": "-" }}],
-            ],
-            "=": {} // No changes aside from the merge
-        }
+        "<": [
+            [122, "(hash122)", {...changes-in-seqno-122...}],
+            [123, "(hash123)", {...changes-in-seqno-123...}],
+            [124, "(hash124)", {...changes-in-seqno-124...}],
+            // NB: we have *two* 125 entries here:
+            [125, "(hash125a)", { "dictB": { "foo": "-" }}],
+            [125, "(hash125b)", { "int1", "" }],
+        ],
+        "=": {} // No changes aside from the merge
     }
 ```
 
@@ -512,13 +514,18 @@ This means, we now have a tree of changes that look like this:
                          127
 ```
 
-124, 125a, 125b, and 126a are as described in previous examples.
+124b (previously just 124), 125a, 125b, and 126a (previously just 126) are as described in previous
+examples.
 
-Update 124a will be a relative simple update that removes `["dictA"]["hello"]` and thus has diff:
+Update 124a will be a relative simple update that sets ["dictB"]["foo"] to 66 and
+["dictB"]["answer"] to 42, and thus has diff:
 
 ```
-        "=": { "dictA": { "hello": "-" } }
+        "=": { "dictB": { "answer": "", "foo": "" } }
 ```
+
+(Note that this change to "foo" conflicts with the removal of "foo" in 125b, and because 125b > 124a
+the 125b removal will take precedence).
 
 Update 126b does a three-way merge in which it starts from the top-sorted data, "125b", then replays
 (in order) everything in its previous diffs, in seqno-then-hash sorted order: 121, 122, 123, 124a,
@@ -533,24 +540,26 @@ Update 126b does a three-way merge in which it starts from the top-sorted data, 
             },
             "dictB": {
                 "added": 9999,
+                "answer": 42,
                 "changed": 1,
                 "nested": {
                     "a": 1
                 }
             },
-            "good": [99, 123, "Foo", "bar"],
+            "good": [123, "Foo", "bar"],
             "int1": 5,
             "int2": 2,
-            "string2": "hello"
+            "string2": "hello",
+            "string3": "omg"
         },
         "*": {
             "<": [
                 [122, "(hash122)", {...changes-in-seqno-122...}],
                 [123, "(hash123)", { "int0": "-", "int1": "", "int2": "" }],
-                [124, "(hash124a)", { "dictA": { "hello": "-" }}],
+                [124, "(hash124a)", { "dictB": {"answer": "", "foo: ""} },
                 [124, "(hash124b)", {...large-changes-from-124-example...}],
-                [125, "(hash125a)", { "int1", "" }],
-                [125, "(hash125b)", { "dictB": { "foo": "-" }}],
+                [125, "(hash125a)", { "dictB": { "foo": "-" }}],
+                [125, "(hash125b)", { "int1", "" }],
             ],
             "=": {} // No changes aside from the merge
         }
@@ -558,38 +567,47 @@ Update 126b does a three-way merge in which it starts from the top-sorted data, 
 ```
 
 Note that the 121 update is included for calculation (because it is part of 125a and 125b) but not
-included in the final 126b message (because it is beyond the cutoff for seqno 126).
+included in the final 126b message itself (because it is beyond the cutoff for seqno 126).
 
 127 is a two-way merge between 126a and 126b but, as mentioned earlier, also adds 789 to the
-dictA.goodbye set.  It does this by following the merge and replay logic: it starts from 126b, then
-replays changes from 122, 123, 124a, 124b, 125a, 125b, 126a, 126b on top of it, and then finally
-applies its local change and pushes the result.
+`["dictA"]["goodbye"]` set.  It does this by following the merge and replay logic: it starts from
+126b (the highest by seqno/hash ranking), then replays changes from 122, 123, 124a, 124b, 125a,
+125b, 126a, 126b on top of it, and then finally re-applies local change from 126b and pushes the
+result.
 
-Its update becomes:
+Aside from the added value (789) this 127 merge doesn't actually change anything through merging:
+126a already includes everything that 126b does (and doesn't have any additional changes of its
+own).  The 127 update still happens, however, to "commit" the merge (even though it doesn't affect
+anything), allowing 126a and b to be forgotten.
+
+This final 127 update thus becomes:
 
 ```json
     {
         "#": 127,
         "&": {  // The current full data
             "dictA": {
-                "goodbye": [123, 456, 789]
+                "goodbye": [123, 456, 789],
+                "hello": 123
             },
             "dictB": {
                 "added": 9999,
+                "answer": 42,
                 "changed": 1,
                 "nested": {
                     "a": 1
                 }
             },
-            "good": [99, 123, "Foo", "bar"],
+            "good": [123, "Foo", "bar"],
             "int1": 5,
             "int2": 2,
-            "string2": "hello"
+            "string2": "hello",
+            "string3": "omg"
         },
         "*": {
             "<": [
                 [123, "(hash123)", { "int0": "-", "int1": "", "int2": "" },
-                [124, "(hash124a)", { "dictA": { "hello": "-" }}],
+                [124, "(hash124a)", { "dictB": { "answer": "", "foo": "" }}],
                 [124, "(hash124b)", {...large-changes-from-124-example...}],
                 [125, "(hash125a)", { "int1", "" }],
                 [125, "(hash125b)", { "dictB": { "foo": "-" }}],
@@ -615,3 +633,6 @@ deterministic encryption so that the *encrypted* version of the data is also unc
 Thus for encryption we compute the XChaCha20 nonce by not using a pure random nonce but rather using
 a 24-byte BLAKE2b keyed hash of the plaintext config message data, keys using 32-byte key
 `"libsession-config-nonce-hash-key"`.
+
+Note, however, that message hashes (as used in diff sections) depend on the plaintext serialized
+value, not the encrypted value.

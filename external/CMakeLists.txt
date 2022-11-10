@@ -35,7 +35,7 @@ macro(system_or_submodule BIGNAME smallname pkgconf subdir)
     endif()
 endmacro()
 
-system_or_submodule(OXENC oxenc liboxenc>=1.0.5 oxen-encoding)
+system_or_submodule(OXENC oxenc liboxenc>=1.0.6 oxen-encoding)
 
 
 set(deps_cc "${CMAKE_C_COMPILER}")
