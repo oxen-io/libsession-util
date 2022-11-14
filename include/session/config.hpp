@@ -30,6 +30,7 @@ using seqno_t = std::int64_t;
 using hash_t = std::array<unsigned char, 32>;
 using seqno_hash_t = std::pair<seqno_t, hash_t>;
 
+using ustring = std::basic_string<unsigned char>;
 using ustring_view = std::basic_string_view<unsigned char>;
 
 class MutableConfigMessage;
@@ -295,6 +296,41 @@ class MutableConfigMessage : public ConfigMessage {
     const hash_t& hash(std::string_view serialized);
     void increment_impl();
 };
+
+/// Encrypts a config message using XChaCha20-Poly1305, using a blake2b keyed hash of the message
+/// for the nonce (rather than pure random) so that different clients will encrypt the same data to
+/// the same encrypted value (thus allowing for server-side deduplication of identical messages).
+///
+/// `key_base` must be 32 bytes.  This value is a fixed key that all clients that might receive this
+/// message can calculate independently (for instance a value derived from a secret key, or a shared
+/// random key).  This key will be hashed with the message size and domain suffix (see below) to
+/// determine the actual encryption key.
+///
+/// `domain` is a short string (1-24 chars) used for the keyed hash.  Typically this is the type of
+/// config, e.g. "closed-group" or "contacts".  The full key will be
+/// "session-config-encrypted-message-[domain]".  This value is also used for the encrypted key (see
+/// above).
+///
+/// The returned result will consist of encrypted data with authentication tag and appended nonce,
+/// suitable for being passed to decrypt() to authenticate and decrypt.
+///
+/// Throw std::invalid_argument on bad input (i.e. from invalid key_base or domain).
+ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain);
+
+/// Same as above but works with strings/string_views instead of ustring/ustring_view
+std::string encrypt(std::string_view message, std::string_view key_base, std::string_view domain);
+
+/// Thrown if decrypt() fails.
+struct decrypt_error : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+/// Takes a value produced by `encrypt()` and decrypts it.  `key_base` and `domain` must be the same
+/// given to encrypt or else decryption fails.  Upon decryption failure a std::
+ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain);
+
+/// Same as above but using std::string/string_view
+std::string decrypt(std::string_view ciphertext, std::string_view key_base, std::string_view domain);
 
 }  // namespace session::config
 
