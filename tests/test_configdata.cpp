@@ -11,6 +11,7 @@
 
 using namespace session;
 using namespace std::literals;
+using namespace oxenc::literals;
 using config::ConfigMessage;
 using config::MutableConfigMessage;
 using config::ustring_view;
@@ -209,13 +210,13 @@ TEST_CASE("config message serialization", "[config][serialization]") {
         "e"));
     // clang-format on
 
-    const auto hash0 = "d65738bba88b0f3455cef20fe09a7b4b10f25f9db82be24a6ce1bd06da197526";
-    CHECK(view_hex(m.hash()) == hash0);
+    const auto hash0 = "d65738bba88b0f3455cef20fe09a7b4b10f25f9db82be24a6ce1bd06da197526"_hex;
+    CHECK(view_hex(m.hash()) == oxenc::to_hex(hash0));
 
     auto m1 = m.increment();
     m1.data().erase("foo");
-    const auto hash1 = "5b30b4abf4cba71db25dbc0d977cc25df1d0a8a87cad7f561cdec2b8caf65f5e";
-    CHECK(view_hex(m1.hash()) == hash1);
+    const auto hash1 = "5b30b4abf4cba71db25dbc0d977cc25df1d0a8a87cad7f561cdec2b8caf65f5e"_hex;
+    CHECK(view_hex(m1.hash()) == oxenc::to_hex(hash1));
 
     auto m2 = m1.increment();
 
@@ -227,8 +228,8 @@ TEST_CASE("config message serialization", "[config][serialization]") {
     s(d(m2.data()["bar"])[""]).erase("b");
     s(d(m2.data()["bar"])[""]).insert(42);  // already present
 
-    const auto hash2 = "027552203cf669070d3ecbeecfa65c65497d59aa4da490e0f68f8131ce081320";
-    CHECK(view_hex(m2.hash()) == hash2);
+    const auto hash2 = "027552203cf669070d3ecbeecfa65c65497d59aa4da490e0f68f8131ce081320"_hex;
+    CHECK(view_hex(m2.hash()) == oxenc::to_hex(hash2));
 
     // clang-format off
     CHECK(printable(m2.serialize()) == printable(
@@ -246,7 +247,7 @@ TEST_CASE("config message serialization", "[config][serialization]") {
           "1:<" "l"
             "l"
               "i10e"
-              "32:" + oxenc::from_hex(hash0) +
+              "32:" + hash0 +
               "d"
                 "3:bar" "d"
                   "0:" "lli42e1:a1:belee"
@@ -258,7 +259,7 @@ TEST_CASE("config message serialization", "[config][serialization]") {
             "e"
             "l"
               "i11e"
-              "32:" + oxenc::from_hex(hash1) +
+              "32:" + hash1 +
               "d"
                 "3:foo" "1:-"
               "e"
@@ -275,13 +276,13 @@ TEST_CASE("config message serialization", "[config][serialization]") {
         "e"));
 
     auto m5 = m2.increment().increment().increment();
-    const auto hash3 = "b83871ea06587f9254cdf2b2af8daff19bd7fb550fb90d5f8f9f546464c08bc5";
-    const auto hash4 = "c30e2cfa7ec93c64a1ab6420c9bccfb63da8e4c2940ed6509ffb64f3f0131860";
-    const auto hash5 = "3234eb7da8cf4b79b9eec2a144247279d10f6f118184f82429a42c5996bea60c";
+    const auto hash3 = "b83871ea06587f9254cdf2b2af8daff19bd7fb550fb90d5f8f9f546464c08bc5"_hex;
+    const auto hash4 = "c30e2cfa7ec93c64a1ab6420c9bccfb63da8e4c2940ed6509ffb64f3f0131860"_hex;
+    const auto hash5 = "3234eb7da8cf4b79b9eec2a144247279d10f6f118184f82429a42c5996bea60c"_hex;
 
-    CHECK(view_hex(m2.increment().hash()) == hash3);
-    CHECK(view_hex(m2.increment().increment().hash()) == hash4);
-    CHECK(view_hex(m5.hash()) == hash5);
+    CHECK(view_hex(m2.increment().hash()) == oxenc::to_hex(hash3));
+    CHECK(view_hex(m2.increment().increment().hash()) == oxenc::to_hex(hash4));
+    CHECK(view_hex(m5.hash()) == oxenc::to_hex(hash5));
 
     CHECK(printable(m5.serialize()) == printable(
         "d"
@@ -298,14 +299,14 @@ TEST_CASE("config message serialization", "[config][serialization]") {
           "1:<" "l"
             "l"
               "i11e"
-              "32:" + oxenc::from_hex(hash1) +
+              "32:" + hash1 +
               "d"
                 "3:foo" "1:-"
               "e"
             "e"
             "l"
               "i12e"
-              "32:" + oxenc::from_hex(hash2) +
+              "32:" + hash2 +
               "d"
                 "3:bar" "d"
                   "0:" "l" "li99e1:ce" "l1:be" "e"
@@ -317,12 +318,12 @@ TEST_CASE("config message serialization", "[config][serialization]") {
             "e"
             "l"
               "i13e"
-              "32:" + oxenc::from_hex(hash3) +
+              "32:" + hash3 +
               "de"
             "e"
             "l"
               "i14e"
-              "32:" + oxenc::from_hex(hash4) +
+              "32:" + hash4 +
               "de"
             "e"
           "e"
@@ -474,10 +475,10 @@ const config::dict data118{
         {"string2", "goodbye"},
 };
 
-constexpr auto h119 = "43094f68c1faa37eff79e1c2f3973ffd5f9d6423b00ccda306fc6e7dac5f0c44"sv;
-constexpr auto h120 = "e3a237f91014d31e4d30569c4a8bfcd72157804f99b8732c611c48bf126432b5"sv;
-constexpr auto h121 = "1a7f602055124deaf21175ef3f32983dee7c9de570e5d9c9a0bbc2db71dcb97f"sv;
-constexpr auto h122 = "46560604fe352101bb869435260d7100ccfe007be5f741c7e96303f02f394e8a"sv;
+const auto h119 = "43094f68c1faa37eff79e1c2f3973ffd5f9d6423b00ccda306fc6e7dac5f0c44"_hex;
+const auto h120 = "e3a237f91014d31e4d30569c4a8bfcd72157804f99b8732c611c48bf126432b5"_hex;
+const auto h121 = "1a7f602055124deaf21175ef3f32983dee7c9de570e5d9c9a0bbc2db71dcb97f"_hex;
+const auto h122 = "46560604fe352101bb869435260d7100ccfe007be5f741c7e96303f02f394e8a"_hex;
 const auto m123_expected =
         // clang-format off
         "d"
@@ -506,10 +507,10 @@ const auto m123_expected =
             "7:string2" "7:goodbye"
          "e"
          "1:<" "l"
-           "l" "i119e" "32:"+oxenc::from_hex(h119)+ "de" "e"
-           "l" "i120e" "32:"+oxenc::from_hex(h120)+ "de" "e"
-           "l" "i121e" "32:"+oxenc::from_hex(h121)+ "de" "e"
-           "l" "i122e" "32:"+oxenc::from_hex(h122)+ "de" "e"
+           "l" "i119e" "32:"+h119+ "de" "e"
+           "l" "i120e" "32:"+h120+ "de" "e"
+           "l" "i121e" "32:"+h121+ "de" "e"
+           "l" "i122e" "32:"+h122+ "de" "e"
          "e"
          "1:=" "d"
            "4:int0" "1:-"
@@ -518,7 +519,7 @@ const auto m123_expected =
          "e"
        "e";
 // clang-format on
-constexpr auto h123 = "d9398c597b058ac7e28e3febb76ed68eb8c5b6c369610562ab5f2b596775d73c"sv;
+const auto h123 = "d9398c597b058ac7e28e3febb76ed68eb8c5b6c369610562ab5f2b596775d73c"_hex;
 
 TEST_CASE("config message example 1", "[config][example]") {
     /// This is the "Ordinary update" example described in docs/config-merge-logic.md
@@ -590,19 +591,19 @@ TEST_CASE("config message example 1", "[config][example]") {
     // Increment 5 times so that our diffs will be empty.
     auto m123 = m118.increment();
     CHECK(m123.seqno() == 119);
-    CHECK(view_hex(m123.hash()) == h119);
+    CHECK(view_hex(m123.hash()) == oxenc::to_hex(h119));
 
     m123 = m123.increment();
     CHECK(m123.seqno() == 120);
-    CHECK(view_hex(m123.hash()) == h120);
+    CHECK(view_hex(m123.hash()) == oxenc::to_hex(h120));
 
     m123 = m123.increment();
     CHECK(m123.seqno() == 121);
-    CHECK(view_hex(m123.hash()) == h121);
+    CHECK(view_hex(m123.hash()) == oxenc::to_hex(h121));
 
     m123 = m123.increment();
     CHECK(m123.seqno() == 122);
-    CHECK(view_hex(m123.hash()) == h122);
+    CHECK(view_hex(m123.hash()) == oxenc::to_hex(h122));
 
     m123 = m123.increment();
 
@@ -618,7 +619,7 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
     ConfigMessage m{m123_expected};
 
     CHECK(m.seqno() == 123);
-    CHECK(view_hex(m.hash()) == h123);
+    CHECK(view_hex(m.hash()) == oxenc::to_hex(h123));
     CHECK(m.diff() == oxenc::bt_dict{
         {"int0"s, "-"s},
         {"int1"s, ""s},
@@ -670,12 +671,12 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
             "7:string2" "7:goodbye"
           "e"
           "1:<" "l"
-            "l" "i120e" "32:"+oxenc::from_hex(h120)+ "de" "e"
-            "l" "i121e" "32:"+oxenc::from_hex(h121)+ "de" "e"
-            "l" "i122e" "32:"+oxenc::from_hex(h122)+ "de" "e"
+            "l" "i120e" "32:"+h120+ "de" "e"
+            "l" "i121e" "32:"+h121+ "de" "e"
+            "l" "i122e" "32:"+h122+ "de" "e"
             "l"
               "i123e"
-              "32:"+oxenc::from_hex(h123)+
+              "32:"+h123+
               "d"
                 "4:int0" "1:-"
                 "4:int1" "0:"
@@ -710,7 +711,7 @@ void updates_124(MutableConfigMessage& m) {
     m.data().erase("great");
 }
 
-constexpr auto h124 = "8b73f316178765b9b3b37168e865c84bb5a78610cbb59b84d0fa4d3b4b3c102b"sv;
+const auto h124 = "8b73f316178765b9b3b37168e865c84bb5a78610cbb59b84d0fa4d3b4b3c102b"_hex;
 
 TEST_CASE("config message example 2", "[config][example]") {
     /// This is the "Large, but still ordinary, update" example described in
@@ -746,9 +747,9 @@ TEST_CASE("config message example 2", "[config][example]") {
             "7:string3" "3:omg"
           "e"
           "1:<" "l"
-            "l" "i120e" "32:"+oxenc::from_hex(h120)+ "de" "e"
-            "l" "i121e" "32:"+oxenc::from_hex(h121)+ "de" "e"
-            "l" "i122e" "32:"+oxenc::from_hex(h122)+ "de" "e"
+            "l" "i120e" "32:"+h120+ "de" "e"
+            "l" "i121e" "32:"+h121+ "de" "e"
+            "l" "i122e" "32:"+h122+ "de" "e"
             "l"
               "i123e"
               "32:"+blake2b(m123_expected)+
@@ -794,11 +795,11 @@ TEST_CASE("config message example 2", "[config][example]") {
         "e"));
     // clang-format on
 
-    CHECK(view_hex(m.hash()) == h124);
+    CHECK(view_hex(m.hash()) == oxenc::to_hex(h124));
 }
 
-constexpr auto h125a = "80f229c3667de6d0fa6f96b53118e097fbda82db3ca1aea221a3db91ea9c45fb"sv;
-constexpr auto h125b = "ab12f0efe9a9ed00db6b17b44ae0ff36b9f49094077fb114f415522f2a0e98de"sv;
+const auto h125a = "80f229c3667de6d0fa6f96b53118e097fbda82db3ca1aea221a3db91ea9c45fb"_hex;
+const auto h125b = "ab12f0efe9a9ed00db6b17b44ae0ff36b9f49094077fb114f415522f2a0e98de"_hex;
 
 // clang-format off
 const auto m126_expected =
@@ -825,10 +826,10 @@ const auto m126_expected =
         "7:string3" "3:omg"
       "e"
       "1:<" "l"
-        "l" "i122e" "32:"+oxenc::from_hex(h122)+ "de" "e"
+        "l" "i122e" "32:"+h122+ "de" "e"
         "l"
           "i123e"
-          "32:"+oxenc::from_hex(h123)+
+          "32:"+h123+
           "d"
             "4:int0" "1:-"
             "4:int1" "0:"
@@ -837,7 +838,7 @@ const auto m126_expected =
         "e"
         "l"
           "i124e"
-          "32:"+oxenc::from_hex(h124)+
+          "32:"+h124+
           "d"
             "5:dictA" "d"
               "7:goodbye" "l" "l" "i123e" "i456e" "e" "le" "e"
@@ -873,7 +874,7 @@ const auto m126_expected =
         "e"
         "l"
           "i125e"
-          "32:"+oxenc::from_hex(h125a)+
+          "32:"+h125a+
           "d"
             "5:dictB" "d"
               "3:foo" "1:-"
@@ -882,7 +883,7 @@ const auto m126_expected =
         "e"
         "l"
           "i125e"
-          "32:"+oxenc::from_hex(h125b)+
+          "32:"+h125b+
           "d" "4:int1" "0:" "e"
         "e"
       "e"
@@ -897,7 +898,7 @@ TEST_CASE("config message example 3 - simple conflict", "[config][example][confl
 
     updates_124(m124);
 
-    REQUIRE(view_hex(m124.hash()) == h124);
+    REQUIRE(view_hex(m124.hash()) == oxenc::to_hex(h124));
 
     auto m125_a = m124.increment();
     REQUIRE(m125_a.seqno() == 125);
@@ -907,8 +908,8 @@ TEST_CASE("config message example 3 - simple conflict", "[config][example][confl
     REQUIRE(m125_b.seqno() == 125);
     m125_b.data()["int1"] = 5;
 
-    REQUIRE(view_hex(m125_a.hash()) == h125a);
-    REQUIRE(view_hex(m125_b.hash()) == h125b);
+    REQUIRE(view_hex(m125_a.hash()) == oxenc::to_hex(h125a));
+    REQUIRE(view_hex(m125_b.hash()) == oxenc::to_hex(h125b));
     REQUIRE(m125_a.hash() < m125_b.hash());
 
     ConfigMessage m{{m125_a.serialize(), m125_b.serialize()}};
@@ -962,7 +963,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
     auto m124b = m123.increment();
     updates_124(m124b);
 
-    REQUIRE(view_hex(m124b.hash()) == h124);
+    REQUIRE(view_hex(m124b.hash()) == oxenc::to_hex(h124));
 
     auto m125a = m124b.increment();
     d(m125a.data()["dictB"]).erase("foo");
@@ -1038,7 +1039,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
           "1:<" "l"
             "l"
               "i123e"
-              "32:"+oxenc::from_hex(h123)+
+              "32:"+h123+
               "d"
                 "4:int0" "1:-"
                 "4:int1" "0:"
@@ -1057,7 +1058,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
             "e"
             "l"
               "i124e"
-              "32:"+oxenc::from_hex(h124)+
+              "32:"+h124+
               "d"
                 "5:dictA" "d"
                   "7:goodbye" "l" "l" "i123e" "i456e" "e" "le" "e"
@@ -1093,7 +1094,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
             "e"
             "l"
               "i125e"
-              "32:"+oxenc::from_hex(h125a)+
+              "32:"+h125a+
               "d"
                 "5:dictB" "d"
                   "3:foo" "1:-"
@@ -1102,7 +1103,7 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
             "e"
             "l"
               "i125e"
-              "32:"+oxenc::from_hex(h125b)+
+              "32:"+h125b+
               "d" "4:int1" "0:" "e"
             "e"
             "l" "i126e" "32:"+std::string{view(m126a.hash())}+ "de" "e"
@@ -1123,10 +1124,8 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
 
 TEST_CASE("config message encryption", "[config][encrypt]") {
     auto message1 = "some message 1";
-    std::string key1 =
-            oxenc::from_hex("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
-    std::string key2 =
-            oxenc::from_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    std::string key1 = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"_hex;
+    std::string key2 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"_hex;
     auto enc1 = config::encrypt(message1, key1, "test-suite1");
     CHECK(oxenc::to_hex(enc1) ==
           "b8ccdedaa8e8bc7865990a1c1b5e04d0599fb137b50fc9d287cd89"
