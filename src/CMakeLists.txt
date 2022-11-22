@@ -2,6 +2,9 @@
 add_library(session-util
     bt_merge.cpp
     config.cpp
+    config/base.cpp
+    config/error.c
+    config/user_profile.cpp
     fields.cpp
     groups_closed.cpp
     xed25519.cpp

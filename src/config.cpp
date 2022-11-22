@@ -501,21 +501,29 @@ void MutableConfigMessage::increment_impl() {
     diff_.clear();
 }
 
-MutableConfigMessage ConfigMessage::increment() {
-    MutableConfigMessage next{};
-    static_cast<ConfigMessage&>(next) = *this;
-    next.increment_impl();
-    return next;
+MutableConfigMessage::MutableConfigMessage(const ConfigMessage& m, increment_seqno_t) {
+    // We do the derived class cast here rather than using two overloaded constructors so that the
+    // *caller* can give us a ConfigMessage reference without worrying about whether it is actually
+    // a MutableConfigMessage under the hood.
+    if (auto* mut = dynamic_cast<const MutableConfigMessage*>(&m)) {
+        *this = *mut;
+        hash();
+    } else {
+        ConfigMessage::operator=(m);
+    }
+    increment_impl();
 }
 
-MutableConfigMessage MutableConfigMessage::increment() {
-    // `increment_impl` requires that *this* object have the correct hash, so we recalculate diff,
-    // prune, and re-hash to make sure they are correct.
-    hash();  // this call implicitly prunes, updates diff_, and updates hash
+MutableConfigMessage ConfigMessage::increment() const {
+    return MutableConfigMessage{*this, increment_seqno};
+}
 
-    MutableConfigMessage next{*this};
-    next.increment_impl();
-    return next;
+MutableConfigMessage MutableConfigMessage::increment() const {
+    return MutableConfigMessage{*this, increment_seqno};
+}
+
+ConfigMessage::ConfigMessage() {
+    hash_msg(seqno_hash_.second, serialize());
 }
 
 ConfigMessage::ConfigMessage(
@@ -704,6 +712,20 @@ MutableConfigMessage::MutableConfigMessage(
         increment_impl();
 }
 
+MutableConfigMessage::MutableConfigMessage(
+        std::string_view config,
+        verify_callable verifier,
+        sign_callable signer,
+        int lag,
+        bool signature_optional) :
+        MutableConfigMessage{
+                std::vector{{config}},
+                std::move(verifier),
+                std::move(signer),
+                lag,
+                signature_optional,
+                [](const config_error& e) { throw e; }} {}
+
 const oxenc::bt_dict& ConfigMessage::diff() {
     return diff_;
 }
@@ -714,11 +736,13 @@ const oxenc::bt_dict& MutableConfigMessage::diff() {
     return diff_;
 }
 
-std::string ConfigMessage::serialize() {
-    return serialize_impl(diff());  // The diff() implicitly prunes (if actually a mutable instance)
+std::string ConfigMessage::serialize(bool enable_signing) {
+    return serialize_impl(
+            diff(),  // implicitly prunes (if actually a mutable instance)
+            enable_signing);
 }
 
-std::string ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff) {
+std::string ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enable_signing) {
     std::string result;
     result.resize(MAX_MESSAGE_SIZE);
     oxenc::bt_dict_producer outer{result.data(), result.size()};
@@ -752,7 +776,7 @@ std::string ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff) {
         unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "~");
         assert(unknown_it == unknown_.end());
 
-        if (signer) {
+        if (signer && enable_signing) {
             auto to_sign = to_unsigned_sv(outer.view());
             // The view contains the trailing "e", but we don't sign it (we are going to append the
             // signature there instead):
@@ -805,7 +829,9 @@ static std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> ma
     return key;
 }
 
-template <typename Char> static std::basic_string<Char> encrypt(ustring_view message, ustring_view key_base, std::string_view domain) {
+template <typename Char>
+static std::basic_string<Char> encrypt(
+        ustring_view message, ustring_view key_base, std::string_view domain) {
     auto key = make_encrypt_key(key_base, message.size(), domain);
 
     std::string nonce_key{NONCE_KEY_PREFIX};
@@ -852,13 +878,16 @@ std::string encrypt(std::string_view message, std::string_view key_base, std::st
     return encrypt<char>(to_unsigned_sv(message), to_unsigned_sv(key_base), domain);
 }
 
-template <typename Char> static std::basic_string<Char> decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
+template <typename Char>
+static std::basic_string<Char> decrypt(
+        ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
     size_t message_len = ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES -
                          crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
     if (message_len > ciphertext.size())  // overflow
         throw decrypt_error{"Decryption failed: ciphertext is too short"};
 
-    auto nonce = ciphertext.substr(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    auto nonce =
+            ciphertext.substr(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     ciphertext.remove_suffix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     auto key = make_encrypt_key(key_base, message_len, domain);
 
@@ -868,13 +897,15 @@ template <typename Char> static std::basic_string<Char> decrypt(ustring_view cip
     auto* plaintext_data = reinterpret_cast<unsigned char*>(plaintext.data());
     unsigned long long mlen_wrote = 0;
     if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
-                plaintext_data,
-                &mlen_wrote,
-                nullptr,
-                ciphertext.data(), ciphertext.size(),
-                nullptr, 0,
-                nonce.data(),
-                key.data()))
+                     plaintext_data,
+                     &mlen_wrote,
+                     nullptr,
+                     ciphertext.data(),
+                     ciphertext.size(),
+                     nullptr,
+                     0,
+                     nonce.data(),
+                     key.data()))
         throw decrypt_error{"Message decryption failed"};
 
     assert(mlen_wrote == plaintext.size());
@@ -884,7 +915,8 @@ template <typename Char> static std::basic_string<Char> decrypt(ustring_view cip
 ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
     return decrypt<unsigned char>(ciphertext, key_base, domain);
 }
-std::string decrypt(std::string_view ciphertext, std::string_view key_base, std::string_view domain) {
+std::string decrypt(
+        std::string_view ciphertext, std::string_view key_base, std::string_view domain) {
     return decrypt<char>(to_unsigned_sv(ciphertext), to_unsigned_sv(key_base), domain);
 }
 

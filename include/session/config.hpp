@@ -96,7 +96,7 @@ class ConfigMessage {
     /// Signing function: this is passed the data to be signed and returns the 64-byte signature.
     using sign_callable = std::function<std::string(ustring_view data)>;
 
-    ConfigMessage() = default;
+    ConfigMessage();
     ConfigMessage(const ConfigMessage&) = default;
     ConfigMessage& operator=(const ConfigMessage&) = default;
     ConfigMessage(ConfigMessage&&) = default;
@@ -104,14 +104,8 @@ class ConfigMessage {
 
     virtual ~ConfigMessage() = default;
 
-    /// Initializes a config message by parsing a serialized message.  See the vector version below
-    /// for argument descriptions.
-    /// If verifier is given then the
-    /// message must contain a signature for which verifier returns true.  `signature_optional` can
-    /// be set to true for optional signatures: the signature is verified if present (and throws if
-    /// it fails), but a missing signature is considered acceptable as well.  `lag` sets the lag
-    /// value for the constructed object and *also* discards excess lag info if found in the parsed
-    /// config message.
+    /// Initializes a config message by parsing a serialized message.  Throws on any error.  See the
+    /// vector version below for argument descriptions.
     explicit ConfigMessage(
             std::string_view serialized,
             verify_callable verifier = nullptr,
@@ -205,16 +199,25 @@ class ConfigMessage {
 
     /// Constructs a new MutableConfigMessage from this config message with an incremented seqno.
     /// The new config message's diff will reflect changes made after this construction.
-    virtual MutableConfigMessage increment();
+    virtual MutableConfigMessage increment() const;
 
     /// Serializes this config's data.  Note that if the ConfigMessage was constructed from signed,
     /// serialized input, this will only produce an exact copy of the original serialized input if
     /// it uses the identical, deterministic signing function used to construct the original.
-    virtual std::string serialize();
+    ///
+    /// The optional `enable_signing` argument can be specified as false to disable signing (this is
+    /// typically for a local serialization value that isn't being pushed to the server).  Note that
+    /// signing is always disabled if there is no signing callback set, regardless of the value of
+    /// this argument.
+    virtual std::string serialize(bool enable_signing = true);
 
   protected:
-    std::string serialize_impl(const oxenc::bt_dict& diff);
+    std::string serialize_impl(const oxenc::bt_dict& diff, bool enable_signing = true);
 };
+
+// Constructor tag
+struct increment_seqno_t {};
+inline constexpr increment_seqno_t increment_seqno{};
 
 class MutableConfigMessage : public ConfigMessage {
   protected:
@@ -262,12 +265,26 @@ class MutableConfigMessage : public ConfigMessage {
             bool signature_optional = false,
             std::function<void(const config_error&)> error_handler = nullptr);
 
+    /// Wrapper around the above that takes a single string view to load a single message, doesn't
+    /// take an error handler and instead always throws on parse errors (the above also throws for
+    /// an erroneous single message, but with a less specific "no valid config messages" error).
+    explicit MutableConfigMessage(
+            std::string_view config,
+            verify_callable verifier = nullptr,
+            sign_callable signer = nullptr,
+            int lag = DEFAULT_DIFF_LAGS,
+            bool signature_optional = false);
+
     /// Does the same as the base incrementing, but also records any diff info from the current
     /// MutableConfigMessage.  *this* object gets pruned and signed as part of this call.  If the
     /// sign argument is omitted/nullptr then the current object's `sign` callback gets copied into
     /// the new object.  After this call you typically do not want to further modify *this (because
     /// any modifications will change the hash, making *this no longer a parent of the new object).
-    MutableConfigMessage increment() override;
+    MutableConfigMessage increment() const override;
+
+    /// Constructor that does the same thing as the `m.increment()` factory method.  The second
+    /// value should be the literal `increment_seqno` value (to select this constructor).
+    explicit MutableConfigMessage(const ConfigMessage& m, increment_seqno_t);
 
     using ConfigMessage::data;
     /// Returns a mutable reference to the underlying config data.
@@ -330,7 +347,8 @@ struct decrypt_error : std::runtime_error {
 ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain);
 
 /// Same as above but using std::string/string_view
-std::string decrypt(std::string_view ciphertext, std::string_view key_base, std::string_view domain);
+std::string decrypt(
+        std::string_view ciphertext, std::string_view key_base, std::string_view domain);
 
 }  // namespace session::config
 

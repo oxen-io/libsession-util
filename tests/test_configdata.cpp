@@ -636,7 +636,7 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
 
     // This is the same, but because it's mutable, we deserialize and then implicit get a
     // increment()
-    MutableConfigMessage mut{{m123_expected}};
+    MutableConfigMessage mut{m123_expected};
     CHECK(mut.seqno() == 124);
     CHECK(view_hex(mut.hash()) == "3ea36410cf7086ce816eb193b0c94e88632abfb75771d82f8ddb3a909124c580");
     CHECK(mut.diff() == oxenc::bt_dict{});
@@ -716,7 +716,7 @@ const auto h124 = "8b73f316178765b9b3b37168e865c84bb5a78610cbb59b84d0fa4d3b4b3c1
 TEST_CASE("config message example 2", "[config][example]") {
     /// This is the "Large, but still ordinary, update" example described in
     /// docs/config-merge-logic.md
-    MutableConfigMessage m{{m123_expected}};
+    MutableConfigMessage m{m123_expected};
     REQUIRE(m.seqno() == 124);
 
     updates_124(m);
@@ -893,7 +893,7 @@ const auto m126_expected =
 
 TEST_CASE("config message example 3 - simple conflict", "[config][example][conflict]") {
     /// This is the "Simple conflict resolution" example described in docs/config-merge-logic.md
-    MutableConfigMessage m124{{m123_expected}};
+    MutableConfigMessage m124{m123_expected};
     REQUIRE(m124.seqno() == 124);
 
     updates_124(m124);

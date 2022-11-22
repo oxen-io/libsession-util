@@ -11,7 +11,7 @@
 
 namespace session::closed_group {
 
-struct Info : config_base {
+struct Info { //: config_base {
 private:
     // This bt_dict contains any fields that we parsed on input but didn't understand.  (Typically
     // these would be from an older or newer version that has additional fields).  We keep them
