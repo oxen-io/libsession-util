@@ -63,7 +63,7 @@ seqno_t config_push(config_object* conf, char** out, size_t* outlen);
 
 /// Reports that data obtained from `config_push` has been successfully stored on the server.  The
 /// seqno value is the one returned by the config_push call that yielded the config data.
-void confirm_pushed(config_object* conf, seqno_t seqno);
+void config_confirm_pushed(config_object* conf, seqno_t seqno);
 
 /// Returns a binary dump of the current state of the config object.  This dump can be used to
 /// resurrect the object at a later point (e.g. after a restart).  Allocates a new buffer and sets

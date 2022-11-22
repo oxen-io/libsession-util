@@ -152,7 +152,7 @@ LIBSESSION_EXPORT seqno_t config_push(config_object* conf, char** out, size_t* o
     return seqno;
 }
 
-LIBSESSION_EXPORT void confirm_pushed(config_object* conf, seqno_t seqno) {
+LIBSESSION_EXPORT void config_confirm_pushed(config_object* conf, seqno_t seqno) {
     unbox(conf)->confirm_pushed(seqno);
 }
 
