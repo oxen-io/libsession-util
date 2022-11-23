@@ -8,6 +8,5 @@ add_executable(testAll
     )
 
 target_link_libraries(testAll PRIVATE
-    session-util
-    libsodium-internal
+    config
     Catch2::Catch2WithMain)

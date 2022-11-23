@@ -252,4 +252,28 @@ local mac_builder(name,
   // Macos builds:
   mac_builder('macOS (Release)'),
   mac_builder('macOS (Debug)', build_type='Debug'),
+
+  // iOS static lib build
+  {
+    kind: 'pipeline',
+    type: 'exec',
+    name: 'iOS static lib',
+    platform: { os: 'darwin', arch: 'amd64' },
+    steps: [
+      { name: 'submodules', commands: submodule_commands },
+      {
+        name: 'build',
+        environment: { SSH_KEY: { from_secret: 'SSH_KEY' } },
+        commands: [
+          'echo "Building on ${DRONE_STAGE_MACHINE}"',
+          // If you don't do this then the C compiler doesn't have an include path containing
+          // basic system headers.  WTF apple:
+          'export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"',
+          'export JOBS=6',
+          './contrib/ios.sh',
+          'cd build-ios && ../contrib/ci/drone-static-upload.sh',
+        ],
+      },
+    ],
+  },
 ]
