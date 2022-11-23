@@ -37,7 +37,7 @@ which has byte string keys (of max length 128 bytes) and values which are any of
 - strings, which are of max length 4096 bytes.
 - sets of one or more values, which may contain unique integer or string values (but not other sets
   or dicts).  These must be sorted by integer or byte value for ints or strings, respectively;
-  integers sort before strings if a list contains both.  Sets must contain at least one value: empty
+  integers sort before strings if a set contains both.  Sets must contain at least one value: empty
   sets are omitted from the encoded data.  (Clients that need empty sets should either treat a
   missing set value as empty, or else use some other way of encoding "empty" vs "not-present" in the
   data.)
@@ -186,18 +186,20 @@ Merging is performed as follows:
    - the "current" diff of every message is added to the replay sets (the seqno and hash are
      extracted and computed from the message itself).
    - past diffs in the messages (i.e. from the `"<"` list) are added to the replay set, *if* they
-     are not yet in the reply set, and have a seqno >= newseqno-5.  This should be done in order
+     are not yet in the replay set, and have a seqno >= newseqno-5.  This should be done in order
      from highest-to-lowest ranked message (thus if there is any disagreement of the contents of a
      replay diff it is higher-ranked messages that are used).
 5. The replay set is ordered such that lower seqnos come before higher seqnos, and lower hashes come
    before higher hashes.
 6. The replay set is processed in order: hash keys are assigned or removed according to the `""` or
    `"-"` value, and sets have elements assigned or removed according to the add/remove set diff
-   lists.  Sets or dicts that have become empty after processing a replay entry shall be removed
-   (e.g.  recursively, using a depth-first search, or some equivalent approach).
+   lists.  (Removals of list or dict keys that are not present in the current data are ignored).
+
+   Sets or dicts that have become empty after processing a replay entry shall be removed (e.g.
+   recursively, using a depth-first search, or some equivalent approach).
 7. The replay set is copied into the lagged diffs (key `"<"`), but excluding any entries with seqno
-   of (newseqno-5).  Seqnos of that value are included for reply since all messages will have them,
-   but are not included or needed for reply of future seqno messages.
+   of (newseqno-5).  Seqnos of that value are included for replay since all messages will have them,
+   but are not included or needed for replay of future seqno messages.
 8. The message diff itself:
    - If the config message is making changes aside from the merge then the diff of changes is
      constructed and written into the `"="` key.
