@@ -24,7 +24,7 @@ branch_or_tag=${DRONE_BRANCH:-${DRONE_TAG:-unknown}}
 upload_to="oxen.rocks/${DRONE_REPO// /_}/${branch_or_tag// /_}"
 
 shopt -s nullglob
-filename=(libsession-util-*.tar.xz)
+filename=(libsession-util-*.tar.xz libsession-util-*.zip)
 if [ ${#filename[@]} != 1 ]; then
     echo "Expected (exactly) one file to upload, found: ${filename[*]}" >&2
     exit 1

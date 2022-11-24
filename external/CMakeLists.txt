@@ -53,7 +53,7 @@ if(CMAKE_C_COMPILER_LAUNCHER)
 endif()
 set(deps_CFLAGS "-O2")
 
-if(WITH_LTO)
+if(IPO_ENABLED)
   set(deps_CFLAGS "${deps_CFLAGS} -flto")
 endif()
 
