@@ -43,7 +43,7 @@ typedef struct user_profile_pic {
 // beyond other API calls on this config object).
 user_profile_pic user_profile_get_pic(const config_object* conf);
 
-// Sets a user profile 
+// Sets a user profile
 int user_profile_set_pic(config_object* conf, user_profile_pic pic);
 
 #ifdef __cplusplus

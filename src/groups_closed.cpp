@@ -1,8 +1,9 @@
+#include <oxenc/bt_serialize.h>
+#include <oxenc/bt_value.h>
+
 #include <cstdlib>
 #include <memory>
 #include <random>
-#include <oxenc/bt_serialize.h>
-#include <oxenc/bt_value.h>
 
 #include "session/groups/closed.hpp"
 
@@ -39,7 +40,6 @@ oxenc::bt_dict Info::known_dict() const {
 
     return d;
 }
-
 
 // Intermediate object that stores a Members, plus auxiliary vectors to hold the pubkey and
 // closed_group_member arrays for the C struct pointers to point into.

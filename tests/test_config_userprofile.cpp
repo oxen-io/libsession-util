@@ -41,7 +41,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Since it's empty there shouldn't be a name.
     const char* name = user_profile_get_name(conf);
-    CHECK(name == NULL);
+    CHECK(name == nullptr); // (should be NULL instead of nullptr in C)
 
     char* to_push;
     size_t to_push_len;
@@ -55,8 +55,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // This should also be unset:
     auto pic = user_profile_get_pic(conf);
-    CHECK(pic.url == NULL);
-    CHECK(pic.key == NULL);
+    CHECK(pic.url == nullptr); // (should be NULL instead of nullptr in C)
+    CHECK(pic.key == nullptr); // (should be NULL instead of nullptr in C)
     CHECK(pic.keylen == 0);
 
     // Now let's go set a profile name and picture:
@@ -69,7 +69,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Retrieve them just to make sure they set properly:
     name = user_profile_get_name(conf);
-    REQUIRE(name != NULL);
+    REQUIRE(name != nullptr); // (should be NULL instead of nullptr in C)
     CHECK(name == "Kallie"sv);
 
     pic = user_profile_get_pic(conf);
@@ -133,19 +133,18 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
           "1:$" + std::to_string(exp_push1.size()) + ":" + exp_push1 + ""
         "e"));
     // clang-format on
-    free(dump1); // done with the dumpp; don't leak!
+    free(dump1);  // done with the dump; don't leak!
 
     // So now imagine we got back confirmation from the swarm that the push has been stored:
     config_confirm_pushed(conf, seqno);
 
     CHECK_FALSE(config_needs_push(conf));
-    CHECK(config_needs_dump(conf)); // The confirmation changes state, so this makes us need a dump
-                                    // again.
+    CHECK(config_needs_dump(conf));  // The confirmation changes state, so this makes us need a dump
+                                     // again.
     config_dump(conf, &dump1, &dump1len);
-    free(dump1); // just ignore it for the test (but always have to free it).
-                 //
+    free(dump1);  // just ignore it for the test (but always have to free it).
+                  //
     CHECK_FALSE(config_needs_dump(conf));
-
 
     // Now we're going to set up a second, competing config object (in the real world this would be
     // another Session client somewhere).
@@ -176,8 +175,6 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // didn't have any sort of merge conflict needed):
     CHECK_FALSE(config_needs_push(conf2));
 
-
-
     // Now let's create a conflicting update:
 
     // Change the name on both clients:
@@ -194,12 +191,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(config_needs_push(conf));
     CHECK(config_needs_push(conf2));
     seqno = config_push(conf, &to_push, &to_push_len);
-    CHECK(seqno == 2); // incremented, since we made a field change
+    CHECK(seqno == 2);  // incremented, since we made a field change
 
     char* to_push2;
     size_t to_push2_len;
     auto seqno2 = config_push(conf2, &to_push2, &to_push2_len);
-    CHECK(seqno == 2); // incremented, since we made a field change
+    CHECK(seqno == 2);  // incremented, since we made a field change
 
     config_dump(conf, &dump1, &dump1len);
     config_dump(conf2, &dump2, &dump2len);

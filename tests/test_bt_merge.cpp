@@ -29,7 +29,7 @@ TEST_CASE("bt_list sorted merge", "[bt_list][merge]") {
     bt_list y{2, 4, 8, 16};
 
     auto compare = [](const auto& a, const auto& b) {
-        return std::get<int64_t>(a) < std::get<int64_t>(b);
+        return var::get<int64_t>(a) < var::get<int64_t>(b);
     };
 
     CHECK(session::bt::merge_sorted(x, y, compare) == bt_list{1, 2, 3, 4, 5, 8, 13, 16, 21});

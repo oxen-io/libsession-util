@@ -1,24 +1,25 @@
 #pragma once
 
+#include <oxenc/bt_serialize.h>
+
 #include <optional>
 #include <string>
 #include <vector>
-#include <oxenc/bt_serialize.h>
 
-#include "../fields.hpp"
 #include "../config.hpp"
+#include "../fields.hpp"
 #include "closed.h"
 
 namespace session::closed_group {
 
-struct Info { //: config_base {
-private:
+struct Info {  //: config_base {
+  private:
     // This bt_dict contains any fields that we parsed on input but didn't understand.  (Typically
     // these would be from an older or newer version that has additional fields).  We keep them
     // because, when we re-serialize, we need to preserve unknown values.
     oxenc::bt_dict unknown;
 
-public:
+  public:
     // Name, in UTF-8 bytes, and may not contain a null character.
     std::string name;
     // Optional description, in UTF-8 bytes, and may not contain a null.

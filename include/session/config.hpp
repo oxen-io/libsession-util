@@ -3,6 +3,7 @@
 #include <oxenc/bt_serialize.h>
 #include <oxenc/bt_value.h>
 
+#include <array>
 #include <cassert>
 #include <optional>
 #include <set>
@@ -25,6 +26,14 @@ struct dict_value : dict_variant {
     using dict_variant::dict_variant;
     using dict_variant::operator=;
 };
+
+// Helpers for gcc-10 and earlier which don't like visiting a std::variant subtype:
+constexpr inline dict_variant& unwrap(dict_value& v) {
+    return static_cast<dict_variant&>(v);
+}
+constexpr inline const dict_variant& unwrap(const dict_value& v) {
+    return static_cast<const dict_variant&>(v);
+}
 
 using seqno_t = std::int64_t;
 using hash_t = std::array<unsigned char, 32>;

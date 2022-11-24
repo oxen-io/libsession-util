@@ -10,7 +10,7 @@ bt_dict merge(const bt_dict& a, const bt_dict& b) {
         if (c <= 0) {
             result.insert(result.end(), *it_a++);
             if (c == 0)
-                ++it_b; // equal keys: ignore value from b
+                ++it_b;  // equal keys: ignore value from b
         } else {
             result.insert(result.end(), *it_b++);
         }

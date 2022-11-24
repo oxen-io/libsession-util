@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-CLANG_FORMAT_DESIRED_VERSION=14
+CLANG_FORMAT_DESIRED_VERSION=15
 
 binary=$(command -v clang-format-$CLANG_FORMAT_DESIRED_VERSION 2>/dev/null)
 if [ $? -ne 0 ]; then
@@ -20,7 +20,7 @@ if [ $? -ne 0 ]; then
 fi
 
 cd "$(dirname $0)/../"
-readarray -t sources < <(find include src tests | grep -E '\.([hc](pp)?)$' | grep -v '\#')
+readarray -t sources < <(find include src tests | grep -E '\.([hc](pp)?)$' | grep -v '\#' | grep -v Catch2)
 if [ "$1" = "verify" ] ; then
     if [ $($binary --output-replacements-xml "${sources[@]}"  | grep '</replacement>' | wc -l) -ne 0 ] ; then
         exit 2

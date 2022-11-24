@@ -1,10 +1,12 @@
 #include "session/config/user_profile.h"
+
 #include "session/config/error.h"
 #include "session/config/user_profile.hpp"
 
 using namespace session::config;
 
-LIBSESSION_C_API int user_profile_init(config_object** conf, const char* dump, size_t dumplen, char* error) {
+LIBSESSION_C_API int user_profile_init(
+        config_object** conf, const char* dump, size_t dumplen, char* error) {
     auto c_conf = std::make_unique<config_object>();
     auto c = std::make_unique<internals<UserProfile>>();
     try {
@@ -63,9 +65,7 @@ std::pair<const std::string*, const std::string*> UserProfile::get_profile_pic()
 LIBSESSION_C_API user_profile_pic user_profile_get_pic(const config_object* conf) {
     auto [url, key] = unbox<UserProfile>(conf)->get_profile_pic();
     return user_profile_pic{
-        url ? url->c_str() : nullptr,
-        key ? key->c_str() : nullptr,
-        key ? key->size() : 0};
+            url ? url->c_str() : nullptr, key ? key->c_str() : nullptr, key ? key->size() : 0};
 }
 
 void UserProfile::set_profile_pic(std::string url, std::string key) {

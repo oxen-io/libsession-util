@@ -18,7 +18,6 @@ enum config_error {
 // field.
 const char* config_errstr(int err);
 
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif

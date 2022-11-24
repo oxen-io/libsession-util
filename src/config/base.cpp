@@ -132,7 +132,8 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
     return static_cast<int16_t>(unbox(conf)->storage_namespace());
 }
 
-LIBSESSION_EXPORT void config_merge(config_object* conf, const char** configs, const size_t* lengths, size_t count) {
+LIBSESSION_EXPORT void config_merge(
+        config_object* conf, const char** configs, const size_t* lengths, size_t count) {
     auto& config = *unbox(conf);
     std::vector<std::string_view> confs;
     confs.reserve(count);

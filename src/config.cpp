@@ -42,10 +42,14 @@ namespace {
         should_remove = d.empty();
         return result;
     }
-    std::pair<bool, bool> prune_(scalar&) { return {false, false}; }
-    std::pair<bool, bool> prune_(set& s) { return {s.empty(), false}; }
+    std::pair<bool, bool> prune_(scalar&) {
+        return {false, false};
+    }
+    std::pair<bool, bool> prune_(set& s) {
+        return {s.empty(), false};
+    }
     std::pair<bool, bool> prune_(dict_value& v) {
-        return std::visit([](auto& x) { return prune_(x); }, v);
+        return var::visit([](auto& x) { return prune_(x); }, unwrap(v));
     }
 
     // diff helper functions
@@ -73,9 +77,9 @@ namespace {
 
         oxenc::bt_list additions, removals;
         for (auto& a : added)
-            std::visit([&additions](auto& x) { additions.emplace_back(std::move(x)); }, a);
+            var::visit([&additions](auto& x) { additions.emplace_back(std::move(x)); }, a);
         for (auto& r : removed)
-            std::visit([&removals](auto& x) { removals.emplace_back(std::move(x)); }, r);
+            var::visit([&removals](auto& x) { removals.emplace_back(std::move(x)); }, r);
 
         return oxenc::bt_list{{std::move(additions)}, {std::move(removals)}};
     }
@@ -151,7 +155,7 @@ namespace {
     }
 
     // Wrapper around oxenc::get_int that returns nullopt if the type is not an integer.
-    constexpr std::optional<int64_t> get_bt_int(const oxenc::bt_value& v) {
+    std::optional<int64_t> get_bt_int(const oxenc::bt_value& v) {
         if (!(std::holds_alternative<int64_t>(v) || std::holds_alternative<uint64_t>(v)))
             return std::nullopt;
         return oxenc::get_int<int64_t>(v);
@@ -241,8 +245,8 @@ namespace {
 
     void serialize_data(oxenc::bt_list_producer&& out, const set& s);
     void serialize_data(oxenc::bt_dict_producer&& out, const dict& d) {
-        for (auto& pair : d) {
-            std::visit(
+        for (const auto& pair : d) {
+            var::visit(
                     [&](const auto& v) {
                         auto& k = pair.first;
                         using T = std::remove_cv_t<std::remove_reference_t<decltype(v)>>;
@@ -251,15 +255,15 @@ namespace {
                         else if constexpr (std::is_same_v<T, set>)
                             serialize_data(out.append_list(k), v);
                         else
-                            std::visit(
+                            var::visit(
                                     [&](const auto& scalar) { out.append(pair.first, scalar); }, v);
                     },
-                    pair.second);
+                    unwrap(pair.second));
         }
     }
     void serialize_data(oxenc::bt_list_producer&& out, const set& s) {
         for (auto& val : s)
-            std::visit([&](const auto& scalar) { out.append(scalar); }, val);
+            var::visit([&](const auto& scalar) { out.append(scalar); }, val);
     }
 
     void parse_data(set& s, oxenc::bt_list_consumer in);
@@ -381,7 +385,9 @@ namespace {
         return reinterpret_cast<const unsigned char*>(x);
     }
 
-    ustring_view to_unsigned_sv(std::string_view v) { return {to_unsigned(v.data()), v.size()}; }
+    ustring_view to_unsigned_sv(std::string_view v) {
+        return {to_unsigned(v.data()), v.size()};
+    }
 
     hash_t& hash_msg(hash_t& into, ustring_view serialized) {
         crypto_generichash_blake2b(
