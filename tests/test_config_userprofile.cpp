@@ -50,7 +50,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     seqno_t seqno = config_push(conf, &to_push, &to_push_len);
     REQUIRE(to_push);
     CHECK(seqno == 0);
-    CHECK(to_push == "d1:#i0e1:&de1:<le1:=dee"sv);
+    CHECK(std::string_view{to_push, to_push_len} == "d1:#i0e1:&de1:<le1:=dee"sv);
     free(to_push);
 
     // This should also be unset:
