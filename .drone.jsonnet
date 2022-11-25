@@ -48,7 +48,7 @@ local debian_pipeline(name,
       ] + (
         if oxen_repo then [
           'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y lsb-release',
-          'cp contrib/deb.oxen.io.gpg /etc/apt/trusted.gpg.d',
+          'cp utils/deb.oxen.io.gpg /etc/apt/trusted.gpg.d',
           'echo deb http://deb.oxen.io $$(lsb_release -sc) main >/etc/apt/sources.list.d/oxen.list',
           'eatmydata ' + apt_get_quiet + ' update',
         ] else []
@@ -248,8 +248,8 @@ local static_build(name,
   deps=deps,
   build=[
     'export JOBS=' + jobs,
-    './contrib/static-bundle.sh build ' + archive_name + ' -DSTATIC_LIBSTD=ON ' + cmake_extra,
-    'cd build && ../contrib/ci/drone-static-upload.sh',
+    './utils/static-bundle.sh build ' + archive_name + ' -DSTATIC_LIBSTD=ON ' + cmake_extra,
+    'cd build && ../utils/ci/drone-static-upload.sh',
   ]
 );
 
@@ -267,7 +267,7 @@ local static_build(name,
         apt_get_quiet + ' update',
         apt_get_quiet + ' install -y eatmydata',
         'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y git clang-format-14 jsonnet',
-        './contrib/ci/drone-format-verify.sh',
+        './utils/ci/drone-format-verify.sh',
       ],
     }],
   },
@@ -320,20 +320,20 @@ local static_build(name,
     build=[
       'export JOBS=6',
       'export NDK=/usr/lib/android-ndk',
-      './contrib/android.sh libsession-util-android-TAG.tar.xz',
-      'cd build-android && ../contrib/ci/drone-static-upload.sh',
+      './utils/android.sh libsession-util-android-TAG.tar.xz',
+      'cd build-android && ../utils/ci/drone-static-upload.sh',
     ]
   ),
 
   mac_pipeline('Static macOS', build=[
     'export JOBS=6',
-    './contrib/macos.sh',
-    'cd build-macos && ../contrib/ci/drone-static-upload.sh',
+    './utils/macos.sh',
+    'cd build-macos && ../utils/ci/drone-static-upload.sh',
   ]),
 
   mac_pipeline('Static iOS', build=[
     'export JOBS=6',
-    './contrib/ios.sh libsession-util-ios-TAG.tar.xz',
-    'cd build-ios && ../contrib/ci/drone-static-upload.sh',
+    './utils/ios.sh libsession-util-ios-TAG.tar.xz',
+    'cd build-ios && ../utils/ci/drone-static-upload.sh',
   ]),
 ]

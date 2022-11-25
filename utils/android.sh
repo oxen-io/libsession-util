@@ -3,7 +3,7 @@
 set -e
 
 if ! [ -f LICENSE ] || ! [ -d include/session ]; then
-    echo "You need to run this as ./contrib/android.sh from the top-level libsession-util project directory"
+    echo "You need to run this as ./utils/android.sh from the top-level libsession-util project directory"
     exit 1
 fi
 
@@ -34,7 +34,7 @@ for abi in "${abis[@]}"; do
     build="build-android/$abi"
     echo "Building android $abi in $build"
 
-    ./contrib/static-bundle.sh "$build" "" \
+    ./utils/static-bundle.sh "$build" "" \
         -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
         -DANDROID_ABI=$abi \
         -DANDROID_ARM_MODE=arm \

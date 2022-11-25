@@ -3,7 +3,7 @@
 set -e
 
 if ! [ -f LICENSE ] || ! [ -d include/session ]; then
-    echo "You need to run this as ./contrib/macos.sh from the top-level libsession-util project directory"
+    echo "You need to run this as ./utils/macos.sh from the top-level libsession-util project directory"
     exit 1
 fi
 
@@ -34,7 +34,7 @@ for i in arm64 x86_64; do
 
     if [ "$(uname -m)" == "$i" ]; then
         echo "Building for macos ($i) in $build"
-        ./contrib/static-bundle.sh "$build" ""
+        ./utils/static-bundle.sh "$build" ""
     else
         echo "Cross-compiling for macos ($i) in $build"
         # The args here are a bit weird:
@@ -45,7 +45,7 @@ for i in arm64 x86_64; do
         # - The "16" in ARCH_TRIPLET (which we need to cross-compile static deps) corresponds to
         #   macOS 10.12, but of course Apple doesn't publish that anywhere because you should be
         #   using swift and the app store.
-        ./contrib/static-bundle.sh "$build" "" \
+        ./utils/static-bundle.sh "$build" "" \
             -DCMAKE_SYSTEM_NAME=Darwin \
             -DARCH_TRIPLET="$i-apple-darwin16" \
             -DCMAKE_OSX_ARCHITECTURES=$i

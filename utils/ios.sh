@@ -3,7 +3,7 @@
 set -e
 
 if ! [ -f LICENSE ] || ! [ -d include/session ]; then
-    echo "You need to run this as ./contrib/ios.sh from the top-level libsession-util project directory"
+    echo "You need to run this as ./utils/ios.sh from the top-level libsession-util project directory"
     exit 1
 fi
 
@@ -35,7 +35,7 @@ for i in "ios-arm64 OS64" "sim-arm64 SIMULATORARM64" "sim-x86_64 SIMULATOR64"; d
     platform="${i[1]}"
     echo "Building ${i[0]} for $platform in $build"
 
-    ./contrib/static-bundle.sh "$build" "" \
+    ./utils/static-bundle.sh "$build" "" \
         -DCMAKE_TOOLCHAIN_FILE=../../external/ios-cmake/ios.toolchain.cmake \
         -DPLATFORM=$platform \
         -DDEPLOYMENT_TARGET=13 \

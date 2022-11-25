@@ -11,7 +11,7 @@
 #
 
 if ! [ -f LICENSE ] || ! [ -d include/session ]; then
-    echo "You need to run this as ./contrib/static-bundle.sh from the top-level libsession-util project directory" >&2
+    echo "You need to run this as ./utils/static-bundle.sh from the top-level libsession-util project directory" >&2
     exit 1
 fi
 
