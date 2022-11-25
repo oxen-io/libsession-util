@@ -1,6 +1,7 @@
 #pragma once
 
 #include <oxenc/bt_value.h>
+#include <oxenc/variant.h>
 
 #include <catch2/catch_tostring.hpp>
 
@@ -21,11 +22,11 @@ struct StringMaker<oxenc::bt_dict> {
 };
 
 inline std::string StringMaker<oxenc::bt_value>::convert(const oxenc::bt_value& value) {
-    return std::visit(
+    return var::visit(
             [](const auto& x) {
                 return StringMaker<oxenc::remove_cvref_t<decltype(x)>>{}.convert(x);
             },
-            value);
+            static_cast<const oxenc::bt_variant&>(value));
 }
 inline std::string StringMaker<oxenc::bt_list>::convert(const oxenc::bt_list& value) {
     std::string r = "[";
