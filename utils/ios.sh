@@ -67,11 +67,17 @@ for x in $(cd include && find session -name '*.h'); do
     echo "    header \"$x\"" >>"$modmap"
 done
 echo -e "    export *\n  }" >>"$modmap"
-echo -e "\n  module cppapi {" >>"$modmap"
-for x in $(cd include && find session -name '*.hpp'); do
-    echo "    header \"$x\"" >>"$modmap"
-done
-echo -e "    export *\n  }" >>"$modmap"
+if false; then
+    # If we include the cpp headers like this then Xcode will try to load them as C headers (which
+    # of course breaks) and doesn't provide any way to only load the ones you need (because this is
+    # Apple land, why would anything useful be available?).  So we include the headers in the
+    # archive but can't let xcode discover them because it will do it wrong.
+    echo -e "\n  module cppapi {" >>"$modmap"
+    for x in $(cd include && find session -name '*.hpp'); do
+        echo "    header \"$x\"" >>"$modmap"
+    done
+    echo -e "    export *\n  }" >>"$modmap"
+fi
 echo "}" >>"$modmap"
 
 (cd build-ios && tar cvJf "$archive" "$pkg")
