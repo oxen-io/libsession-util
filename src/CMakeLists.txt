@@ -17,7 +17,6 @@ add_library(config
     config/error.c
     config/user_profile.cpp
     fields.cpp
-    groups_closed.cpp
 )
 
 target_link_libraries(crypto PUBLIC
