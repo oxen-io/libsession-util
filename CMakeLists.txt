@@ -35,13 +35,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(WARNINGS_AS_ERRORS "Treat all compiler warnings as errors" OFF)
+option(STATIC_LIBSTD "Statically link libstdc++/libgcc" ${default_static_libstd})
+option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" OFF)
+option(USE_LTO "Use Link-Time Optimization" ${USE_LTO_DEFAULT})
 
-if(MINGW OR ANDROID OR IOS)
+if(MINGW OR ANDROID OR IOS OR STATIC_BUNDLE)
   set(USE_LTO_DEFAULT OFF)
 else()
   set(USE_LTO_DEFAULT ON)
 endif()
-option(USE_LTO "Use Link-Time Optimization" ${USE_LTO_DEFAULT})
 
 if(USE_LTO)
   include(CheckIPOSupported)
@@ -64,7 +66,6 @@ set(default_static_libstd OFF)
 if(WIN32)
     set(default_static_libstd ON)
 endif()
-option(STATIC_LIBSTD "Statically link libstdc++/libgcc" ${default_static_libstd})
 
 if(STATIC_LIBSTD)
     add_link_options(-static-libstdc++)
@@ -84,7 +85,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(external)
 add_subdirectory(src)
 
-option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" OFF)
 if(STATIC_BUNDLE)
     include(combine_archives)
 
