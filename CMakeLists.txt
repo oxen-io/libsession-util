@@ -29,6 +29,12 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(MacroEnsureOutOfSourceBuild)
 macro_ensure_out_of_source_build("${PROJECT_NAME} requires an out-of-source build.  Create a build directory and run 'cmake ${PROJECT_SOURCE_DIR} [options]'.")
 
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    set(libsession_IS_TOPLEVEL_PROJECT TRUE)
+else()
+    set(libsession_IS_TOPLEVEL_PROJECT FALSE)
+endif()
+
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +43,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(WARNINGS_AS_ERRORS "Treat all compiler warnings as errors" OFF)
 option(STATIC_LIBSTD "Statically link libstdc++/libgcc" ${default_static_libstd})
 option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" OFF)
+option(BUILD_SHARED_LIBS "Build as shared library" OFF)
 option(USE_LTO "Use Link-Time Optimization" ${USE_LTO_DEFAULT})
 
 if(MINGW OR ANDROID OR IOS OR STATIC_BUNDLE)
@@ -102,7 +109,7 @@ if(STATIC_BUNDLE)
 endif()
 
 
-option(WITH_TESTS "Enable unit tests" ON)
+option(WITH_TESTS "Enable unit tests" ${libsession_IS_TOPLEVEL_PROJECT})
 if(WITH_TESTS)
     add_subdirectory(tests)
 endif()

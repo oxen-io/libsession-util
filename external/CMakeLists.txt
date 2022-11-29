@@ -1,3 +1,4 @@
+set(deps_cc "${CMAKE_C_COMPILER}")
 set(cross_host "")
 set(cross_rc "")
 set(default_force_submodule OFF)
@@ -9,8 +10,11 @@ if(CMAKE_CROSSCOMPILING)
             set(APPLE_TARGET_TRIPLE x86_64-apple-ios)
         endif()
         set(cross_host "--host=${APPLE_TARGET_TRIPLE}")
-    elseif(ANDROID AND ANDROID_LLVM_TRIPLE)
-        set(cross_host "--host=${ANDROID_LLVM_TRIPLE}")
+    elseif(ANDROID)
+        string(REPLACE "android-" "" android_toolchain_ver "${ANDROID_PLATFORM}")
+        string(REPLACE "android-clang" "android${android_toolchain_ver}-clang" android_toolchain_actual_name "${ANDROID_TOOLCHAIN_NAME}")
+        set(cross_host "--host=${CMAKE_C_COMPILER_TARGET}")
+        set(deps_cc "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_toolchain_actual_name}")
     else()
         set(cross_host "--host=${ARCH_TRIPLET}")
         if (ARCH_TRIPLET MATCHES mingw AND CMAKE_RC_COMPILER)
@@ -49,7 +53,6 @@ endmacro()
 system_or_submodule(OXENC oxenc liboxenc>=1.0.6 oxen-encoding)
 
 
-set(deps_cc "${CMAKE_C_COMPILER}")
 if(CMAKE_C_COMPILER_LAUNCHER)
   set(deps_cc "${CMAKE_C_COMPILER_LAUNCHER} ${deps_cc}")
 endif()
@@ -68,13 +71,21 @@ if(APPLE)
     endforeach()
 endif()
 
+
+set(shared_static --disable-shared --enable-static)
+set(sodium_lib_file libsodium.a)
+if(BUILD_SHARED_LIBS)
+    set(shared_static --enable-shared --disable-static)
+    set(sodium_lib_file libsodium.so)
+endif()
+
 include(ExternalProject)
 ExternalProject_Add(libsodium-internal_ext
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal/configure --prefix=${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal
         ${cross_host} ${cross_rc}
-        --disable-shared --enable-static --with-pic "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/libsodium.a
+        ${shared_static} "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
+    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_file}
         ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include/sodium.h
 )
 add_library(libsodium-internal STATIC IMPORTED GLOBAL)
@@ -83,7 +94,7 @@ add_dependencies(libsodium-internal libsodium-internal_ext)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include)
 
 set_target_properties(libsodium-internal PROPERTIES
-    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/libsodium.a
+    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_file}
 )
 target_include_directories(libsodium-internal
     SYSTEM BEFORE

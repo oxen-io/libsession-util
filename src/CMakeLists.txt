@@ -19,11 +19,20 @@ add_library(config
     fields.cpp
 )
 
-target_link_libraries(crypto PUBLIC
-    common
-    libsodium-internal)
-target_link_libraries(config PUBLIC
-    common
+target_link_libraries(crypto
+    PUBLIC
+    libsodium-internal
+    common)
+target_link_libraries(config
+    PUBLIC
     crypto
-    oxenc::oxenc)
+    oxenc::oxenc
+    common)
 
+add_library(libsession::config ALIAS config)
+add_library(libsession::crypto ALIAS crypto)
+export(
+    TARGETS config crypto common
+    NAMESPACE libsession::
+    FILE libsessionTargets.cmake
+)
