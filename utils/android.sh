@@ -53,7 +53,7 @@ cp -v ../external/oxen-encoding/oxenc/*.h x86_64/external/oxen-encoding/oxenc/ve
 
 for abi in "${abis[@]}"; do
     mkdir -p "$pkg"/lib/$abi
-    cp -v $abi/{external/libsodium-internal/lib/libsodium,src/libcrypto,src/libconfig}.a "$pkg"/lib/$abi
+    cp -v $abi/external/libsodium-internal/lib/*.a $abi/src/libsession-util-*.a "$pkg"/lib/$abi
 done
 
 tar cvJf "$archive" "$pkg"
