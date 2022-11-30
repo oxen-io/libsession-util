@@ -91,10 +91,12 @@ endif()
 
 
 set(shared_static --disable-shared --enable-static)
-set(sodium_lib_file libsodium.a)
+set(sodium_lib_orig libsodium.a)
+set(sodium_lib_final libsodium-internal.a)
 if(BUILD_SHARED_LIBS)
     set(shared_static --enable-shared --disable-static)
-    set(sodium_lib_file libsodium.so)
+    set(sodium_lib_orig libsodium.so)
+    set(sodium_lib_final libsodium-internal.so)
 endif()
 
 include(ExternalProject)
@@ -103,16 +105,22 @@ ExternalProject_Add(libsodium-internal_ext
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal/configure --prefix=${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal
         ${cross_host} ${cross_rc}
         ${shared_static} "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_file}
+    INSTALL_COMMAND make install &&
+        ${CMAKE_COMMAND} -E rename ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_orig} ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_final}
+    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_final}
         ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include/sodium.h
 )
-add_library(libsodium-internal STATIC IMPORTED GLOBAL)
+if(BUILD_SHARED_LIBS)
+    add_library(libsodium-internal SHARED IMPORTED GLOBAL)
+else()
+    add_library(libsodium-internal STATIC IMPORTED GLOBAL)
+endif()
 add_dependencies(libsodium-internal libsodium-internal_ext)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include)
 
 set_target_properties(libsodium-internal PROPERTIES
-    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_file}
+    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_final}
 )
 target_include_directories(libsodium-internal
     SYSTEM BEFORE

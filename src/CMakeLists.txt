@@ -9,6 +9,9 @@ endif()
 add_library(crypto
     xed25519.cpp
 )
+set_target_properties(
+    crypto
+    PROPERTIES OUTPUT_NAME session-util-crypto)
 
 add_library(config
     bt_merge.cpp
@@ -18,6 +21,9 @@ add_library(config
     config/user_profile.cpp
     fields.cpp
 )
+set_target_properties(
+    config
+    PROPERTIES OUTPUT_NAME session-util-config)
 
 target_link_libraries(crypto
     PUBLIC
