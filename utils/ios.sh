@@ -3,7 +3,7 @@
 set -e
 
 if ! [ -f LICENSE ] || ! [ -d include/session ]; then
-    echo "You need to run this as ./utils/ios.sh from the top-level libsession-util project directory"
+    echo "You need to run this as ./utils/ios.sh from the top-level libsession-util project directory" >&2
     exit 1
 fi
 
@@ -57,7 +57,7 @@ xcodebuild -create-xcframework \
     -output "$pkg_dir/libsession-util.xcframework"
 
 # Copy the headers over
-cp -rv include/session $pkg_dir/libsession-util.xcframework
+cp -rv include/session "$pkg_dir/libsession-util.xcframework"
 
 # The 'module.modulemap' is needed for XCode to be able to find the headers
 modmap="$pkg_dir/libsession-util.xcframework/module.modulemap"
