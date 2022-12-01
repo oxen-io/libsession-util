@@ -128,6 +128,10 @@ extern "C" {
 
 using namespace session::config;
 
+LIBSESSION_EXPORT void config_free(config_object* conf) {
+    delete conf;
+}
+
 LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
     return static_cast<int16_t>(unbox(conf)->storage_namespace());
 }
