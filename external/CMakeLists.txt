@@ -1,3 +1,4 @@
+set(deps_cc "${CMAKE_C_COMPILER}")
 set(cross_host "")
 set(cross_rc "")
 set(default_force_submodule OFF)
@@ -9,6 +10,29 @@ if(CMAKE_CROSSCOMPILING)
             set(APPLE_TARGET_TRIPLE x86_64-apple-ios)
         endif()
         set(cross_host "--host=${APPLE_TARGET_TRIPLE}")
+    elseif(ANDROID)
+        if(CMAKE_ANDROID_ARCH_ABI MATCHES x86_64)
+            set(cross_host "--host=x86_64-linux-android")
+            set(android_compiler_prefix x86_64)
+            set(android_compiler_suffix linux-android)
+        elseif(CMAKE_ANDROID_ARCH_ABI MATCHES x86)
+            set(cross_host "--host=i686-linux-android")
+            set(android_compiler_prefix i686)
+            set(android_compiler_suffix linux-android)
+        elseif(CMAKE_ANDROID_ARCH_ABI MATCHES armeabi-v7a)
+            set(cross_host "--host=armv7a-linux-androideabi")
+            set(android_compiler_prefix armv7a)
+            set(android_compiler_suffix linux-androideabi)
+        elseif(CMAKE_ANDROID_ARCH_ABI MATCHES arm64-v8a)
+            set(cross_host "--host=aarch64-linux-android")
+            set(android_compiler_prefix aarch64)
+            set(android_compiler_suffix linux-android)
+        else()
+            message(FATAL_ERROR "unknown android arch: ${CMAKE_ANDROID_ARCH_ABI}")
+        endif()
+
+        string(REPLACE "android-" "" android_platform_num "${ANDROID_PLATFORM}")
+        set(deps_cc "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_compiler_prefix}-${android_compiler_suffix}${android_platform_num}-clang")
     else()
         set(cross_host "--host=${ARCH_TRIPLET}")
         if (ARCH_TRIPLET MATCHES mingw AND CMAKE_RC_COMPILER)
@@ -47,13 +71,12 @@ endmacro()
 system_or_submodule(OXENC oxenc liboxenc>=1.0.6 oxen-encoding)
 
 
-set(deps_cc "${CMAKE_C_COMPILER}")
 if(CMAKE_C_COMPILER_LAUNCHER)
   set(deps_cc "${CMAKE_C_COMPILER_LAUNCHER} ${deps_cc}")
 endif()
 set(deps_CFLAGS "-O2")
 
-if(WITH_LTO)
+if(IPO_ENABLED)
   set(deps_CFLAGS "${deps_CFLAGS} -flto")
 endif()
 
@@ -66,22 +89,34 @@ if(APPLE)
     endforeach()
 endif()
 
+
+set(shared_static --disable-shared --enable-static)
+set(sodium_lib_name libsodium-internal.a)
+if(BUILD_SHARED_LIBS)
+    set(shared_static --enable-shared --disable-static)
+    set(sodium_lib_name libsodium-internal.so)
+endif()
+
 include(ExternalProject)
 ExternalProject_Add(libsodium-internal_ext
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal/configure --prefix=${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal
         ${cross_host} ${cross_rc}
-        --disable-shared --enable-static --with-pic "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/libsodium.a
+        ${shared_static} "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
+    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_name}
         ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include/sodium.h
 )
-add_library(libsodium-internal STATIC IMPORTED GLOBAL)
+if(BUILD_SHARED_LIBS)
+    add_library(libsodium-internal SHARED IMPORTED GLOBAL)
+else()
+    add_library(libsodium-internal STATIC IMPORTED GLOBAL)
+endif()
 add_dependencies(libsodium-internal libsodium-internal_ext)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include)
 
 set_target_properties(libsodium-internal PROPERTIES
-    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/libsodium.a
+    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_name}
 )
 target_include_directories(libsodium-internal
     SYSTEM BEFORE

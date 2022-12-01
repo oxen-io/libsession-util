@@ -9,6 +9,9 @@ endif()
 add_library(crypto
     xed25519.cpp
 )
+set_target_properties(
+    crypto
+    PROPERTIES OUTPUT_NAME session-util-crypto)
 
 add_library(config
     bt_merge.cpp
@@ -17,14 +20,25 @@ add_library(config
     config/error.c
     config/user_profile.cpp
     fields.cpp
-    groups_closed.cpp
 )
+set_target_properties(
+    config
+    PROPERTIES OUTPUT_NAME session-util-config)
 
-target_link_libraries(crypto PUBLIC
-    common
-    libsodium-internal)
-target_link_libraries(config PUBLIC
-    common
+target_link_libraries(crypto
+    PUBLIC
+    libsodium-internal
+    common)
+target_link_libraries(config
+    PUBLIC
     crypto
-    oxenc::oxenc)
+    oxenc::oxenc
+    common)
 
+add_library(libsession::config ALIAS config)
+add_library(libsession::crypto ALIAS crypto)
+export(
+    TARGETS config crypto common
+    NAMESPACE libsession::
+    FILE libsessionTargets.cmake
+)
