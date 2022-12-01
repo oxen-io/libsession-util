@@ -40,17 +40,24 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(default_static_libstd OFF)
+if(WIN32)
+    set(default_static_libstd ON)
+endif()
+
+if(MINGW OR ANDROID OR IOS OR STATIC_BUNDLE)
+  set(use_lto_default OFF)
+else()
+  set(use_lto_default ON)
+endif()
+
+
+
 option(WARNINGS_AS_ERRORS "Treat all compiler warnings as errors" OFF)
 option(STATIC_LIBSTD "Statically link libstdc++/libgcc" ${default_static_libstd})
 option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" OFF)
 option(BUILD_SHARED_LIBS "Build as shared library" OFF)
-option(USE_LTO "Use Link-Time Optimization" ${USE_LTO_DEFAULT})
-
-if(MINGW OR ANDROID OR IOS OR STATIC_BUNDLE)
-  set(USE_LTO_DEFAULT OFF)
-else()
-  set(USE_LTO_DEFAULT ON)
-endif()
+option(USE_LTO "Use Link-Time Optimization" ${use_lto_default})
 
 if(USE_LTO)
   include(CheckIPOSupported)
@@ -67,11 +74,6 @@ endif()
 
 if(IPO_ENABLED AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-endif()
-
-set(default_static_libstd OFF)
-if(WIN32)
-    set(default_static_libstd ON)
 endif()
 
 if(STATIC_LIBSTD)
