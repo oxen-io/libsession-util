@@ -1,19 +1,41 @@
 #include "session/config/user_profile.h"
 
+#include <sodium/crypto_generichash_blake2b.h>
+
 #include "session/config/error.h"
 #include "session/config/user_profile.hpp"
 
 using namespace session::config;
 
+void UserProfile::load_key(std::string_view ed25519_secretkey) {
+    if (!(ed25519_secretkey.size() == 64 || ed25519_secretkey.size() == 32))
+        throw std::invalid_argument{
+                "UserProfile requires an Ed25519 64-byte secret key or 32-byte seed"};
+
+    add_key(ed25519_secretkey.substr(0, 32));
+}
+
+UserProfile::UserProfile(std::string_view ed25519_secretkey, std::optional<std::string_view> dumped) :
+        ConfigBase{dumped} {
+    load_key(ed25519_secretkey);
+}
+
 LIBSESSION_C_API int user_profile_init(
-        config_object** conf, const char* dump, size_t dumplen, char* error) {
+        config_object** conf,
+        const char* ed25519_secretkey_bytes,
+        const char* dumpstr,
+        size_t dumplen,
+        char* error) {
+    assert(ed25519_secretkey);
+    std::string_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
     auto c_conf = std::make_unique<config_object>();
     auto c = std::make_unique<internals<UserProfile>>();
+    std::optional<std::string_view> dump;
+    if (dumpstr && dumplen)
+        dump.emplace(dumpstr, dumplen);
+
     try {
-        if (dump && dumplen)
-            c->config = std::make_unique<UserProfile>(std::string_view{dump, dumplen});
-        else
-            c->config = std::make_unique<UserProfile>();
+        c->config = std::make_unique<UserProfile>(ed25519_secretkey, dump);
     } catch (const std::exception& e) {
         if (error) {
             std::string msg = e.what();

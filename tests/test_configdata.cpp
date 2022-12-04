@@ -1128,8 +1128,8 @@ TEST_CASE("config message encryption", "[config][encrypt]") {
     std::string key2 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"_hex;
     auto enc1 = config::encrypt(message1, key1, "test-suite1");
     CHECK(oxenc::to_hex(enc1) ==
-          "b8ccdedaa8e8bc7865990a1c1b5e04d0599fb137b50fc9d287cd89"
-          "8ce0a4e03091ea37722cb9368f5f3c7ab0f3a25a159a949766e0bd");
+          "f14f242a26638f3305707d1035e734577f943cd7d28af58e32637e"
+          "0966dcaf2f4860cb4d0f8ba7e09d29e31f5e4a18f65847287a54a0");
     auto enc2 = config::encrypt(message1, key1, "test-suite2");
     CHECK(oxenc::to_hex(enc2) != oxenc::to_hex(enc1));
     auto enc3 = config::encrypt(message1, key2, "test-suite1");
@@ -1137,8 +1137,8 @@ TEST_CASE("config message encryption", "[config][encrypt]") {
     auto nonce = enc1.substr(enc1.size() - 24);
     auto nonce2 = enc2.substr(enc2.size() - 24);
     auto nonce3 = enc3.substr(enc3.size() - 24);
-    CHECK(oxenc::to_hex(nonce) == "e03091ea37722cb9368f5f3c7ab0f3a25a159a949766e0bd");
-    CHECK(oxenc::to_hex(nonce2) == "60675bceb97e2323b6cc543a3d54a6da58e4cae08bafe3b8");
+    CHECK(oxenc::to_hex(nonce) == "af2f4860cb4d0f8ba7e09d29e31f5e4a18f65847287a54a0");
+    CHECK(oxenc::to_hex(nonce2) == "277e639d36ba46470dfff509a68cb73d9a96386c51739bdd");
     CHECK(oxenc::to_hex(nonce3) == oxenc::to_hex(nonce));
 
     auto plain = config::decrypt(enc1, key1, "test-suite1");

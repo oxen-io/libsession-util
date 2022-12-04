@@ -93,6 +93,25 @@ void config_dump(config_object* conf, char** out, size_t* outlen);
 /// and saving the `config_dump()` data again.
 bool config_needs_dump(const config_object* conf);
 
+
+/// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
+/// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).
+void config_add_key(config_object* conf, const char* key);
+void config_add_key_low_prio(config_object* conf, const char* key);
+int config_clear_keys(config_object* conf);
+bool config_remove_key(config_object* conf, const char* key);
+int config_key_count(const config_object* conf);
+bool config_has_key(const config_object* conf, const char* key);
+// Returns a pointer to the 32-byte binary key at position i.  This is *not* null terminated (and is
+// exactly 32 bytes long).  `i < config_key_count(conf)` must be satisfied.  Ownership of the data
+// remains in the object (that is: the caller must not attempt to free it).
+const char* config_key(const config_object* conf, size_t i);
+
+/// Returns the encryption domain C-str used to encrypt values for this config object.  (This is
+/// here only for debugging/testing).
+const char* config_encryption_domain(const config_object* conf);
+
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

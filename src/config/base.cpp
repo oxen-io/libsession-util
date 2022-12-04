@@ -1,5 +1,11 @@
 #include "session/config/base.hpp"
 
+#include <oxenc/hex.h>
+#include <sodium/core.h>
+#include <sodium/utils.h>
+
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "session/config/base.h"
@@ -18,6 +24,10 @@ MutableConfigMessage& ConfigBase::dirty() {
 }
 
 int ConfigBase::merge(const std::vector<std::string_view>& configs) {
+
+    if (_keys_size == 0)
+        throw std::logic_error{"Cannot merge configs without any decryption keys"};
+
     const auto old_seqno = _config->seqno();
     std::vector<std::string_view> all_confs;
     all_confs.reserve(configs.size() + 1);
@@ -26,7 +36,58 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
     // value was pushed).
     auto mine = _config->serialize();
     all_confs.emplace_back(mine);
-    all_confs.insert(all_confs.end(), configs.begin(), configs.end());
+
+    std::vector<std::string> plaintexts;
+
+    // TODO:
+    // - handle zstd-compressed messages: if the decrypted data starts with a `z` (instead of a `d`)
+    //   then we decompress it first.
+    // - handle multipart messages.  Each part of a multipart message starts with `m` and then is
+    //   immediately followed by a bt_list where:
+    //   - element 0 is 'z' for a zstd-compressed message, 'p' for an uncompressed message.
+    //   - element 1 is the hash of the final, uncompressed, re-assembled message.
+    //   - element 2 is the numeric sequence number of the message, starting from 0.
+    //   - element 3 is the total number of messages in the sequence.
+    //   - element 4 is a chunk of the data.
+    for (size_t ci = 0; ci < configs.size(); ci++) {
+        auto& conf = configs[ci];
+        std::optional<std::string> plaintext;
+        bool decrypted = false;
+        for (size_t i = 0; !decrypted && i < _keys_size; i++) {
+            try {
+                plaintexts.push_back(decrypt(conf, key(i), encryption_domain()));
+                decrypted = true;
+            } catch (const decrypt_error&) {
+                log(LogLevel::debug,
+                    "Failed to decrypt message " + std::to_string(ci) + " using key " +
+                            std::to_string(i));
+            }
+        }
+        if (!decrypted)
+            log(LogLevel::warning, "Failed to decrypt message " + std::to_string(ci));
+    }
+    log(LogLevel::debug,
+        "successfully decrypted " + std::to_string(plaintexts.size()) + " of " +
+                std::to_string(configs.size()) + " incoming messages");
+
+    for (const auto& conf : plaintexts) {
+        if (conf[0] == 'd') {
+            // Plaintext config message, this is easy
+            all_confs.push_back(conf);
+        } else if (conf[0] == 'z') {
+            // TODO FIXME (see above)
+            log(LogLevel::warning, "decompression not yet supported!");
+        } else if (conf[0] == 'm') {
+            // TODO FIXME (see above)
+            log(LogLevel::warning, "multi-part messages not yet supported!");
+        } else {
+            log(LogLevel::error,
+                "invalid/unsupported config message with type " +
+                        (conf[0] >= 0x20 && conf[0] <= 0x7e
+                                 ? "'" + conf.substr(0, 1) + "'"
+                                 : "0x" + oxenc::to_hex(conf.begin(), conf.begin() + 1)));
+        }
+    }
 
     int good = all_confs.size();
 
@@ -56,10 +117,16 @@ bool ConfigBase::needs_push() const {
 }
 
 std::pair<std::string, seqno_t> ConfigBase::push() {
+    if (_keys_size == 0)
+        throw std::logic_error{"Cannot push data without an encryption key!"};
+
     if (is_dirty())
         set_state(ConfigState::Waiting);
 
-    return {_config->serialize(), _config->seqno()};
+    std::pair<std::string, seqno_t> ret{_config->serialize(), _config->seqno()};
+
+    ret.first = encrypt(std::move(ret.first), key(), encryption_domain());
+    return ret;
 }
 
 void ConfigBase::confirm_pushed(seqno_t seqno) {
@@ -81,12 +148,15 @@ std::string ConfigBase::dump() {
     return oxenc::bt_serialize(d);
 }
 
-ConfigBase::ConfigBase() {
-    _config = std::make_unique<ConfigMessage>();
-}
+ConfigBase::ConfigBase(std::optional<std::string_view> dump) {
+    if (sodium_init() == -1)
+        throw std::runtime_error{"libsodium initialization failed!"};
+    if (!dump) {
+        _config = std::make_unique<ConfigMessage>();
+        return;
+    }
 
-ConfigBase::ConfigBase(std::string_view dump) {
-    oxenc::bt_dict_consumer d{dump};
+    oxenc::bt_dict_consumer d{*dump};
     if (!d.skip_until("!"))
         throw std::runtime_error{"Unable to parse dumped config data: did not find '!' state key"};
     _state = static_cast<ConfigState>(d.consume_integer<int>());
@@ -113,6 +183,101 @@ ConfigBase::ConfigBase(std::string_view dump) {
     if (d.skip_until("+"))
         if (auto extra = d.consume_dict(); !extra.empty())
             load_extra_data(std::move(extra));
+}
+
+ConfigBase::~ConfigBase() {
+    sodium_free(_keys);
+}
+
+int ConfigBase::key_count() const {
+    return _keys_size;
+}
+
+bool ConfigBase::has_key(std::string_view key) const {
+    if (key.size() != 32)
+        throw std::invalid_argument{"invalid key given to has_key(): not 32-bytes"};
+
+    auto* keyptr = reinterpret_cast<const unsigned char*>(key.data());
+    for (size_t i = 0; i < _keys_size; i++)
+        if (sodium_memcmp(keyptr, _keys[i].data(), KEY_SIZE) == 0)
+            return true;
+    return false;
+}
+
+std::vector<std::string_view> ConfigBase::get_keys() const {
+    std::vector<std::string_view> ret;
+    ret.reserve(_keys_size);
+    for (size_t i = 0; i < _keys_size; i++)
+        ret.emplace_back(reinterpret_cast<const char*>(_keys[i].data()), _keys[i].size());
+    return ret;
+}
+
+void ConfigBase::add_key(std::string_view key, bool high_priority) {
+    static_assert(
+            sizeof(Key) == KEY_SIZE, "std::array appears to have some overhead which seems bad");
+
+    if (key.size() != KEY_SIZE)
+        throw std::invalid_argument{"add_key failed: key size must be 32 bytes"};
+
+    if (_keys_size > 0 && sodium_memcmp(_keys[0].data(), key.data(), KEY_SIZE) == 0)
+        return;
+    else if (!high_priority && has_key(key))
+        return;
+
+    if (_keys_capacity == 0) {
+        // There's not a lot of point in starting this off really small: sodium is likely going to
+        // use at least a page size anyway.
+        _keys_capacity = 16;
+        _keys = static_cast<Key*>(sodium_allocarray(_keys_capacity, KEY_SIZE));
+    }
+
+    if (_keys_size >= _keys_capacity) {
+        _keys_capacity *= 2;
+        auto new_keys = static_cast<Key*>(sodium_allocarray(_keys_capacity, 32));
+        if (high_priority) {
+            std::memcpy(new_keys[0].data(), key.data(), KEY_SIZE);
+            std::memcpy(&new_keys[1], _keys, _keys_size * KEY_SIZE);
+        } else {
+            std::memcpy(&new_keys[0], _keys, _keys_size * KEY_SIZE);
+            std::memcpy(new_keys[_keys_size].data(), key.data(), KEY_SIZE);
+        }
+        sodium_free(_keys);
+        _keys = new_keys;
+    } else if (high_priority) {
+        // shift everything up so we can insert at beginning
+        std::memmove(&_keys[1], &_keys[0], _keys_size * KEY_SIZE);
+        std::memcpy(_keys[0].data(), key.data(), KEY_SIZE);
+    } else {
+        // add at the end
+        std::memcpy(_keys[_keys_size].data(), key.data(), KEY_SIZE);
+    }
+    _keys_size++;
+
+    // *Slightly* suboptimal in that we might change buffers above even when we didn't need to, but
+    // not worth worrying about optimizing.
+    if (high_priority)
+        remove_key(key, 1);
+}
+
+int ConfigBase::clear_keys() {
+    int ret = _keys_size;
+    _keys_size = 0;
+    return ret;
+}
+
+bool ConfigBase::remove_key(std::string_view key, size_t from) {
+    bool removed = false;
+
+    for (size_t i = from; i < _keys_size; i++) {
+        if (sodium_memcmp(_keys[0].data(), _keys[i].data(), KEY_SIZE) == 0) {
+            if (i + 1 < _keys_size)
+                std::memmove(&_keys[i], &_keys[i + 1], (_keys_size - i - 1) * KEY_SIZE);
+            _keys_size--;
+            removed = true;
+            // Don't break, in case there are somehow duplicates in here
+        }
+    }
+    return removed;
 }
 
 void set_error(config_object* conf, std::string e) {
@@ -173,6 +338,42 @@ LIBSESSION_EXPORT void config_dump(config_object* conf, char** out, size_t* outl
 
 LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {
     return unbox(conf)->needs_dump();
+}
+
+LIBSESSION_EXPORT void config_add_key(config_object* conf, const char* key) {
+    unbox(conf)->add_key({key, 32});
+}
+LIBSESSION_EXPORT void config_add_key_low_prio(config_object* conf, const char* key) {
+    unbox(conf)->add_key({key, 32}, /*high_priority=*/false);
+}
+LIBSESSION_EXPORT int config_clear_keys(config_object* conf) {
+    return unbox(conf)->clear_keys();
+}
+LIBSESSION_EXPORT bool config_remove_key(config_object* conf, const char* key) {
+    return unbox(conf)->remove_key({key, 32});
+}
+LIBSESSION_EXPORT int config_key_count(const config_object* conf) {
+    return unbox(conf)->key_count();
+}
+LIBSESSION_EXPORT bool config_has_key(const config_object* conf, const char* key) {
+    return unbox(conf)->has_key({key, 32});
+}
+LIBSESSION_EXPORT const char* config_key(const config_object* conf, size_t i) {
+    return unbox(conf)->key(i).data();
+}
+
+LIBSESSION_EXPORT const char* config_encryption_domain(const config_object* conf) {
+    return unbox(conf)->encryption_domain();
+}
+
+LIBSESSION_EXPORT void config_set_logger(
+        config_object* conf, void (*callback)(config_log_level, const char*, void*), void* ctx) {
+    if (!callback)
+        unbox(conf)->logger = nullptr;
+    else
+        unbox(conf)->logger = [callback, ctx](LogLevel lvl, std::string msg) {
+            callback(static_cast<config_log_level>(static_cast<int>(lvl)), msg.c_str(), ctx);
+        };
 }
 
 }  // extern "C"

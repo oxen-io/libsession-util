@@ -42,12 +42,8 @@ namespace {
         should_remove = d.empty();
         return result;
     }
-    std::pair<bool, bool> prune_(scalar&) {
-        return {false, false};
-    }
-    std::pair<bool, bool> prune_(set& s) {
-        return {s.empty(), false};
-    }
+    std::pair<bool, bool> prune_(scalar&) { return {false, false}; }
+    std::pair<bool, bool> prune_(set& s) { return {s.empty(), false}; }
     std::pair<bool, bool> prune_(dict_value& v) {
         return var::visit([](auto& x) { return prune_(x); }, unwrap(v));
     }
@@ -385,9 +381,7 @@ namespace {
         return reinterpret_cast<const unsigned char*>(x);
     }
 
-    ustring_view to_unsigned_sv(std::string_view v) {
-        return {to_unsigned(v.data()), v.size()};
-    }
+    ustring_view to_unsigned_sv(std::string_view v) { return {to_unsigned(v.data()), v.size()}; }
 
     hash_t& hash_msg(hash_t& into, ustring_view serialized) {
         crypto_generichash_blake2b(
@@ -809,7 +803,7 @@ const hash_t& MutableConfigMessage::hash(std::string_view serialized) {
 }
 
 static constexpr size_t DOMAIN_MAX_SIZE = 24;
-static constexpr auto NONCE_KEY_PREFIX = "session-config-encrypted-message-"sv;
+static constexpr auto NONCE_KEY_PREFIX = "libsessionutil-config-encrypted-"sv;
 static_assert(NONCE_KEY_PREFIX.size() + DOMAIN_MAX_SIZE < crypto_generichash_blake2b_KEYBYTES_MAX);
 
 static std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> make_encrypt_key(
@@ -836,7 +830,7 @@ static std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> ma
 }
 
 template <typename Char>
-static std::basic_string<Char> encrypt(
+static std::basic_string<Char> encrypt_impl(
         ustring_view message, ustring_view key_base, std::string_view domain) {
     auto key = make_encrypt_key(key_base, message.size(), domain);
 
@@ -878,14 +872,14 @@ static std::basic_string<Char> encrypt(
 }
 
 ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain) {
-    return encrypt<unsigned char>(message, key_base, domain);
+    return encrypt_impl<unsigned char>(message, key_base, domain);
 }
 std::string encrypt(std::string_view message, std::string_view key_base, std::string_view domain) {
-    return encrypt<char>(to_unsigned_sv(message), to_unsigned_sv(key_base), domain);
+    return encrypt_impl<char>(to_unsigned_sv(message), to_unsigned_sv(key_base), domain);
 }
 
 template <typename Char>
-static std::basic_string<Char> decrypt(
+static std::basic_string<Char> decrypt_impl(
         ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
     size_t message_len = ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES -
                          crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
@@ -919,11 +913,54 @@ static std::basic_string<Char> decrypt(
 }
 
 ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
-    return decrypt<unsigned char>(ciphertext, key_base, domain);
+    return decrypt_impl<unsigned char>(ciphertext, key_base, domain);
 }
 std::string decrypt(
         std::string_view ciphertext, std::string_view key_base, std::string_view domain) {
-    return decrypt<char>(to_unsigned_sv(ciphertext), to_unsigned_sv(key_base), domain);
+    return decrypt_impl<char>(to_unsigned_sv(ciphertext), to_unsigned_sv(key_base), domain);
 }
 
 }  // namespace session::config
+
+extern "C" {
+
+char* config_encrypt(
+        const char* plaintext,
+        size_t len,
+        const char* key_base,
+        const char* domain,
+        size_t* ciphertext_size) {
+
+    std::string ciphertext;
+    try {
+        ciphertext = session::config::encrypt({plaintext, len}, {key_base, 32}, domain);
+    } catch (...) {
+        return nullptr;
+    }
+
+    char* data = static_cast<char*>(std::malloc(ciphertext.size()));
+    std::memcpy(data, ciphertext.data(), ciphertext.size());
+    *ciphertext_size = ciphertext.size();
+    return data;
+}
+
+char* config_decrypt(
+        const char* ciphertext,
+        size_t clen,
+        const char* key_base,
+        const char* domain,
+        size_t* plaintext_size) {
+
+    std::string plaintext;
+    try {
+        plaintext = session::config::decrypt({ciphertext, clen}, {key_base, 32}, domain);
+    } catch (const std::exception& e) {
+        return nullptr;
+    }
+
+    char* data = static_cast<char*>(std::malloc(plaintext.size()));
+    std::memcpy(data, plaintext.data(), plaintext.size());
+    *plaintext_size = plaintext.size();
+    return data;
+}
+}
