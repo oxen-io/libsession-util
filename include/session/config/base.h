@@ -26,6 +26,26 @@ typedef struct config_object {
 /// user_profile_init).
 void config_free(config_object* conf);
 
+enum config_log_level {
+    LOG_LEVEL_DEBUG = 0,
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARNING,
+    LOG_LEVEL_ERROR
+};
+/// Sets a logging function; takes the log function pointer and a context pointer (which can be NULL
+/// if not needed).  The given function pointer will be invoked with one of the above values, a
+/// null-terminated c string containing the log message, and the void* context object given when
+/// setting the logger (this is for caller-specific state data and won't be touched).
+///
+/// The logging function must have signature:
+///
+/// void log(config_log_level lvl, const char* msg, void* ctx);
+///
+/// Can be called with callback set to NULL to clear an existing logger.
+///
+/// The config object itself has no log level: the caller should filter by level as needed.
+void config_set_logger(config_object* conf, void(*callback)(config_log_level, const char*, void*), void* ctx);
+
 /// Returns the numeric namespace in which config messages of this type should be stored.
 int16_t config_storage_namespace(const config_object* conf);
 

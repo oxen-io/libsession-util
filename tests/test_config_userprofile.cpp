@@ -26,6 +26,14 @@ std::string printable(const char* x, size_t n) {
 
 }  // namespace
 
+void log_msg(config_log_level lvl, const char* msg, void*) {
+    INFO((lvl == LOG_LEVEL_ERROR     ? "ERROR"
+          : lvl == LOG_LEVEL_WARNING ? "Warning"
+          : lvl == LOG_LEVEL_INFO    ? "Info"
+                                     : "debug")
+         << ": " << msg);
+}
+
 TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Initialize a brand new, empty config because we have no dump data to deal with.
@@ -33,6 +41,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     config_object* conf;
     int rc = user_profile_init(&conf, NULL, 0, err);
     REQUIRE(rc == 0);
+
+    config_set_logger(conf, log_msg, NULL);
 
     // We don't need to push anything, since this is an empty config
     CHECK_FALSE(config_needs_push(conf));
@@ -152,6 +162,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // Start with an empty config, as above:
     config_object* conf2;
     REQUIRE(user_profile_init(&conf2, NULL, 0, err) == 0);
+    config_set_logger(conf2, log_msg, NULL);
     CHECK_FALSE(config_needs_dump(conf2));
 
     // Now imagine we just pulled down the `exp_push1` string from the swarm; we merge it into
