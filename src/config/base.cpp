@@ -70,7 +70,10 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
         "successfully decrypted " + std::to_string(plaintexts.size()) + " of " +
                 std::to_string(configs.size()) + " incoming messages");
 
-    for (const auto& conf : plaintexts) {
+    for (const auto& maybe_padded : plaintexts) {
+        std::string_view conf{maybe_padded};
+        if (auto p = maybe_padded.find_first_not_of('\0'); p > 0 && p != std::string_view::npos)
+            conf.remove_prefix(p);
         if (conf[0] == 'd') {
             // Plaintext config message, this is easy
             all_confs.push_back(conf);
@@ -84,7 +87,7 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
             log(LogLevel::error,
                 "invalid/unsupported config message with type " +
                         (conf[0] >= 0x20 && conf[0] <= 0x7e
-                                 ? "'" + conf.substr(0, 1) + "'"
+                                 ? "'" + std::string{conf.substr(0, 1)} + "'"
                                  : "0x" + oxenc::to_hex(conf.begin(), conf.begin() + 1)));
         }
     }
@@ -124,6 +127,10 @@ std::pair<std::string, seqno_t> ConfigBase::push() {
         set_state(ConfigState::Waiting);
 
     std::pair<std::string, seqno_t> ret{_config->serialize(), _config->seqno()};
+
+    // Prefix pad with nulls:
+    if (size_t over_boundary = ret.first.size() % PADDING_INCREMENT)
+        ret.first.insert(0, PADDING_INCREMENT - over_boundary, '\0');
 
     ret.first = encrypt(std::move(ret.first), key(), encryption_domain());
     return ret;

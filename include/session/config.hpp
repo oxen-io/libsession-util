@@ -15,6 +15,9 @@ namespace session::config {
 
 inline constexpr int MAX_MESSAGE_SIZE = 76800;  // 76.8kB = Storage server's limit
 
+// When encrypting we pad out the plaintext to a multiple of this:
+inline constexpr int PADDING_INCREMENT = 256;
+
 // Application data data types:
 using scalar = std::variant<int64_t, std::string>;
 

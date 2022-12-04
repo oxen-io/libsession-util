@@ -82,7 +82,9 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     char* to_push_decrypted =
             config_decrypt(to_push, to_push_len, ed_sk_cdata, enc_domain, &to_push_decr_size);
     REQUIRE(to_push_decrypted);
-    CHECK(std::string_view{to_push_decrypted, to_push_decr_size} == "d1:#i0e1:&de1:<le1:=dee"sv);
+    CHECK(to_push_decr_size == 256);
+    CHECK(std::string_view{to_push_decrypted, to_push_decr_size} ==
+          std::string(233, '\0') + "d1:#i0e1:&de1:<le1:=dee");
 
     free(to_push);
     free(to_push_decrypted);
@@ -146,17 +148,22 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "e";
     // clang-format on
     auto exp_push1_encrypted =
-            "e8ca2885701dc4789e40566bb9993bef01d03236d9ea4d41bb8d0a41c9c06e85134f9c0fa3978ad032b5bf"
-            "dbb7090adfeda48358dff88e6c7edd4724822f13a2274af7b9410df2112d30d50624c40ca1a269f6a55995"
-            "90d95dd1f69083059c9e001fd9937f9df4be915e27382911dccc4c393fc84d3f59b2cd024a1e3e1f09ad4e"
-            "fa592d9c0023a52a4d0c93430a4f33af0c377791ec7ee6d737c712913da58912b1174396f3ad5982dfb1c9"
-            "950d4f16942e3f8f92c6"_hex;
+            "18767b5bcc1e0696d94a46ffe6d1cece0339d9290a6ced97ee2279d9fe6f4f79d80a469369e498f96f403d"
+            "2f21de54976dbe218af0e188c3e74e1a2f761cea186eb10bbd9aeebe8d5074b7eb41b4d2965db315cf56f7"
+            "080b576113fc525da840193a2713a7f81dabbf76e98ea0f9b18e819128de4de6e6acff6b31fae0c4daf07d"
+            "25fb7d8bff009e61307471485daaf5bb0a70bc5dfaf1cc7ec46bf389296d0f84950ef90f7e257cffdb5d1c"
+            "c7bff654f607afe97a42b0d874fbf55a8d5d4444a7b5f223375aec764c1763b256ed2126104b2fb18e0759"
+            "795f037671c7a3d8ee68be7c09345baf593bef17cc941da9536361b65ff107177eb4fa100c74ead77bd0cd"
+            "567bf56325ecc73d8056fbdaec9d4b1323edc38c71174114197818d4a386dfb698d915c2c21d"_hex;
 
     CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == oxenc::to_hex(exp_push1_encrypted));
 
+    // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
     to_push_decrypted =
             config_decrypt(to_push, to_push_len, ed_sk_cdata, enc_domain, &to_push_decr_size);
-    CHECK(printable(to_push_decrypted, to_push_decr_size) == printable(exp_push1_decrypted));
+    CHECK(to_push_decr_size == 256);
+    CHECK(printable(to_push_decrypted, to_push_decr_size) ==
+          printable(std::string(256 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
 
     // config_push gives us back a buffer that we are required to free when done.  (Without this
     // we'd leak memory!)
