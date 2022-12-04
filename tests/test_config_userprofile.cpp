@@ -171,7 +171,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     size_t merge_size[1];
     merge_data[0] = exp_push1.c_str();
     merge_size[0] = exp_push1.size();
-    config_merge(conf2, merge_data, merge_size, 1);
+    int accepted = config_merge(conf2, merge_data, merge_size, 1);
+    REQUIRE(accepted == 1);
 
     // Our state has changed, so we need to dump:
     CHECK(config_needs_dump(conf2));

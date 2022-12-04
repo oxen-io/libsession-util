@@ -55,7 +55,7 @@ int16_t config_storage_namespace(const config_object* conf);
 ///
 /// `configs` is an array of pointers to the start of the strings; `lengths` is an array of string
 /// lengths; `count` is the length of those two arrays.
-void config_merge(config_object* conf, const char** configs, const size_t* lengths, size_t count);
+int config_merge(config_object* conf, const char** configs, const size_t* lengths, size_t count);
 
 /// Returns true if this config object contains updated data that has not yet been confirmed stored
 /// on the server.

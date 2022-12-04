@@ -17,7 +17,7 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
-void ConfigBase::merge(const std::vector<std::string_view>& configs) {
+int ConfigBase::merge(const std::vector<std::string_view>& configs) {
     const auto old_seqno = _config->seqno();
     std::vector<std::string_view> all_confs;
     all_confs.reserve(configs.size() + 1);
@@ -28,21 +28,27 @@ void ConfigBase::merge(const std::vector<std::string_view>& configs) {
     all_confs.emplace_back(mine);
     all_confs.insert(all_confs.end(), configs.begin(), configs.end());
 
+    int good = all_confs.size();
+
     auto new_conf = std::make_unique<ConfigMessage>(
             all_confs,
             nullptr, /* FIXME for signed messages: verifier */
             nullptr, /* FIXME for signed messages: signer */
             config_lags(),
             false, /* signature not optional (if we have a verifier) */
-            [this](const config_error& e) { log(LogLevel::warning, e.what()); });
+            [&](const config_error& e) {
+                good--;
+                log(LogLevel::warning, e.what());
+            });
 
-    if (new_conf->seqno() == old_seqno)
-        // If we get here than the merging affect nothing (otherwise seqno would have been
-        // incremented).
-        return;
+    if (new_conf->seqno() != old_seqno) {
+        _config = std::move(new_conf);
+        set_state(_config->merged() ? ConfigState::Dirty : ConfigState::Clean);
+    }
+    // else: the merging affect nothing (if it had seqno would have been incremented), so don't
+    // pointlessly replace the inner config object.
 
-    _config = std::move(new_conf);
-    set_state(_config->merged() ? ConfigState::Dirty : ConfigState::Clean);
+    return good - 1;  // -1 because we don't count the first one (reparsing ourself).
 }
 
 bool ConfigBase::needs_push() const {
@@ -136,14 +142,14 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
     return static_cast<int16_t>(unbox(conf)->storage_namespace());
 }
 
-LIBSESSION_EXPORT void config_merge(
+LIBSESSION_EXPORT int config_merge(
         config_object* conf, const char** configs, const size_t* lengths, size_t count) {
     auto& config = *unbox(conf);
     std::vector<std::string_view> confs;
     confs.reserve(count);
     for (size_t i = 0; i < count; i++)
         confs.emplace_back(configs[i], lengths[i]);
-    config.merge(confs);
+    return config.merge(confs);
 }
 
 LIBSESSION_EXPORT bool config_needs_push(const config_object* conf) {
