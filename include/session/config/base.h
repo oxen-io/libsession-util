@@ -8,14 +8,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(_WIN32) || defined(WIN32)
-#define LIBSESSION_EXPORT __declspec(dllexport)
-#else
-#define LIBSESSION_EXPORT __attribute__((visibility("default")))
-#endif
-#define LIBSESSION_C_API extern "C" LIBSESSION_EXPORT
-
-typedef int64_t seqno_t;
+#include "../config.h"
 
 // Config object base type: this type holds the internal object and is initialized by the various
 // config-dependent settings (e.g. config_user_profile_init) then passed to the various functions.
