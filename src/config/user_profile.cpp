@@ -26,7 +26,7 @@ LIBSESSION_C_API int user_profile_init(
         const char* dumpstr,
         size_t dumplen,
         char* error) {
-    assert(ed25519_secretkey);
+    assert(ed25519_secretkey_bytes);
     std::string_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
     auto c_conf = std::make_unique<config_object>();
     auto c = std::make_unique<internals<UserProfile>>();
