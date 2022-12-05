@@ -68,7 +68,7 @@ class ConfigBase {
     // Constructs a base config by loading the data from a dump as produced by `dump()`.  If the
     // dump is nullopt then an empty base config is constructed with no config settings and seqno
     // set to 0.
-    explicit ConfigBase(std::optional<std::string_view> dump = std::nullopt);
+    explicit ConfigBase(std::optional<ustring_view> dump = std::nullopt);
 
     // Tracks whether we need to dump again; most mutating methods should set this to true (unless
     // calling set_state, which sets to to true implicitly).
@@ -415,7 +415,7 @@ class ConfigBase {
     // Will throw on serious error (i.e. if neither the current nor any of the given configs are
     // parseable).  This should not happen (the current config, at least, should always be
     // re-parseable).
-    virtual int merge(const std::vector<std::string_view>& configs);
+    virtual int merge(const std::vector<ustring_view>& configs);
 
     // Returns true if we are currently dirty (i.e. have made changes that haven't been serialized
     // yet).
@@ -435,7 +435,7 @@ class ConfigBase {
     // the config is currently dirty (i.e. has previously unsent modifications) then this marks it
     // as awaiting-confirmation instead of dirty so that any future change immediately increments
     // the seqno.
-    std::pair<std::string, seqno_t> push();
+    std::pair<ustring, seqno_t> push();
 
     // Should be called after the push is confirmed stored on the storage server swarm to let the
     // object know the data is stored.  (Once this is called `needs_push` will start returning false
@@ -452,7 +452,7 @@ class ConfigBase {
     // into the constructor to reconstitute the object (including the push/not pushed status).  This
     // method is *not* virtual: if subclasses need to store extra data they should set it in the
     // `subclass_data` field.
-    std::string dump();
+    ustring dump();
 
     // Returns true if something has changed since the last call to `dump()` that requires calling
     // and saving the `dump()` data again.
@@ -477,7 +477,7 @@ class ConfigBase {
     // contrast to high_priority=true behaviour).
     //
     // Will throw a std::invalid_argument if the key is not 32 bytes.
-    void add_key(std::string_view key, bool high_priority = true);
+    void add_key(ustring_view key, bool high_priority = true);
 
     // Clears all stored encryption/decryption keys.  This is typically immediately followed with
     // one or more `add_key` call to replace existing keys.  Returns the number of keys removed.
@@ -488,24 +488,24 @@ class ConfigBase {
     //
     // The optional second argument removes the key only from position `from` or higher.  It is
     // mainly for internal use and is usually omitted.
-    bool remove_key(std::string_view key, size_t from = 0);
+    bool remove_key(ustring_view key, size_t from = 0);
 
     // Returns a vector of encryption keys, in priority order (i.e. element 0 is the encryption key,
     // and the first decryption key).
-    std::vector<std::string_view> get_keys() const;
+    std::vector<ustring_view> get_keys() const;
 
     // Returns the number of encryption keys.
     int key_count() const;
 
     // Returns true if the given key is already in the keys list.
-    bool has_key(std::string_view key) const;
+    bool has_key(ustring_view key) const;
 
     // Accesses the key at position i (0 if omitted).  There must be at least one key, and i must be
     // less than key_count().  The key at position 0 is used for encryption; for decryption all keys
     // are tried in order, starting from position 0.
-    std::string_view key(size_t i = 0) const {
+    ustring_view key(size_t i = 0) const {
         assert(i < _keys_size);
-        return {reinterpret_cast<const char*>(_keys[i].data()), _keys[i].size()};
+        return {_keys[i].data(), _keys[i].size()};
     }
 };
 
@@ -569,6 +569,6 @@ inline int set_error(config_object* conf, int errcode, const std::exception& e) 
 
 // Copies a value contained in a string into a new malloced char buffer, returning the buffer and
 // size via the two pointer arguments.
-void copy_out(const std::string& data, char** out, size_t* outlen);
+void copy_out(ustring_view data, unsigned char** out, size_t* outlen);
 
 }  // namespace session::config

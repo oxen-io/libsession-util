@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "session/config/base.h"
+#include "session/config/encrypt.hpp"
+#include "session/util.hpp"
 
 namespace session::config {
 
@@ -23,13 +25,13 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
-int ConfigBase::merge(const std::vector<std::string_view>& configs) {
+int ConfigBase::merge(const std::vector<ustring_view>& configs) {
 
     if (_keys_size == 0)
         throw std::logic_error{"Cannot merge configs without any decryption keys"};
 
     const auto old_seqno = _config->seqno();
-    std::vector<std::string_view> all_confs;
+    std::vector<ustring_view> all_confs;
     all_confs.reserve(configs.size() + 1);
     // We serialize our current config and include it in the list of configs to be merged, as if it
     // had already been pushed to the server (so that this code will be identical whether or not the
@@ -37,7 +39,7 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
     auto mine = _config->serialize();
     all_confs.emplace_back(mine);
 
-    std::vector<std::string> plaintexts;
+    std::vector<ustring> plaintexts;
 
     // TODO:
     // - handle zstd-compressed messages: if the decrypted data starts with a `z` (instead of a `d`)
@@ -51,7 +53,7 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
     //   - element 4 is a chunk of the data.
     for (size_t ci = 0; ci < configs.size(); ci++) {
         auto& conf = configs[ci];
-        std::optional<std::string> plaintext;
+        std::optional<ustring> plaintext;
         bool decrypted = false;
         for (size_t i = 0; !decrypted && i < _keys_size; i++) {
             try {
@@ -71,7 +73,7 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
                 std::to_string(configs.size()) + " incoming messages");
 
     for (const auto& maybe_padded : plaintexts) {
-        std::string_view conf{maybe_padded};
+        ustring_view conf{maybe_padded};
         if (auto p = maybe_padded.find_first_not_of('\0'); p > 0 && p != std::string_view::npos)
             conf.remove_prefix(p);
         if (conf[0] == 'd') {
@@ -87,7 +89,7 @@ int ConfigBase::merge(const std::vector<std::string_view>& configs) {
             log(LogLevel::error,
                 "invalid/unsupported config message with type " +
                         (conf[0] >= 0x20 && conf[0] <= 0x7e
-                                 ? "'" + std::string{conf.substr(0, 1)} + "'"
+                                 ? "'" + std::string{from_unsigned_sv(conf.substr(0, 1))} + "'"
                                  : "0x" + oxenc::to_hex(conf.begin(), conf.begin() + 1)));
         }
     }
@@ -119,14 +121,14 @@ bool ConfigBase::needs_push() const {
     return !is_clean();
 }
 
-std::pair<std::string, seqno_t> ConfigBase::push() {
+std::pair<ustring, seqno_t> ConfigBase::push() {
     if (_keys_size == 0)
         throw std::logic_error{"Cannot push data without an encryption key!"};
 
     if (is_dirty())
         set_state(ConfigState::Waiting);
 
-    std::pair<std::string, seqno_t> ret{_config->serialize(), _config->seqno()};
+    std::pair<ustring, seqno_t> ret{_config->serialize(), _config->seqno()};
 
     // Prefix pad with nulls:
     if (size_t over_boundary = ret.first.size() % PADDING_INCREMENT)
@@ -143,19 +145,22 @@ void ConfigBase::confirm_pushed(seqno_t seqno) {
         set_state(ConfigState::Clean);
 }
 
-std::string ConfigBase::dump() {
+ustring ConfigBase::dump() {
+    auto data = _config->serialize(false /* disable signing for local storage */);
+    auto data_sv = from_unsigned_sv(data);
     oxenc::bt_dict d{
             {"!", static_cast<int>(_state)},
-            {"$", _config->serialize(false /* disable signing for local storage */)},
+            {"$", data_sv},
     };
     if (auto extra = extra_data(); !extra.empty())
         d.emplace("+", std::move(extra));
 
     _needs_dump = false;
-    return oxenc::bt_serialize(d);
+    auto dumped = oxenc::bt_serialize(d);
+    return ustring{to_unsigned_sv(dumped)};
 }
 
-ConfigBase::ConfigBase(std::optional<std::string_view> dump) {
+ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
     if (sodium_init() == -1)
         throw std::runtime_error{"libsodium initialization failed!"};
     if (!dump) {
@@ -163,7 +168,7 @@ ConfigBase::ConfigBase(std::optional<std::string_view> dump) {
         return;
     }
 
-    oxenc::bt_dict_consumer d{*dump};
+    oxenc::bt_dict_consumer d{from_unsigned_sv(*dump)};
     if (!d.skip_until("!"))
         throw std::runtime_error{"Unable to parse dumped config data: did not find '!' state key"};
     _state = static_cast<ConfigState>(d.consume_integer<int>());
@@ -177,7 +182,7 @@ ConfigBase::ConfigBase(std::optional<std::string_view> dump) {
         // is a little more robust against failure if we actually sent it but got killed before we
         // could store a dump.
         _config = std::make_unique<MutableConfigMessage>(
-                d.consume_string_view(),
+                to_unsigned_sv(d.consume_string_view()),
                 nullptr,  // FIXME: verifier; but maybe want to delay setting this since it
                           // shouldn't be signed?
                 nullptr,  // FIXME: signer
@@ -185,7 +190,7 @@ ConfigBase::ConfigBase(std::optional<std::string_view> dump) {
                 true /* signature optional because we don't sign the dump */);
     else
         _config = std::make_unique<ConfigMessage>(
-                d.consume_string_view(), nullptr, nullptr, config_lags(), true);
+                to_unsigned_sv(d.consume_string_view()), nullptr, nullptr, config_lags(), true);
 
     if (d.skip_until("+"))
         if (auto extra = d.consume_dict(); !extra.empty())
@@ -200,26 +205,26 @@ int ConfigBase::key_count() const {
     return _keys_size;
 }
 
-bool ConfigBase::has_key(std::string_view key) const {
+bool ConfigBase::has_key(ustring_view key) const {
     if (key.size() != 32)
         throw std::invalid_argument{"invalid key given to has_key(): not 32-bytes"};
 
-    auto* keyptr = reinterpret_cast<const unsigned char*>(key.data());
+    auto* keyptr = key.data();
     for (size_t i = 0; i < _keys_size; i++)
         if (sodium_memcmp(keyptr, _keys[i].data(), KEY_SIZE) == 0)
             return true;
     return false;
 }
 
-std::vector<std::string_view> ConfigBase::get_keys() const {
-    std::vector<std::string_view> ret;
+std::vector<ustring_view> ConfigBase::get_keys() const {
+    std::vector<ustring_view> ret;
     ret.reserve(_keys_size);
     for (size_t i = 0; i < _keys_size; i++)
-        ret.emplace_back(reinterpret_cast<const char*>(_keys[i].data()), _keys[i].size());
+        ret.emplace_back(_keys[i].data(), _keys[i].size());
     return ret;
 }
 
-void ConfigBase::add_key(std::string_view key, bool high_priority) {
+void ConfigBase::add_key(ustring_view key, bool high_priority) {
     static_assert(
             sizeof(Key) == KEY_SIZE, "std::array appears to have some overhead which seems bad");
 
@@ -272,7 +277,7 @@ int ConfigBase::clear_keys() {
     return ret;
 }
 
-bool ConfigBase::remove_key(std::string_view key, size_t from) {
+bool ConfigBase::remove_key(ustring_view key, size_t from) {
     bool removed = false;
 
     for (size_t i = from; i < _keys_size; i++) {
@@ -293,17 +298,18 @@ void set_error(config_object* conf, std::string e) {
     conf->last_error = error.c_str();
 }
 
-void copy_out(const std::string& data, char** out, size_t* outlen) {
+void copy_out(ustring_view data, unsigned char** out, size_t* outlen) {
     assert(out && outlen);
     *outlen = data.size();
-    *out = static_cast<char*>(std::malloc(data.size()));
-    std::memcpy(*out, data.c_str(), data.size());
+    *out = static_cast<unsigned char*>(std::malloc(data.size()));
+    std::memcpy(*out, data.data(), data.size());
 }
 
 }  // namespace session::config
 
 extern "C" {
 
+using namespace session;
 using namespace session::config;
 
 LIBSESSION_EXPORT void config_free(config_object* conf) {
@@ -315,9 +321,9 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
 }
 
 LIBSESSION_EXPORT int config_merge(
-        config_object* conf, const char** configs, const size_t* lengths, size_t count) {
+        config_object* conf, const unsigned char** configs, const size_t* lengths, size_t count) {
     auto& config = *unbox(conf);
-    std::vector<std::string_view> confs;
+    std::vector<ustring_view> confs;
     confs.reserve(count);
     for (size_t i = 0; i < count; i++)
         confs.emplace_back(configs[i], lengths[i]);
@@ -328,7 +334,7 @@ LIBSESSION_EXPORT bool config_needs_push(const config_object* conf) {
     return unbox(conf)->needs_push();
 }
 
-LIBSESSION_EXPORT seqno_t config_push(config_object* conf, char** out, size_t* outlen) {
+LIBSESSION_EXPORT seqno_t config_push(config_object* conf, unsigned char** out, size_t* outlen) {
     auto& config = *unbox(conf);
     auto [data, seqno] = config.push();
     copy_out(data, out, outlen);
@@ -339,7 +345,7 @@ LIBSESSION_EXPORT void config_confirm_pushed(config_object* conf, seqno_t seqno)
     unbox(conf)->confirm_pushed(seqno);
 }
 
-LIBSESSION_EXPORT void config_dump(config_object* conf, char** out, size_t* outlen) {
+LIBSESSION_EXPORT void config_dump(config_object* conf, unsigned char** out, size_t* outlen) {
     copy_out(unbox(conf)->dump(), out, outlen);
 }
 
@@ -347,25 +353,25 @@ LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {
     return unbox(conf)->needs_dump();
 }
 
-LIBSESSION_EXPORT void config_add_key(config_object* conf, const char* key) {
+LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key) {
     unbox(conf)->add_key({key, 32});
 }
-LIBSESSION_EXPORT void config_add_key_low_prio(config_object* conf, const char* key) {
+LIBSESSION_EXPORT void config_add_key_low_prio(config_object* conf, const unsigned char* key) {
     unbox(conf)->add_key({key, 32}, /*high_priority=*/false);
 }
 LIBSESSION_EXPORT int config_clear_keys(config_object* conf) {
     return unbox(conf)->clear_keys();
 }
-LIBSESSION_EXPORT bool config_remove_key(config_object* conf, const char* key) {
+LIBSESSION_EXPORT bool config_remove_key(config_object* conf, const unsigned char* key) {
     return unbox(conf)->remove_key({key, 32});
 }
 LIBSESSION_EXPORT int config_key_count(const config_object* conf) {
     return unbox(conf)->key_count();
 }
-LIBSESSION_EXPORT bool config_has_key(const config_object* conf, const char* key) {
+LIBSESSION_EXPORT bool config_has_key(const config_object* conf, const unsigned char* key) {
     return unbox(conf)->has_key({key, 32});
 }
-LIBSESSION_EXPORT const char* config_key(const config_object* conf, size_t i) {
+LIBSESSION_EXPORT const unsigned char* config_key(const config_object* conf, size_t i) {
     return unbox(conf)->key(i).data();
 }
 

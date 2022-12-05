@@ -16,6 +16,7 @@
 #include <variant>
 
 #include "session/bt_merge.hpp"
+#include "session/util.hpp"
 
 using namespace std::literals;
 
@@ -376,20 +377,10 @@ namespace {
         }
     }
 
-    // Helper function to go from char pointers to the unsigned char pointers sodium needs:
-    const unsigned char* to_unsigned(const char* x) {
-        return reinterpret_cast<const unsigned char*>(x);
-    }
-
-    ustring_view to_unsigned_sv(std::string_view v) { return {to_unsigned(v.data()), v.size()}; }
-
     hash_t& hash_msg(hash_t& into, ustring_view serialized) {
         crypto_generichash_blake2b(
                 into.data(), into.size(), serialized.data(), serialized.size(), nullptr, 0);
         return into;
-    }
-    hash_t& hash_msg(hash_t& into, std::string_view serialized) {
-        return hash_msg(into, to_unsigned_sv(serialized));
     }
 
     /// Applies a diff update to `data`, getting diff info from `diff` and diff data from `source`.
@@ -527,14 +518,14 @@ ConfigMessage::ConfigMessage() {
 }
 
 ConfigMessage::ConfigMessage(
-        std::string_view serialized,
+        ustring_view serialized,
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
         bool signature_optional) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
-    oxenc::bt_dict_consumer dict{serialized};
+    oxenc::bt_dict_consumer dict{from_unsigned_sv(serialized)};
 
     try {
         hash_msg(seqno_hash_.second, serialized);
@@ -572,7 +563,7 @@ ConfigMessage::ConfigMessage(
             auto key = dict.key();
             assert(key.data() > serialized.data() &&
                    key.data() < serialized.data() + serialized.size());
-            to_verify = to_unsigned_sv(serialized.substr(0, key.data() - serialized.data() - 2));
+            to_verify = serialized.substr(0, to_unsigned(key.data()) - serialized.data() - 2);
             sig = to_unsigned_sv(dict.consume_string_view());
         }
 
@@ -593,7 +584,7 @@ ConfigMessage::ConfigMessage(
 }
 
 ConfigMessage::ConfigMessage(
-        const std::vector<std::string_view>& serialized_confs,
+        const std::vector<ustring_view>& serialized_confs,
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
@@ -695,7 +686,7 @@ ConfigMessage::ConfigMessage(
 }
 
 MutableConfigMessage::MutableConfigMessage(
-        const std::vector<std::string_view>& serialized_confs,
+        const std::vector<ustring_view>& serialized_confs,
         verify_callable verifier,
         sign_callable signer,
         int lag,
@@ -713,7 +704,7 @@ MutableConfigMessage::MutableConfigMessage(
 }
 
 MutableConfigMessage::MutableConfigMessage(
-        std::string_view config,
+        ustring_view config,
         verify_callable verifier,
         sign_callable signer,
         int lag,
@@ -736,16 +727,17 @@ const oxenc::bt_dict& MutableConfigMessage::diff() {
     return diff_;
 }
 
-std::string ConfigMessage::serialize(bool enable_signing) {
+ustring ConfigMessage::serialize(bool enable_signing) {
     return serialize_impl(
             diff(),  // implicitly prunes (if actually a mutable instance)
             enable_signing);
 }
 
-std::string ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enable_signing) {
-    std::string result;
+ustring ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enable_signing) {
+    ustring result;
+    // FIXME: we don't have a max (multi-messages will get encoded to larger and then split up).
     result.resize(MAX_MESSAGE_SIZE);
-    oxenc::bt_dict_producer outer{result.data(), result.size()};
+    oxenc::bt_dict_producer outer{from_unsigned(result.data()), result.size()};
 
     try {
         outer.append("#", seqno());
@@ -786,7 +778,7 @@ std::string ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool 
                 throw std::logic_error{
                         "Invalid signature: signing function did not return 64 bytes"};
 
-            outer.append("~", sig);
+            outer.append("~", from_unsigned_sv(sig));
         }
     } catch (const std::length_error&) {
         throw std::length_error{"Config data is too large"};
@@ -798,169 +790,8 @@ std::string ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool 
 const hash_t& MutableConfigMessage::hash() {
     return hash(serialize());
 }
-const hash_t& MutableConfigMessage::hash(std::string_view serialized) {
+const hash_t& MutableConfigMessage::hash(ustring_view serialized) {
     return hash_msg(seqno_hash_.second, serialized);
 }
 
-static constexpr size_t DOMAIN_MAX_SIZE = 24;
-static constexpr auto NONCE_KEY_PREFIX = "libsessionutil-config-encrypted-"sv;
-static_assert(NONCE_KEY_PREFIX.size() + DOMAIN_MAX_SIZE < crypto_generichash_blake2b_KEYBYTES_MAX);
-
-static std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> make_encrypt_key(
-        ustring_view key_base, uint64_t message_size, std::string_view domain) {
-    if (key_base.size() != 32)
-        throw std::invalid_argument{"encrypt called with key_base != 32 bytes"};
-    if (domain.size() < 1 || domain.size() > DOMAIN_MAX_SIZE)
-        throw std::invalid_argument{"encrypt called with domain size not in [1, 24]"};
-
-    // We hash the key because we're using a deterministic nonce: the `key_base` value is expected
-    // to be a long-term value for which nonce reuse (via hash collision) would be bad: by
-    // incorporating the domain and message size we at least vary the key to further restrict the
-    // nonce reuse concern to messages of identical sizes and identical domain.
-    std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> key{0};
-    crypto_generichash_blake2b_state state;
-    crypto_generichash_blake2b_init(&state, nullptr, 0, key.size());
-    crypto_generichash_blake2b_update(&state, key_base.data(), key_base.size());
-    oxenc::host_to_big_inplace(message_size);
-    crypto_generichash_blake2b_update(
-            &state, reinterpret_cast<const unsigned char*>(&message_size), sizeof(message_size));
-    crypto_generichash_blake2b_update(&state, to_unsigned(domain.data()), domain.size());
-    crypto_generichash_blake2b_final(&state, key.data(), key.size());
-    return key;
-}
-
-template <typename Char>
-static std::basic_string<Char> encrypt_impl(
-        ustring_view message, ustring_view key_base, std::string_view domain) {
-    auto key = make_encrypt_key(key_base, message.size(), domain);
-
-    std::string nonce_key{NONCE_KEY_PREFIX};
-    nonce_key += domain;
-
-    std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES> nonce;
-    crypto_generichash_blake2b(
-            nonce.data(),
-            nonce.size(),
-            message.data(),
-            message.size(),
-            to_unsigned(nonce_key.data()),
-            nonce_key.size());
-
-    static_assert(sizeof(Char) == 1);
-    std::basic_string<Char> out;
-    out.resize(
-            message.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES +
-            crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    auto* out_data = reinterpret_cast<unsigned char*>(out.data());
-
-    unsigned long long outlen = 0;
-    crypto_aead_xchacha20poly1305_ietf_encrypt(
-            out_data,
-            &outlen,
-            message.data(),
-            message.size(),
-            nullptr,
-            0,
-            nullptr,
-            nonce.data(),
-            key.data());
-
-    assert(outlen == message.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES);
-    assert(out.size() == outlen + nonce.size());
-    std::memcpy(out.data() + outlen, nonce.data(), nonce.size());
-    return out;
-}
-
-ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain) {
-    return encrypt_impl<unsigned char>(message, key_base, domain);
-}
-std::string encrypt(std::string_view message, std::string_view key_base, std::string_view domain) {
-    return encrypt_impl<char>(to_unsigned_sv(message), to_unsigned_sv(key_base), domain);
-}
-
-template <typename Char>
-static std::basic_string<Char> decrypt_impl(
-        ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
-    size_t message_len = ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES -
-                         crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
-    if (message_len > ciphertext.size())  // overflow
-        throw decrypt_error{"Decryption failed: ciphertext is too short"};
-
-    auto nonce =
-            ciphertext.substr(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    ciphertext.remove_suffix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    auto key = make_encrypt_key(key_base, message_len, domain);
-
-    static_assert(sizeof(Char) == 1);
-    std::basic_string<Char> plaintext;
-    plaintext.resize(message_len);
-    auto* plaintext_data = reinterpret_cast<unsigned char*>(plaintext.data());
-    unsigned long long mlen_wrote = 0;
-    if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
-                     plaintext_data,
-                     &mlen_wrote,
-                     nullptr,
-                     ciphertext.data(),
-                     ciphertext.size(),
-                     nullptr,
-                     0,
-                     nonce.data(),
-                     key.data()))
-        throw decrypt_error{"Message decryption failed"};
-
-    assert(mlen_wrote == plaintext.size());
-    return plaintext;
-}
-
-ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
-    return decrypt_impl<unsigned char>(ciphertext, key_base, domain);
-}
-std::string decrypt(
-        std::string_view ciphertext, std::string_view key_base, std::string_view domain) {
-    return decrypt_impl<char>(to_unsigned_sv(ciphertext), to_unsigned_sv(key_base), domain);
-}
-
-}  // namespace session::config
-
-extern "C" {
-
-char* config_encrypt(
-        const char* plaintext,
-        size_t len,
-        const char* key_base,
-        const char* domain,
-        size_t* ciphertext_size) {
-
-    std::string ciphertext;
-    try {
-        ciphertext = session::config::encrypt({plaintext, len}, {key_base, 32}, domain);
-    } catch (...) {
-        return nullptr;
-    }
-
-    char* data = static_cast<char*>(std::malloc(ciphertext.size()));
-    std::memcpy(data, ciphertext.data(), ciphertext.size());
-    *ciphertext_size = ciphertext.size();
-    return data;
-}
-
-char* config_decrypt(
-        const char* ciphertext,
-        size_t clen,
-        const char* key_base,
-        const char* domain,
-        size_t* plaintext_size) {
-
-    std::string plaintext;
-    try {
-        plaintext = session::config::decrypt({ciphertext, clen}, {key_base, 32}, domain);
-    } catch (const std::exception& e) {
-        return nullptr;
-    }
-
-    char* data = static_cast<char*>(std::malloc(plaintext.size()));
-    std::memcpy(data, plaintext.data(), plaintext.size());
-    *plaintext_size = plaintext.size();
-    return data;
-}
 }

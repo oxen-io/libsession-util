@@ -28,8 +28,8 @@ extern "C" {
 /// config_free() (in `session/config/base.h`).
 int user_profile_init(
         config_object** conf,
-        const char* ed25519_secretkey,
-        const char* dump,
+        const unsigned char* ed25519_secretkey,
+        const unsigned char* dump,
         size_t dumplen,
         char* error) __attribute__((warn_unused_result));
 
@@ -47,7 +47,7 @@ typedef struct user_profile_pic {
     const char* url;
     // The profile pic decryption key, in bytes.  This is a byte buffer of length `keylen`, *not* a
     // null-terminated C string.  Will be NULL if there is no profile pic.
-    const char* key;
+    const unsigned char* key;
     size_t keylen;
 } user_profile_pic;
 

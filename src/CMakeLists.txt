@@ -17,6 +17,7 @@ add_library(config
     bt_merge.cpp
     config.cpp
     config/base.cpp
+    config/encrypt.cpp
     config/error.c
     config/user_profile.cpp
     fields.cpp

@@ -1,31 +1,15 @@
 #include <oxenc/hex.h>
+#include <session/config/encrypt.h>
 #include <session/config/user_profile.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <string_view>
 
+#include "utils.hpp"
+
 using namespace std::literals;
 using namespace oxenc::literals;
-
-namespace {
-
-std::string printable(std::string_view x) {
-    std::string p;
-    for (auto c : x) {
-        if (c >= 0x20 && c <= 0x7e)
-            p += c;
-        else
-            p += "\\x" + oxenc::to_hex(&c, &c + 1);
-    }
-    return p;
-}
-std::string printable(const char* x) = delete;
-std::string printable(const char* x, size_t n) {
-    return printable({x, n});
-}
-
-}  // namespace
 
 void log_msg(config_log_level lvl, const char* msg, void*) {
     INFO((lvl == LOG_LEVEL_ERROR     ? "ERROR"
@@ -54,8 +38,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // Initialize a brand new, empty config because we have no dump data to deal with.
     char err[256];
     config_object* conf;
-    auto* ed_sk_cdata = reinterpret_cast<const char*>(ed_sk.data());
-    rc = user_profile_init(&conf, ed_sk_cdata, NULL, 0, err);
+    rc = user_profile_init(&conf, ed_sk.data(), NULL, 0, err);
     REQUIRE(rc == 0);
 
     config_set_logger(conf, log_msg, NULL);
@@ -69,7 +52,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     const char* name = user_profile_get_name(conf);
     CHECK(name == nullptr);  // (should be NULL instead of nullptr in C)
 
-    char* to_push;
+    unsigned char* to_push;
     size_t to_push_len;
     // We don't need to push since we haven't changed anything, so this call is mainly just for
     // testing:
@@ -79,12 +62,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
     size_t to_push_decr_size;
-    char* to_push_decrypted =
-            config_decrypt(to_push, to_push_len, ed_sk_cdata, enc_domain, &to_push_decr_size);
+    unsigned char* to_push_decrypted =
+            config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
     REQUIRE(to_push_decrypted);
     CHECK(to_push_decr_size == 256);
-    CHECK(std::string_view{to_push_decrypted, to_push_decr_size} ==
-          std::string(233, '\0') + "d1:#i0e1:&de1:<le1:=dee");
+    CHECK(ustring_view{to_push_decrypted, to_push_decr_size} ==
+          ustring(233, '\0') + "d1:#i0e1:&de1:<le1:=dee"_bytes);
 
     free(to_push);
     free(to_push_decrypted);
@@ -99,7 +82,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(0 == user_profile_set_name(conf, "Kallie"));
     user_profile_pic p;
     p.url = "http://example.org/omg-pic-123.bmp";
-    p.key = "secretNOTSECRET";
+    p.key = reinterpret_cast<const unsigned char*>("secretNOTSECRET");
     p.keylen = 6;
     CHECK(0 == user_profile_set_pic(conf, p));
 
@@ -113,7 +96,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     REQUIRE(pic.key);
     CHECK(pic.keylen == 6);
     CHECK(pic.url == "http://example.org/omg-pic-123.bmp"sv);
-    CHECK(std::string_view{pic.key, pic.keylen} == "secret");
+    CHECK(ustring_view{pic.key, pic.keylen} == "secret"_bytes);
 
     // Since we've made changes, we should need to push new config to the swarm, *and* should need
     // to dump the updated state:
@@ -125,7 +108,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
                         // dumps; even though we changed two fields here).
 
     // The hash of a completely empty, initial seqno=0 message:
-    auto exp_hash0 = "ea173b57beca8af18c3519a7bbf69c3e7a05d1c049fa9558341d8ebb48b0c965"_hex;
+    auto exp_hash0 = "ea173b57beca8af18c3519a7bbf69c3e7a05d1c049fa9558341d8ebb48b0c965"_hexbytes;
 
     // The data to be actually pushed, expanded like this to make it somewhat human-readable:
     // clang-format off
@@ -138,14 +121,14 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "1:q" "6:secret"
           "e"
           "1:<" "l"
-            "l" "i0e" "32:" + exp_hash0 + "de" "e"
+            "l" "i0e" "32:"_bytes + exp_hash0 + "de" "e"
           "e"
           "1:=" "d"
             "1:n" "0:"
             "1:p" "0:"
             "1:q" "0:"
           "e"
-        "e";
+        "e"_bytes;
     // clang-format on
     auto exp_push1_encrypted =
             "18767b5bcc1e0696d94a46ffe6d1cece0339d9290a6ced97ee2279d9fe6f4f79d80a469369e498f96f403d"
@@ -154,16 +137,16 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "25fb7d8bff009e61307471485daaf5bb0a70bc5dfaf1cc7ec46bf389296d0f84950ef90f7e257cffdb5d1c"
             "c7bff654f607afe97a42b0d874fbf55a8d5d4444a7b5f223375aec764c1763b256ed2126104b2fb18e0759"
             "795f037671c7a3d8ee68be7c09345baf593bef17cc941da9536361b65ff107177eb4fa100c74ead77bd0cd"
-            "567bf56325ecc73d8056fbdaec9d4b1323edc38c71174114197818d4a386dfb698d915c2c21d"_hex;
+            "567bf56325ecc73d8056fbdaec9d4b1323edc38c71174114197818d4a386dfb698d915c2c21d"_hexbytes;
 
-    CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == oxenc::to_hex(exp_push1_encrypted));
+    CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == to_hex(exp_push1_encrypted));
 
     // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
     to_push_decrypted =
-            config_decrypt(to_push, to_push_len, ed_sk_cdata, enc_domain, &to_push_decr_size);
+            config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
     CHECK(to_push_decr_size == 256);
     CHECK(printable(to_push_decrypted, to_push_decr_size) ==
-          printable(std::string(256 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
+          printable(ustring(256 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
 
     // config_push gives us back a buffer that we are required to free when done.  (Without this
     // we'd leak memory!)
@@ -173,7 +156,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(config_needs_dump(conf));
     // We did call push, but we haven't confirmed it as stored yet, so this will still return true:
     CHECK(config_needs_push(conf));
-    char* dump1;
+    unsigned char* dump1;
     size_t dump1len;
 
     config_dump(conf, &dump1, &dump1len);
@@ -185,7 +168,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(printable(dump1, dump1len) == printable(
         "d"
           "1:!" "i2e"
-          "1:$" + std::to_string(exp_push1_decrypted.size()) + ":" + exp_push1_decrypted + ""
+          "1:$" + std::to_string(exp_push1_decrypted.size()) + ":" + std::string{to_sv(exp_push1_decrypted)} + ""
         "e"));
     // clang-format on
     free(dump1);  // done with the dump; don't leak!
@@ -206,12 +189,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Start with an empty config, as above:
     config_object* conf2;
-    REQUIRE(user_profile_init(&conf2, ed_sk_cdata, NULL, 0, err) == 0);
+    REQUIRE(user_profile_init(&conf2, ed_sk.data(), NULL, 0, err) == 0);
     config_set_logger(conf2, log_msg, NULL);
     CHECK_FALSE(config_needs_dump(conf2));
 
     // Now imagine we just pulled down the encrypted string from the swarm; we merge it into conf2:
-    const char* merge_data[1];
+    const unsigned char* merge_data[1];
     size_t merge_size[1];
     merge_data[0] = exp_push1_encrypted.data();
     merge_size[0] = exp_push1_encrypted.size();
@@ -220,7 +203,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Our state has changed, so we need to dump:
     CHECK(config_needs_dump(conf2));
-    char* dump2;
+    unsigned char* dump2;
     size_t dump2len;
     config_dump(conf2, &dump2, &dump2len);
     // (store in db)
@@ -239,7 +222,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // And, on conf2, we're also going to change the profile pic:
     p.url = "http://new.example.com/pic";
-    p.key = "qwert\0yuio";
+    p.key = reinterpret_cast<const unsigned char*>("qwert\0yuio");
     p.keylen = 10;
     user_profile_set_pic(conf2, p);
 
@@ -249,7 +232,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     seqno = config_push(conf, &to_push, &to_push_len);
     CHECK(seqno == 2);  // incremented, since we made a field change
 
-    char* to_push2;
+    unsigned char* to_push2;
     size_t to_push2_len;
     auto seqno2 = config_push(conf2, &to_push2, &to_push2_len);
     CHECK(seqno == 2);  // incremented, since we made a field change
@@ -300,12 +283,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     REQUIRE(pic.url);
     CHECK(pic.url == "http://new.example.com/pic"sv);
     REQUIRE(pic.key);
-    CHECK(std::string_view{pic.key, pic.keylen} == "qwert\0yuio"sv);
+    CHECK(ustring_view{pic.key, pic.keylen} == "qwert\0yuio"_bytes);
     pic = user_profile_get_pic(conf2);
     REQUIRE(pic.url);
     CHECK(pic.url == "http://new.example.com/pic"sv);
     REQUIRE(pic.key);
-    CHECK(std::string_view{pic.key, pic.keylen} == "qwert\0yuio"sv);
+    CHECK(ustring_view{pic.key, pic.keylen} == "qwert\0yuio"_bytes);
 
     config_confirm_pushed(conf, seqno);
     config_confirm_pushed(conf2, seqno2);
