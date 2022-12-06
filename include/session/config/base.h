@@ -45,7 +45,8 @@ typedef enum config_log_level {
 /// Can be called with callback set to NULL to clear an existing logger.
 ///
 /// The config object itself has no log level: the caller should filter by level as needed.
-void config_set_logger(config_object* conf, void(*callback)(config_log_level, const char*, void*), void* ctx);
+void config_set_logger(
+        config_object* conf, void (*callback)(config_log_level, const char*, void*), void* ctx);
 
 /// Returns the numeric namespace in which config messages of this type should be stored.
 int16_t config_storage_namespace(const config_object* conf);
@@ -56,7 +57,8 @@ int16_t config_storage_namespace(const config_object* conf);
 ///
 /// `configs` is an array of pointers to the start of the strings; `lengths` is an array of string
 /// lengths; `count` is the length of those two arrays.
-int config_merge(config_object* conf, const unsigned char** configs, const size_t* lengths, size_t count);
+int config_merge(
+        config_object* conf, const unsigned char** configs, const size_t* lengths, size_t count);
 
 /// Returns true if this config object contains updated data that has not yet been confirmed stored
 /// on the server.
@@ -94,7 +96,6 @@ void config_dump(config_object* conf, unsigned char** out, size_t* outlen);
 /// and saving the `config_dump()` data again.
 bool config_needs_dump(const config_object* conf);
 
-
 /// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
 /// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).
 void config_add_key(config_object* conf, const unsigned char* key);
@@ -111,7 +112,6 @@ const unsigned char* config_key(const config_object* conf, size_t i);
 /// Returns the encryption domain C-str used to encrypt values for this config object.  (This is
 /// here only for debugging/testing).
 const char* config_encryption_domain(const config_object* conf);
-
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -20,7 +20,9 @@ namespace {
         return reinterpret_cast<const unsigned char*>(x);
     }
 
-    ustring_view to_unsigned_sv(std::string_view v) { return {to_unsigned(v.data()), v.size()}; }
+    ustring_view to_unsigned_sv(std::string_view v) {
+        return {to_unsigned(v.data()), v.size()};
+    }
 
 }  // namespace
 

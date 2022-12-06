@@ -31,7 +31,7 @@ ustring encrypt(ustring_view message, ustring_view key_base, std::string_view do
 void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain);
 
 /// Constant amount of extra bytes required to be appended when encrypting.
-constexpr size_t ENCRYPT_DATA_OVERHEAD = 40; // ABYTES + NPUBBYTES
+constexpr size_t ENCRYPT_DATA_OVERHEAD = 40;  // ABYTES + NPUBBYTES
 
 /// Thrown if decrypt() fails.
 struct decrypt_error : std::runtime_error {
@@ -46,7 +46,6 @@ ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view
 /// Same as above, but does in in-place.  The string gets shortend to the plaintext after this call.
 void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_view domain);
 
-
 /// Returns the target size of the message with padding, assuming an additional `overhead` bytes of
 /// overhead (e.g. from encrypt() overhead) will be appended.  Will always return a value >= s +
 /// overhead.
@@ -56,7 +55,7 @@ void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_vie
 inline constexpr size_t padded_size(size_t s, size_t overhead = ENCRYPT_DATA_OVERHEAD) {
     size_t s2 = s + overhead;
     size_t chunk = s2 < 5120 ? 256 : s2 < 20480 ? 1024 : s2 < 40960 ? 2048 : 5120;
-    return (s2 + chunk-1) / chunk * chunk - overhead;
+    return (s2 + chunk - 1) / chunk * chunk - overhead;
 }
 
 /// Inserts null byte padding to the beginning of a message to make the final message size granular.
@@ -66,6 +65,5 @@ inline constexpr size_t padded_size(size_t s, size_t overhead = ENCRYPT_DATA_OVE
 /// \param overhead - encryption overhead to account for to reach the desired padded size.  The
 /// default, if omitted, is the space used by the `encrypt()` function defined above.
 void pad_message(ustring& data, size_t overhead = ENCRYPT_DATA_OVERHEAD);
-
 
 }  // namespace session::config

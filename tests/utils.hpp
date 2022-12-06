@@ -1,9 +1,10 @@
 #pragma once
 
+#include <oxenc/hex.h>
+
 #include <cstddef>
 #include <string>
 #include <string_view>
-#include <oxenc/hex.h>
 
 using ustring = std::basic_string<unsigned char>;
 using ustring_view = std::basic_string_view<unsigned char>;
@@ -33,7 +34,6 @@ inline std::string_view to_sv(ustring_view x) {
 inline ustring_view to_usv(std::string_view x) {
     return {reinterpret_cast<const unsigned char*>(x.data()), x.size()};
 }
-
 
 inline std::string printable(ustring_view x) {
     std::string p;

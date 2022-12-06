@@ -14,7 +14,6 @@ namespace session::config {
 /// p - user profile url
 /// q - user profile decryption key (binary)
 
-
 // Profile pic info.  Note that `url` is null terminated (though the null lies just beyond the end
 // of the string view: that is, it views into a full std::string).
 struct profile_pic {

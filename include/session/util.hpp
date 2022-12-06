@@ -17,7 +17,11 @@ inline char* from_unsigned(unsigned char* x) {
     return reinterpret_cast<char*>(x);
 }
 // Helper function to switch between string_view and ustring_view
-inline ustring_view to_unsigned_sv(std::string_view v) { return {to_unsigned(v.data()), v.size()}; }
-inline std::string_view from_unsigned_sv(ustring_view v) { return {from_unsigned(v.data()), v.size()}; }
-
+inline ustring_view to_unsigned_sv(std::string_view v) {
+    return {to_unsigned(v.data()), v.size()};
 }
+inline std::string_view from_unsigned_sv(ustring_view v) {
+    return {from_unsigned(v.data()), v.size()};
+}
+
+}  // namespace session

@@ -110,13 +110,7 @@ std::string view_hex(const std::array<T, N>& data) {
 ustring blake2b(ustring_view data) {
     ustring result;
     result.resize(32);
-    crypto_generichash_blake2b(
-            result.data(),
-            32,
-            data.data(),
-            data.size(),
-            nullptr,
-            0);
+    crypto_generichash_blake2b(result.data(), 32, data.data(), data.size(), nullptr, 0);
     return result;
 }
 
@@ -338,11 +332,7 @@ TEST_CASE("config message signature", "[config][signing]") {
         ustring result;
         result.resize(64);
         crypto_sign_ed25519_detached(
-                result.data(),
-                nullptr,
-                data.data(),
-                data.size(),
-                secretkey.data());
+                result.data(), nullptr, data.data(), data.size(), secretkey.data());
         return result;
     };
     auto verifier = [&secretkey](ustring_view data, ustring_view signature) {
@@ -385,11 +375,7 @@ TEST_CASE("config message signature", "[config][signing]") {
     ustring sig(64, '\0');
     // Sign it ourselves, and check what we get:
     crypto_sign_ed25519_detached(
-            sig.data(),
-            nullptr,
-            m_signing_value.data(),
-            m_signing_value.size(),
-            secretkey.data());
+            sig.data(), nullptr, m_signing_value.data(), m_signing_value.size(), secretkey.data());
     CHECK(to_hex(sig) == to_hex(expected_sig));
     auto m_expected = m_signing_value;
     m_expected += "1:~64:"_bytes;

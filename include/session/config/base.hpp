@@ -397,7 +397,6 @@ class ConfigBase {
     /// to use.  This is rarely needed externally; it is public merely for testing purposes.
     virtual const char* encryption_domain() const = 0;
 
-
     // How many config lags should be used for this object; default to 5.  Implementing subclasses
     // can override to return a different constant if desired.  More lags require more "diff"
     // storage in the config messages, but also allow for a higher tolerance of simultaneous message

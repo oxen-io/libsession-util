@@ -43,8 +43,12 @@ namespace {
         should_remove = d.empty();
         return result;
     }
-    std::pair<bool, bool> prune_(scalar&) { return {false, false}; }
-    std::pair<bool, bool> prune_(set& s) { return {s.empty(), false}; }
+    std::pair<bool, bool> prune_(scalar&) {
+        return {false, false};
+    }
+    std::pair<bool, bool> prune_(set& s) {
+        return {s.empty(), false};
+    }
     std::pair<bool, bool> prune_(dict_value& v) {
         return var::visit([](auto& x) { return prune_(x); }, unwrap(v));
     }
