@@ -51,6 +51,15 @@ static std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> ma
 }
 
 ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain) {
+    ustring msg;
+    msg.reserve(
+            message.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES +
+            crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    msg.assign(message);
+    encrypt_inplace(msg, key_base, domain);
+    return msg;
+}
+void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain) {
     auto key = make_encrypt_key(key_base, message.size(), domain);
 
     std::string nonce_key{NONCE_KEY_PREFIX};
@@ -65,59 +74,67 @@ ustring encrypt(ustring_view message, ustring_view key_base, std::string_view do
             to_unsigned(nonce_key.data()),
             nonce_key.size());
 
-    ustring out;
-    out.resize(
-            message.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES +
+    size_t plaintext_len = message.size();
+    message.resize(
+            plaintext_len + crypto_aead_xchacha20poly1305_ietf_ABYTES +
             crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    auto* out_data = reinterpret_cast<unsigned char*>(out.data());
 
     unsigned long long outlen = 0;
     crypto_aead_xchacha20poly1305_ietf_encrypt(
-            out_data,
+            message.data(),
             &outlen,
             message.data(),
-            message.size(),
+            plaintext_len,
             nullptr,
             0,
             nullptr,
             nonce.data(),
             key.data());
 
-    assert(outlen == message.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES);
-    assert(out.size() == outlen + nonce.size());
-    std::memcpy(out.data() + outlen, nonce.data(), nonce.size());
-    return out;
+    assert(outlen == message.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    std::memcpy(message.data() + outlen, nonce.data(), nonce.size());
 }
 
+static_assert(
+        ENCRYPT_DATA_OVERHEAD ==
+        crypto_aead_xchacha20poly1305_IETF_ABYTES + crypto_aead_xchacha20poly1305_IETF_NPUBBYTES);
+
 ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain) {
+    ustring x{ciphertext};
+    decrypt_inplace(x, key_base, domain);
+    return x;
+}
+void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_view domain) {
     size_t message_len = ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES -
                          crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
     if (message_len > ciphertext.size())  // overflow
         throw decrypt_error{"Decryption failed: ciphertext is too short"};
 
-    auto nonce =
-            ciphertext.substr(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    ciphertext.remove_suffix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    ustring_view nonce = ustring_view{ciphertext}.substr(
+            ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     auto key = make_encrypt_key(key_base, message_len, domain);
 
-    ustring plaintext;
-    plaintext.resize(message_len);
-    auto* plaintext_data = reinterpret_cast<unsigned char*>(plaintext.data());
     unsigned long long mlen_wrote = 0;
     if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
-                     plaintext_data,
+                     ciphertext.data(),
                      &mlen_wrote,
                      nullptr,
                      ciphertext.data(),
-                     ciphertext.size(),
+                     ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
                      nullptr,
                      0,
                      nonce.data(),
                      key.data()))
         throw decrypt_error{"Message decryption failed"};
 
-    assert(mlen_wrote == plaintext.size());
-    return plaintext;
+    assert(mlen_wrote == message_len);
+    ciphertext.resize(mlen_wrote);
+}
+
+void pad_message(ustring& data, size_t overhead) {
+    size_t target_size = padded_size(data.size(), overhead);
+    if (target_size > data.size())
+        data.insert(0, target_size - data.size(), '\0');
 }
 
 }  // namespace session::config

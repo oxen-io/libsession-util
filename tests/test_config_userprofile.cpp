@@ -59,15 +59,16 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     seqno_t seqno = config_push(conf, &to_push, &to_push_len);
     REQUIRE(to_push);
     CHECK(seqno == 0);
+    CHECK(to_push_len == 256);
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
     size_t to_push_decr_size;
     unsigned char* to_push_decrypted =
             config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
     REQUIRE(to_push_decrypted);
-    CHECK(to_push_decr_size == 256);
+    CHECK(to_push_decr_size == 216);  // 256 - 40 overhead
     CHECK(ustring_view{to_push_decrypted, to_push_decr_size} ==
-          ustring(233, '\0') + "d1:#i0e1:&de1:<le1:=dee"_bytes);
+          ustring(193, '\0') + "d1:#i0e1:&de1:<le1:=dee"_bytes);
 
     free(to_push);
     free(to_push_decrypted);
@@ -131,22 +132,22 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "e"_bytes;
     // clang-format on
     auto exp_push1_encrypted =
-            "18767b5bcc1e0696d94a46ffe6d1cece0339d9290a6ced97ee2279d9fe6f4f79d80a469369e498f96f403d"
-            "2f21de54976dbe218af0e188c3e74e1a2f761cea186eb10bbd9aeebe8d5074b7eb41b4d2965db315cf56f7"
-            "080b576113fc525da840193a2713a7f81dabbf76e98ea0f9b18e819128de4de6e6acff6b31fae0c4daf07d"
-            "25fb7d8bff009e61307471485daaf5bb0a70bc5dfaf1cc7ec46bf389296d0f84950ef90f7e257cffdb5d1c"
-            "c7bff654f607afe97a42b0d874fbf55a8d5d4444a7b5f223375aec764c1763b256ed2126104b2fb18e0759"
-            "795f037671c7a3d8ee68be7c09345baf593bef17cc941da9536361b65ff107177eb4fa100c74ead77bd0cd"
-            "567bf56325ecc73d8056fbdaec9d4b1323edc38c71174114197818d4a386dfb698d915c2c21d"_hexbytes;
+            "a2952190dcb9797bc48e48f6dc7b3254d004bde9091cfc9ec3433cbc5939a3726deb04f58a546d7d79e6f8"
+            "0ea185d43bf93278398556304998ae882304075c77f15c67f9914c4d10005a661f29ff7a79e0a9de7f2172"
+            "5ba3b5a6c19eaa3797671b8fa4008d62e9af2744629cbb46664c4d8048e2867f66ed9254120371bdb24e95"
+            "b2d92341fa3b1f695046113a768ceb7522269f937ead5591bfa8a5eeee3010474002f2db9de043f0f0d1cf"
+            "b1066a03e7b5d6cfb70a8f84a20cd2df5a510cd3d175708015a52dd4a105886d916db0005dbea5706e5a5d"
+            "c37ffd0a0ca2824b524da2e2ad181a48bb38e21ed9abe136014a4ee1e472cb2f53102db2a46afa9d68"
+            ""_hexbytes;
 
     CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == to_hex(exp_push1_encrypted));
 
     // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
     to_push_decrypted =
             config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
-    CHECK(to_push_decr_size == 256);
+    CHECK(to_push_decr_size == 256 - 40);
     CHECK(printable(to_push_decrypted, to_push_decr_size) ==
-          printable(ustring(256 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
+          printable(ustring(256 - 40 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
 
     // config_push gives us back a buffer that we are required to free when done.  (Without this
     // we'd leak memory!)

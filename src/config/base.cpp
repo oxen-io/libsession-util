@@ -139,10 +139,9 @@ std::pair<ustring, seqno_t> ConfigBase::push() {
     std::pair<ustring, seqno_t> ret{_config->serialize(), _config->seqno()};
 
     // Prefix pad with nulls:
-    if (size_t over_boundary = ret.first.size() % PADDING_INCREMENT)
-        ret.first.insert(0, PADDING_INCREMENT - over_boundary, '\0');
+    pad_message(ret.first);
+    encrypt_inplace(ret.first, key(), encryption_domain());
 
-    ret.first = encrypt(std::move(ret.first), key(), encryption_domain());
     return ret;
 }
 
