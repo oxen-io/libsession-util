@@ -417,6 +417,9 @@ class ConfigBase {
     // re-parseable).
     virtual int merge(const std::vector<ustring_view>& configs);
 
+    // Same as above but takes a vector of ustring's as sometimes that is more convenient.
+    int merge(const std::vector<ustring>& configs);
+
     // Returns true if we are currently dirty (i.e. have made changes that haven't been serialized
     // yet).
     bool is_dirty() const { return _state == ConfigState::Dirty; }

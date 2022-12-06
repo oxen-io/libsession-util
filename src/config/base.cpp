@@ -25,6 +25,14 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
+int ConfigBase::merge(const std::vector<ustring>& configs) {
+    std::vector<ustring_view> config_views;
+    config_views.reserve(configs.size());
+    for (auto& c : configs)
+        config_views.emplace_back(c);
+    return merge(config_views);
+}
+
 int ConfigBase::merge(const std::vector<ustring_view>& configs) {
 
     if (_keys_size == 0)
