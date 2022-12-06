@@ -5,6 +5,7 @@
 #include "session/config/error.h"
 #include "session/config/user_profile.hpp"
 #include "session/types.hpp"
+#include "session/export.h"
 
 using namespace session::config;
 using session::ustring_view;

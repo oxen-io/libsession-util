@@ -1,12 +1,13 @@
 #include "session/config/encrypt.hpp"
 
+#include <oxenc/endian.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_generichash_blake2b.h>
 
 #include <array>
 #include <cassert>
 
-#include "oxenc/endian.h"
+#include "session/export.h"
 
 using namespace std::literals;
 
@@ -143,7 +144,7 @@ extern "C" {
 
 using session::ustring;
 
-unsigned char* config_encrypt(
+LIBSESSION_EXPORT unsigned char* config_encrypt(
         const unsigned char* plaintext,
         size_t len,
         const unsigned char* key_base,
@@ -163,7 +164,7 @@ unsigned char* config_encrypt(
     return data;
 }
 
-unsigned char* config_decrypt(
+LIBSESSION_EXPORT unsigned char* config_decrypt(
         const unsigned char* ciphertext,
         size_t clen,
         const unsigned char* key_base,
@@ -183,7 +184,7 @@ unsigned char* config_decrypt(
     return data;
 }
 
-size_t config_padded_size(size_t s, size_t overhead) {
+LIBSESSION_EXPORT size_t config_padded_size(size_t s, size_t overhead) {
     return session::config::padded_size(s, overhead);
 }
 }

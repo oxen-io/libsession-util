@@ -26,12 +26,13 @@ typedef struct config_object {
 /// user_profile_init).
 void config_free(config_object* conf);
 
-enum config_log_level {
+typedef enum config_log_level {
     LOG_LEVEL_DEBUG = 0,
     LOG_LEVEL_INFO,
     LOG_LEVEL_WARNING,
     LOG_LEVEL_ERROR
-};
+} config_log_level;
+
 /// Sets a logging function; takes the log function pointer and a context pointer (which can be NULL
 /// if not needed).  The given function pointer will be invoked with one of the above values, a
 /// null-terminated c string containing the log message, and the void* context object given when

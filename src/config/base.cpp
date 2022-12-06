@@ -10,6 +10,7 @@
 
 #include "session/config/base.h"
 #include "session/config/encrypt.hpp"
+#include "session/export.h"
 #include "session/util.hpp"
 
 namespace session::config {
