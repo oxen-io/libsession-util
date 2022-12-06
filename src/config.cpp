@@ -561,8 +561,8 @@ ConfigMessage::ConfigMessage(
             // figure out the range of the full serialized data that should have been signed:
 
             auto key = dict.key();
-            assert(key.data() > serialized.data() &&
-                   key.data() < serialized.data() + serialized.size());
+            assert(to_unsigned(key.data()) > serialized.data() &&
+                   to_unsigned(key.data()) < serialized.data() + serialized.size());
             to_verify = serialized.substr(0, to_unsigned(key.data()) - serialized.data() - 2);
             sig = to_unsigned_sv(dict.consume_string_view());
         }
@@ -794,4 +794,4 @@ const hash_t& MutableConfigMessage::hash(ustring_view serialized) {
     return hash_msg(seqno_hash_.second, serialized);
 }
 
-}
+}  // namespace session::config
