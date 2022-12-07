@@ -102,7 +102,8 @@ ExternalProject_Add(libsodium-internal_ext
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/libsodium-internal/configure --prefix=${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal
         ${cross_host} ${cross_rc}
-        ${shared_static} "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
+        ${shared_static} --with-pic
+        "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/lib/${sodium_lib_name}
         ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include/sodium.h
 )
