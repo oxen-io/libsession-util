@@ -11,6 +11,9 @@ struct profile_pic {
 
     profile_pic(std::string_view url, ustring_view key) : url{url}, key{key} {}
 
+    // Returns true if either url or key are empty
+    bool empty() const { return url.empty() || key.empty(); }
+
     // Guard against accidentally passing in a temporary string or ustring:
     template <
             typename UrlType,

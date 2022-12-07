@@ -9,6 +9,8 @@
 #include "namespaces.hpp"
 #include "profile_pic.hpp"
 
+extern "C" struct contacts_contact;
+
 namespace session::config {
 
 /// keys used in this config, either currently or in the past (so that we don't reuse):
@@ -43,9 +45,14 @@ struct contact_info {
 
     contact_info(std::string sid);
 
+    // Internal ctor/method for C API implementations:
+    contact_info(const struct contacts_contact& c);  // From c struct
+    void into(contacts_contact& c);                  // Into c struct
+
   private:
-    void load(const dict& info_dict);
     friend class Contacts;
+
+    void load(const dict& info_dict);
 };
 
 class Contacts : public ConfigBase {
@@ -75,16 +82,18 @@ class Contacts : public ConfigBase {
     /// not found, otherwise returns a filled out `contact_info`.
     std::optional<contact_info> get(std::string_view pubkey_hex) const;
 
-    /// Same as get(), but if the session ID does not exist this returns a filled-out contact_info
-    /// containing the session_id (all other fields will be empty/defaulted).  This is mainly
-    /// intended to be combined with `set` to set-or-create a record.
-    contact_info get_or_default(std::string_view pubkey_hex) const;
+    /// Similar to get(), but if the session ID does not exist this returns a filled-out
+    /// contact_info containing the session_id (all other fields will be empty/defaulted).  This is
+    /// intended to be combined with `set` to set-or-create a record.  Note that this does not add
+    /// the session id to the contact list when called: that requires also calling `set` with this
+    /// value.
+    contact_info get_or_create(std::string_view pubkey_hex) const;
 
     /// Sets or updates multiple contact info values at once with the given info.  The usual use is
     /// to access the current info, change anything desired, then pass it back into set_contact,
     /// e.g.:
     ///
-    ///     auto c = contacts.get_or_default(pubkey);
+    ///     auto c = contacts.get_or_create(pubkey);
     ///     c.name = "Session User 42";
     ///     c.nickname = "BFF";
     ///     contacts.set(c);
@@ -102,19 +111,57 @@ class Contacts : public ConfigBase {
     /// Note that this removes all fields related to a contact, even fields we do not know about.
     bool erase(std::string_view session_id);
 
+    struct iterator;
+
+    /// This works like erase, but takes an iterator to the contact to remove.  The element is
+    /// removed and the iterator to the next element after the removed one is returned.  This is
+    /// intended for use where elements are to be removed during iteration: see below for an
+    /// example.
+    iterator erase(iterator it);
+
+    /// Iterators for iterating through all contacts.  Typically you access this implicit via a for
+    /// loop over the `Contacts` object:
+    ///
+    ///     for (auto& contact : contacts) {
+    ///         // use contact.session_id, contact.name, etc.
+    ///     }
+    ///
+    /// This iterates in sorted order through the session_ids.
+    ///
+    /// It is permitted to modify and add records while iterating (e.g. by modifying `contact` and
+    /// then calling set()).
+    ///
+    /// If you need to erase the current contact during iteration then care is required: you need to
+    /// advance the iterator via the iterator version of erase when erasing an element rather than
+    /// incrementing it regularly.  For example:
+    ///
+    ///     for (auto it = contacts.begin(); it != contacts.end(); ) {
+    ///         if (should_remove(*it))
+    ///             it = contacts.erase(it);
+    ///         else
+    ///             ++it;
+    ///     }
+    ///
+    /// Alternatively, you can use the first version with two loops: the first loop through all
+    /// contacts doesn't erase but just builds a vector of IDs to erase, then the second loops
+    /// through that vector calling `erase()` for each one.
+    ///
+    iterator begin() const { return iterator{data["c"].dict()}; }
+    iterator end() const { return iterator{nullptr}; }
+
     using iterator_category = std::input_iterator_tag;
-    using value_type = const contact_info;
+    using value_type = contact_info;
     using reference = value_type&;
     using pointer = value_type*;
     using difference_type = std::ptrdiff_t;
 
-    struct const_contact_iterator {
+    struct iterator {
       private:
         std::shared_ptr<contact_info> _val;
         dict::const_iterator _it;
         const dict* _contacts;
         void _load_info();
-        const_contact_iterator(const dict* contacts) : _contacts{contacts} {
+        iterator(const dict* contacts) : _contacts{contacts} {
             if (_contacts) {
                 _it = _contacts->begin();
                 _load_info();
@@ -123,20 +170,18 @@ class Contacts : public ConfigBase {
         friend class Contacts;
 
       public:
-        bool operator==(const const_contact_iterator& other) const;
-        bool operator!=(const const_contact_iterator& other) const { return !(*this == other); }
-        const contact_info& operator*() const { return *_val; }
-        const contact_info* operator->() const { return _val.get(); }
-        const_contact_iterator& operator++();
-        const_contact_iterator operator++(int) {
+        bool operator==(const iterator& other) const;
+        bool operator!=(const iterator& other) const { return !(*this == other); }
+        bool done() const;  // Equivalent to comparing against the end iterator
+        contact_info& operator*() const { return *_val; }
+        contact_info* operator->() const { return _val.get(); }
+        iterator& operator++();
+        iterator operator++(int) {
             auto copy{*this};
             ++*this;
             return copy;
         }
     };
-
-    const_contact_iterator begin() const { return const_contact_iterator{data["c"].dict()}; }
-    const_contact_iterator end() const { return const_contact_iterator{nullptr}; }
 };
 
 }  // namespace session::config
