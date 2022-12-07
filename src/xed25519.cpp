@@ -11,6 +11,8 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "session/export.h"
+
 namespace session::xed25519 {
 
 template <size_t N>
@@ -166,7 +168,7 @@ using session::xed25519::ustring_view;
 
 extern "C" {
 
-int session_xed25519_sign(
+LIBSESSION_EXPORT int session_xed25519_sign(
         unsigned char* signature,
         const unsigned char* curve25519_privkey,
         const unsigned char* msg,
@@ -181,7 +183,7 @@ int session_xed25519_sign(
     return 1;
 }
 
-int session_xed25519_verify(
+LIBSESSION_EXPORT int session_xed25519_verify(
         const unsigned char* signature,
         const unsigned char* pubkey,
         const unsigned char* msg,
@@ -189,7 +191,8 @@ int session_xed25519_verify(
     return session::xed25519::verify({signature, 64}, {pubkey, 32}, {msg, msg_len}) ? 0 : 1;
 }
 
-int session_xed25519_pubkey(unsigned char* ed25519_pubkey, const unsigned char* curve25519_pubkey) {
+LIBSESSION_EXPORT int session_xed25519_pubkey(
+        unsigned char* ed25519_pubkey, const unsigned char* curve25519_pubkey) {
     assert(ed25519_pubkey != NULL);
     try {
         auto edpk = session::xed25519::pubkey({curve25519_pubkey, 32});
