@@ -215,13 +215,13 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(contacts_get_or_create(conf, &c, definitely_real_id));
 
     CHECK(c.session_id == std::string_view{definitely_real_id});
-    CHECK(c.name == NULL);
-    CHECK(c.nickname == NULL);
+    CHECK(c.name == nullptr);
+    CHECK(c.nickname == nullptr);
     CHECK_FALSE(c.approved);
     CHECK_FALSE(c.approved_me);
     CHECK_FALSE(c.blocked);
-    CHECK(c.profile_pic.url == NULL);
-    CHECK(c.profile_pic.key == NULL);
+    CHECK(c.profile_pic.url == nullptr);
+    CHECK(c.profile_pic.key == nullptr);
     CHECK(c.profile_pic.keylen == 0);
 
     c.name = "Joe";
@@ -239,8 +239,8 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c2.approved);
     CHECK(c2.approved_me);
     CHECK_FALSE(c2.blocked);
-    CHECK(c2.profile_pic.key == NULL);
-    CHECK(c2.profile_pic.url == NULL);
+    CHECK(c2.profile_pic.key == nullptr);
+    CHECK(c2.profile_pic.url == nullptr);
 
     CHECK(config_needs_push(conf));
     CHECK(config_needs_dump(conf));
@@ -270,18 +270,18 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c3.approved);
     CHECK(c3.approved_me);
     CHECK_FALSE(c3.blocked);
-    CHECK(c3.profile_pic.key == NULL);
-    CHECK(c3.profile_pic.url == NULL);
+    CHECK(c3.profile_pic.key == nullptr);
+    CHECK(c3.profile_pic.url == nullptr);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
     REQUIRE(contacts_get_or_create(conf, &c3, another_id));
-    CHECK(c3.name == NULL);
-    CHECK(c3.nickname == NULL);
+    CHECK(c3.name == nullptr);
+    CHECK(c3.nickname == nullptr);
     CHECK_FALSE(c3.approved);
     CHECK_FALSE(c3.approved_me);
     CHECK_FALSE(c3.blocked);
-    CHECK(c3.profile_pic.key == NULL);
-    CHECK(c3.profile_pic.url == NULL);
+    CHECK(c3.profile_pic.key == nullptr);
+    CHECK(c3.profile_pic.url == nullptr);
 
     contacts_set(conf2, &c3);
 
