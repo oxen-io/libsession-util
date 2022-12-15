@@ -13,6 +13,8 @@
 #include "session/export.h"
 #include "session/util.hpp"
 
+using namespace std::literals;
+
 namespace session::config {
 
 MutableConfigMessage& ConfigBase::dirty() {
@@ -298,6 +300,14 @@ bool ConfigBase::remove_key(ustring_view key, size_t from) {
         }
     }
     return removed;
+}
+
+void ConfigBase::load_key(ustring_view ed25519_secretkey) {
+    if (!(ed25519_secretkey.size() == 64 || ed25519_secretkey.size() == 32))
+        throw std::invalid_argument{
+                encryption_domain() + " requires an Ed25519 64-byte secret key or 32-byte seed"s};
+
+    add_key(ed25519_secretkey.substr(0, 32));
 }
 
 void set_error(config_object* conf, std::string e) {

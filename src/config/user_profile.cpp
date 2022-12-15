@@ -10,14 +10,6 @@
 using namespace session::config;
 using session::ustring_view;
 
-void UserProfile::load_key(ustring_view ed25519_secretkey) {
-    if (!(ed25519_secretkey.size() == 64 || ed25519_secretkey.size() == 32))
-        throw std::invalid_argument{
-                "UserProfile requires an Ed25519 64-byte secret key or 32-byte seed"};
-
-    add_key(ed25519_secretkey.substr(0, 32));
-}
-
 UserProfile::UserProfile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
         ConfigBase{dumped} {
     load_key(ed25519_secretkey);
@@ -55,7 +47,7 @@ LIBSESSION_C_API int user_profile_init(
     return SESSION_ERR_NONE;
 }
 
-const std::optional<std::string_view> UserProfile::get_name() const {
+std::optional<std::string_view> UserProfile::get_name() const {
     if (auto* s = data["n"].string(); s && !s->empty())
         return *s;
     return std::nullopt;
