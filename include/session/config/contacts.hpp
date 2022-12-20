@@ -119,6 +119,12 @@ class Contacts : public ConfigBase {
     /// example.
     iterator erase(iterator it);
 
+    /// Returns the number of contacts.
+    size_t size() const;
+
+    /// Returns true if the contact list is empty.
+    bool empty() const { return size() == 0; }
+
     /// Iterators for iterating through all contacts.  Typically you access this implicit via a for
     /// loop over the `Contacts` object:
     ///

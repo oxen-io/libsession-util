@@ -92,6 +92,9 @@ void contacts_set(config_object* conf, const contacts_contact* contact);
 /// iteration; see details below.
 bool contacts_erase(config_object* conf, const char* session_id);
 
+/// Returns the number of contacts.
+size_t contacts_size(const config_object* conf);
+
 /// Functions for iterating through the entire contact list, in sorted order.  Intended use is:
 ///
 ///     contacts_contact c;

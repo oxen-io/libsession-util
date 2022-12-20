@@ -35,6 +35,9 @@ TEST_CASE("Contacts", "[config][contacts]") {
 
     CHECK_FALSE(contacts.get(definitely_real_id));
 
+    CHECK(contacts.empty());
+    CHECK(contacts.size() == 0);
+
     auto c = contacts.get_or_create(definitely_real_id);
 
     CHECK_FALSE(c.name);
@@ -118,12 +121,15 @@ TEST_CASE("Contacts", "[config][contacts]") {
     // Iterate through and make sure we got everything we expected
     std::vector<std::string> session_ids;
     std::vector<std::string> nicknames;
+    CHECK(contacts.size() == 2);
+    CHECK_FALSE(contacts.empty());
     for (const auto& cc : contacts) {
         session_ids.push_back(cc.session_id);
         nicknames.emplace_back(cc.nickname.value_or("(N/A)"));
     }
 
     REQUIRE(session_ids.size() == 2);
+    REQUIRE(session_ids.size() == contacts.size());
     CHECK(session_ids[0] == definitely_real_id);
     CHECK(session_ids[1] == another_id);
     CHECK(nicknames[0] == "Joey");
@@ -299,6 +305,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     std::vector<std::string> session_ids;
     std::vector<std::string> nicknames;
 
+    CHECK(contacts_size(conf) == 2);
     contacts_iterator* it = contacts_iterator_new(conf);
     contacts_contact ci;
     for (; !contacts_iterator_done(it, &ci); contacts_iterator_advance(it)) {

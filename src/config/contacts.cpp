@@ -284,6 +284,16 @@ Contacts::iterator Contacts::erase(iterator it) {
     return it;
 }
 
+size_t Contacts::size() const {
+    if (auto* c = data["c"].dict())
+        return c->size();
+    return 0;
+}
+
+LIBSESSION_C_API size_t contacts_size(const config_object* conf) {
+    return unbox<Contacts>(conf)->size();
+}
+
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until we
 /// find one that is valid (or hit the end).
 void Contacts::iterator::_load_info() {
