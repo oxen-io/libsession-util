@@ -67,7 +67,7 @@ bool contacts_get(const config_object* conf, contacts_contact* contact, const ch
 ///
 /// This is the method that should usually be used to create or update a contact, followed by
 /// setting fields in the contact, and then giving it to contacts_set().
-bool contacts_get_or_create(
+bool contacts_get_or_construct(
         const config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
@@ -79,7 +79,7 @@ void contacts_set(config_object* conf, const contacts_contact* contact);
 // is simple enough; for example to update `approved` and leave everything else unchanged:
 //
 // contacts_contact c;
-// if (contacts_get_or_create(conf, &c, some_session_id)) {
+// if (contacts_get_or_construct(conf, &c, some_session_id)) {
 //     const char* new_nickname = "Joe";
 //     c.approved = new_nickname;
 //     contacts_set_or_create(conf, &c);

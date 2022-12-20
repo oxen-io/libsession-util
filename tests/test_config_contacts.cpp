@@ -38,7 +38,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK(contacts.empty());
     CHECK(contacts.size() == 0);
 
-    auto c = contacts.get_or_create(definitely_real_id);
+    auto c = contacts.get_or_construct(definitely_real_id);
 
     CHECK_FALSE(c.name);
     CHECK_FALSE(c.nickname);
@@ -100,7 +100,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(x->blocked);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111"sv;
-    auto c2 = contacts2.get_or_create(another_id);
+    auto c2 = contacts2.get_or_construct(another_id);
     // We're not setting any fields, but we should still keep a record of the session id
     contacts2.set(c2);
 
@@ -218,7 +218,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     contacts_contact c;
     CHECK_FALSE(contacts_get(conf, &c, definitely_real_id));
 
-    CHECK(contacts_get_or_create(conf, &c, definitely_real_id));
+    CHECK(contacts_get_or_construct(conf, &c, definitely_real_id));
 
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK(c.name == nullptr);
@@ -280,7 +280,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c3.profile_pic.url == nullptr);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
-    REQUIRE(contacts_get_or_create(conf, &c3, another_id));
+    REQUIRE(contacts_get_or_construct(conf, &c3, another_id));
     CHECK(c3.name == nullptr);
     CHECK(c3.nickname == nullptr);
     CHECK_FALSE(c3.approved);
