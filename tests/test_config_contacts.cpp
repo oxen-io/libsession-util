@@ -51,8 +51,14 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(contacts.needs_dump());
     CHECK(contacts.push().second == 0);
 
-    c.name = "Joe";
-    c.nickname = "Joey";
+    {
+        // Setting temporaries via `.set_name` helper:
+        std::string myname = "Joe", mynick = "Joey";
+        c.set_name(myname);
+        c.set_nickname(std::move(mynick));
+        CHECK((void*)c.name->data() != (void*)myname.data());
+        CHECK((void*)c.nickname->data() != (void*)mynick.data());
+    }
     c.approved = true;
     c.approved_me = true;
 
