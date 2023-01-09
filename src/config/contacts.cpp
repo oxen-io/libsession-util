@@ -166,17 +166,17 @@ LIBSESSION_C_API bool contacts_get(
     return false;
 }
 
-contact_info Contacts::get_or_create(std::string_view pubkey_hex) const {
+contact_info Contacts::get_or_construct(std::string_view pubkey_hex) const {
     if (auto maybe = get(pubkey_hex))
         return *std::move(maybe);
 
     return contact_info{std::string{pubkey_hex}};
 }
 
-LIBSESSION_C_API bool contacts_get_or_create(
+LIBSESSION_C_API bool contacts_get_or_construct(
         const config_object* conf, contacts_contact* contact, const char* session_id) {
     try {
-        unbox<Contacts>(conf)->get_or_create(session_id).into(*contact);
+        unbox<Contacts>(conf)->get_or_construct(session_id).into(*contact);
         return true;
     } catch (...) {
         return false;
@@ -231,32 +231,32 @@ LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* 
 }
 
 void Contacts::set_name(std::string_view session_id, std::string_view name) {
-    auto c = get_or_create(session_id);
+    auto c = get_or_construct(session_id);
     c.name = name;
     set(c);
 }
 void Contacts::set_nickname(std::string_view session_id, std::string_view nickname) {
-    auto c = get_or_create(session_id);
+    auto c = get_or_construct(session_id);
     c.nickname = nickname;
     set(c);
 }
 void Contacts::set_profile_pic(std::string_view session_id, profile_pic pic) {
-    auto c = get_or_create(session_id);
+    auto c = get_or_construct(session_id);
     c.profile_picture = std::move(pic);
     set(c);
 }
 void Contacts::set_approved(std::string_view session_id, bool approved) {
-    auto c = get_or_create(session_id);
+    auto c = get_or_construct(session_id);
     c.approved = approved;
     set(c);
 }
 void Contacts::set_approved_me(std::string_view session_id, bool approved_me) {
-    auto c = get_or_create(session_id);
+    auto c = get_or_construct(session_id);
     c.approved_me = approved_me;
     set(c);
 }
 void Contacts::set_blocked(std::string_view session_id, bool blocked) {
-    auto c = get_or_create(session_id);
+    auto c = get_or_construct(session_id);
     c.blocked = blocked;
     set(c);
 }
@@ -282,6 +282,16 @@ Contacts::iterator Contacts::erase(iterator it) {
     ++it;
     erase(session_id);
     return it;
+}
+
+size_t Contacts::size() const {
+    if (auto* c = data["c"].dict())
+        return c->size();
+    return 0;
+}
+
+LIBSESSION_C_API size_t contacts_size(const config_object* conf) {
+    return unbox<Contacts>(conf)->size();
 }
 
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until we

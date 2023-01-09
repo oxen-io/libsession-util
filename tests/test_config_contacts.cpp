@@ -35,7 +35,10 @@ TEST_CASE("Contacts", "[config][contacts]") {
 
     CHECK_FALSE(contacts.get(definitely_real_id));
 
-    auto c = contacts.get_or_create(definitely_real_id);
+    CHECK(contacts.empty());
+    CHECK(contacts.size() == 0);
+
+    auto c = contacts.get_or_construct(definitely_real_id);
 
     CHECK_FALSE(c.name);
     CHECK_FALSE(c.nickname);
@@ -97,7 +100,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(x->blocked);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111"sv;
-    auto c2 = contacts2.get_or_create(another_id);
+    auto c2 = contacts2.get_or_construct(another_id);
     // We're not setting any fields, but we should still keep a record of the session id
     contacts2.set(c2);
 
@@ -118,12 +121,15 @@ TEST_CASE("Contacts", "[config][contacts]") {
     // Iterate through and make sure we got everything we expected
     std::vector<std::string> session_ids;
     std::vector<std::string> nicknames;
+    CHECK(contacts.size() == 2);
+    CHECK_FALSE(contacts.empty());
     for (const auto& cc : contacts) {
         session_ids.push_back(cc.session_id);
         nicknames.emplace_back(cc.nickname.value_or("(N/A)"));
     }
 
     REQUIRE(session_ids.size() == 2);
+    REQUIRE(session_ids.size() == contacts.size());
     CHECK(session_ids[0] == definitely_real_id);
     CHECK(session_ids[1] == another_id);
     CHECK(nicknames[0] == "Joey");
@@ -212,7 +218,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     contacts_contact c;
     CHECK_FALSE(contacts_get(conf, &c, definitely_real_id));
 
-    CHECK(contacts_get_or_create(conf, &c, definitely_real_id));
+    CHECK(contacts_get_or_construct(conf, &c, definitely_real_id));
 
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK(c.name == nullptr);
@@ -264,7 +270,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     free(to_push);
 
     contacts_contact c3;
-    REQUIRE(contacts_get(conf, &c3, definitely_real_id));
+    REQUIRE(contacts_get(conf2, &c3, definitely_real_id));
     CHECK(c3.name == "Joe"sv);
     CHECK(c3.nickname == "Joey"sv);
     CHECK(c3.approved);
@@ -274,7 +280,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c3.profile_pic.url == nullptr);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
-    REQUIRE(contacts_get_or_create(conf, &c3, another_id));
+    REQUIRE(contacts_get_or_construct(conf, &c3, another_id));
     CHECK(c3.name == nullptr);
     CHECK(c3.nickname == nullptr);
     CHECK_FALSE(c3.approved);
@@ -299,6 +305,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     std::vector<std::string> session_ids;
     std::vector<std::string> nicknames;
 
+    CHECK(contacts_size(conf) == 2);
     contacts_iterator* it = contacts_iterator_new(conf);
     contacts_contact ci;
     for (; !contacts_iterator_done(it, &ci); contacts_iterator_advance(it)) {
