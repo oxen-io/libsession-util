@@ -291,7 +291,7 @@ bool ConfigBase::remove_key(ustring_view key, size_t from) {
     bool removed = false;
 
     for (size_t i = from; i < _keys_size; i++) {
-        if (sodium_memcmp(_keys[0].data(), _keys[i].data(), KEY_SIZE) == 0) {
+        if (sodium_memcmp(key.data(), _keys[i].data(), KEY_SIZE) == 0) {
             if (i + 1 < _keys_size)
                 std::memmove(&_keys[i], &_keys[i + 1], (_keys_size - i - 1) * KEY_SIZE);
             _keys_size--;
