@@ -20,6 +20,7 @@ add_library(config
     config/contacts.cpp
     config/encrypt.cpp
     config/error.c
+    config/profile_pic.cpp
     config/user_profile.cpp
     fields.cpp
 )
