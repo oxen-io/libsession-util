@@ -270,7 +270,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     free(to_push);
 
     contacts_contact c3;
-    REQUIRE(contacts_get(conf, &c3, definitely_real_id));
+    REQUIRE(contacts_get(conf2, &c3, definitely_real_id));
     CHECK(c3.name == "Joe"sv);
     CHECK(c3.nickname == "Joey"sv);
     CHECK(c3.approved);
