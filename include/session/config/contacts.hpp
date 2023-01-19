@@ -43,7 +43,7 @@ struct contact_info {
     bool approved_me = false;
     bool blocked = false;
 
-    contact_info(std::string sid);
+    explicit contact_info(std::string sid);
 
     // Internal ctor/method for C API implementations:
     contact_info(const struct contacts_contact& c);  // From c struct
