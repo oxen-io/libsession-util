@@ -39,6 +39,16 @@ contact_info::contact_info(std::string sid) : session_id{std::move(sid)} {
     check_session_id(session_id);
 }
 
+void contact_info::set_name(std::string n) {
+    name_ = std::move(n);
+    name = name_;
+}
+
+void contact_info::set_nickname(std::string n) {
+    nickname_ = std::move(n);
+    nickname = nickname_;
+}
+
 Contacts::Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
         ConfigBase{dumped} {
     load_key(ed25519_secretkey);
@@ -136,7 +146,7 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     if (c.profile_pic.url && std::strlen(c.profile_pic.url) && c.profile_pic.key &&
         c.profile_pic.keylen > 0)
         profile_picture.emplace(
-                c.profile_pic.url, ustring_view{c.profile_pic.key, c.profile_pic.keylen});
+                c.profile_pic.url, ustring{c.profile_pic.key, c.profile_pic.keylen});
     approved = c.approved;
     approved_me = c.approved_me;
     blocked = c.blocked;
@@ -230,14 +240,14 @@ LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* 
     unbox<Contacts>(conf)->set(contact_info{*contact});
 }
 
-void Contacts::set_name(std::string_view session_id, std::string_view name) {
+void Contacts::set_name(std::string_view session_id, std::string name) {
     auto c = get_or_construct(session_id);
-    c.name = name;
+    c.set_name(std::move(name));
     set(c);
 }
-void Contacts::set_nickname(std::string_view session_id, std::string_view nickname) {
+void Contacts::set_nickname(std::string_view session_id, std::string nickname) {
     auto c = get_or_construct(session_id);
-    c.nickname = nickname;
+    c.set_nickname(std::move(nickname));
     set(c);
 }
 void Contacts::set_profile_pic(std::string_view session_id, profile_pic pic) {
