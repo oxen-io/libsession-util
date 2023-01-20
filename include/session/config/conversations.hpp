@@ -8,7 +8,11 @@
 
 #include "base.hpp"
 
-extern "C" struct convo_info;
+extern "C" {
+struct convo_one_to_one;
+struct convo_open_group;
+struct convo_legacy_closed_group;
+}
 
 namespace session::config {
 
@@ -41,7 +45,7 @@ class Conversations;
 
 namespace convo {
 
-    enum class expiration_mode : int8_t { none, after_send, after_read };
+    enum class expiration_mode : int8_t { none = 0, after_send = 1, after_read = 2 };
 
     struct one_to_one {
         std::string session_id;  // in hex
@@ -54,12 +58,18 @@ namespace convo {
         explicit one_to_one(std::string&& session_id);
         explicit one_to_one(std::string_view session_id);
 
+        // Internal ctor/method for C API implementations:
+        one_to_one(const struct convo_one_to_one& c);  // From c struct
+        void into(convo_one_to_one& c) const;          // Into c struct
+
       private:
         friend class session::config::Conversations;
         void load(const dict& info_dict);
     };
 
     struct open_group {
+        static constexpr size_t MAX_URL = 320, MAX_ROOM = 150;
+
         std::string_view base_url() const;  // Accesses the base url (i.e. not including room or
                                             // pubkey). Always lower-case.
         std::string_view room()
@@ -80,6 +90,10 @@ namespace convo {
 
         // Same as above, but takes pubkey as a hex string.
         open_group(std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
+
+        // Internal ctor/method for C API implementations:
+        open_group(const struct convo_open_group& c);  // From c struct
+        void into(convo_open_group& c) const;          // Into c struct
 
         // Replaces the baseurl/room/pubkey of this object.
         void set_server(std::string_view base_url, std::string_view room, ustring_view pubkey);
@@ -113,6 +127,10 @@ namespace convo {
         // Constructs an empty legacy_closed_group from a quasi-session_id
         explicit legacy_closed_group(std::string&& group_id);
         explicit legacy_closed_group(std::string_view group_id);
+
+        // Internal ctor/method for C API implementations:
+        legacy_closed_group(const struct convo_legacy_closed_group& c);  // From c struct
+        void into(convo_legacy_closed_group& c) const;                   // Into c struct
 
       private:
         friend class session::config::Conversations;
@@ -192,6 +210,7 @@ class Conversations : public ConfigBase {
     /// Removes an open group conversation record.  Returns true if found and removed, false if not
     /// present.  Arguments are the same as `get_open`.
     bool erase_open(std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
+    bool erase_open(std::string_view base_url, std::string_view room, ustring_view pubkey);
 
     /// Removes a legacy closed group conversation.  Returns true if found and removed, false if not
     /// present.

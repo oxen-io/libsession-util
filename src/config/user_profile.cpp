@@ -2,6 +2,7 @@
 
 #include <sodium/crypto_generichash_blake2b.h>
 
+#include "internal.hpp"
 #include "session/config/error.h"
 #include "session/config/user_profile.hpp"
 #include "session/export.h"
@@ -21,30 +22,7 @@ LIBSESSION_C_API int user_profile_init(
         const unsigned char* dumpstr,
         size_t dumplen,
         char* error) {
-    assert(ed25519_secretkey_bytes);
-    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
-    auto c_conf = std::make_unique<config_object>();
-    auto c = std::make_unique<internals<UserProfile>>();
-    std::optional<ustring_view> dump;
-    if (dumpstr && dumplen)
-        dump.emplace(dumpstr, dumplen);
-
-    try {
-        c->config = std::make_unique<UserProfile>(ed25519_secretkey, dump);
-    } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return SESSION_ERR_INVALID_DUMP;
-    }
-
-    c_conf->internals = c.release();
-    c_conf->last_error = nullptr;
-    *conf = c_conf.release();
-    return SESSION_ERR_NONE;
+    return c_wrapper_init<UserProfile>(conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
 }
 
 std::optional<std::string_view> UserProfile::get_name() const {

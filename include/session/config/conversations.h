@@ -7,13 +7,11 @@ extern "C" {
 #include "base.h"
 #include "profile_pic.h"
 
-
 enum CONVO_EXPIRATION_MODE {
     EXPIRATION_NONE = 0,
     EXPIRATION_AFTER_SEND = 1,
     EXPIRATION_AFTER_READ = 2,
 };
-
 
 typedef struct convo_one_to_one {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
@@ -27,17 +25,17 @@ typedef struct convo_one_to_one {
 } convo_one_to_one;
 
 typedef struct convo_open_group {
-    const char* base_url; // null-terminated, always lower-case
-    const char* room; // null-terminated, always lower-case
-    const unsigned char* pubkey; // 32 bytes (not terminated, can contain nulls)
-    int64_t last_read; // ms since unix epoch
+    char base_url[321];        // null-terminated (max length 320), always lower-case
+    char room[151];            // null-terminated (max length 150), always lower-case
+    unsigned char pubkey[32];  // 32 bytes (not terminated, can contain nulls)
+    int64_t last_read;         // ms since unix epoch
 } convo_open_group;
 
 typedef struct convo_legacy_closed_group {
     char group_id[67];  // in hex; 66 hex chars + null terminator.  Looks just like a Session ID,
                         // though isn't really one.
 
-    int64_t last_read; // ms since unix epoch
+    int64_t last_read;  // ms since unix epoch
 } convo_legacy_closed_group;
 
 /// Constructs a conversations config object and sets a pointer to it in `conf`.
@@ -68,8 +66,8 @@ int conversations_init(
         char* error) __attribute__((warn_unused_result));
 
 /// Fills `convo` with the conversation info given a session ID (specified as a null-terminated hex
-/// string), if the conversation exists, and returns true.  If the conversation does not exist then `convo`
-/// is left unchanged and false is returned.
+/// string), if the conversation exists, and returns true.  If the conversation does not exist then
+/// `convo` is left unchanged and false is returned.
 bool convos_get_1to1(const config_object* conf, convo_one_to_one* convo, const char* session_id)
         __attribute__((warn_unused_result));
 
@@ -85,17 +83,41 @@ bool convos_get_or_construct_1to1(
         const config_object* conf, convo_one_to_one* convo, const char* session_id)
         __attribute__((warn_unused_result));
 
-/// Adds or updates a conversation from the given conversation info struct.
-void convos_set_1to1(config_object* conf, const convo_one_to_one* convo);
-
 /// open-group versions of the 1-to-1 functions:
 ///
 /// Gets an open group convo info.  `base_url` and `room` are null-terminated c strings; pubkey is
 /// 32 bytes.  base_url and room will always be lower-cased (if not already).
-bool convos_get_open_group(const config_object* conf, convo_open_group* og, const char* base_url, const char* room, unsigned const char* pubkey)
-        __attribute__((warn_unused_result));
+bool convos_get_open_group(
+        const config_object* conf,
+        convo_open_group* og,
+        const char* base_url,
+        const char* room,
+        unsigned const char* pubkey) __attribute__((warn_unused_result));
 bool convos_get_or_construct_open_group(
-        const config_object* conf, convo_open_group* convo, const char* base_url, const char* room, unsigned const char* pubkey)
+        const config_object* conf,
+        convo_open_group* convo,
+        const char* base_url,
+        const char* room,
+        unsigned const char* pubkey) __attribute__((warn_unused_result));
+
+/// Fills `convo` with the conversation info given a legacy closed group ID (specified as a
+/// null-terminated hex string), if the conversation exists, and returns true.  If the conversation
+/// does not exist then `convo` is left unchanged and false is returned.
+bool convos_get_legacy_closed(
+        const config_object* conf, convo_legacy_closed_group* convo, const char* id)
+        __attribute__((warn_unused_result));
+
+/// Same as the above except that when the conversation does not exist, this sets all the convo
+/// fields to defaults and loads it with the given id.
+///
+/// Returns true as long as it is given a valid legacy closed group id (i.e. same format as a
+/// session id).  A false return is considered an error, and means the id was not a valid session
+/// id.
+///
+/// This is the method that should usually be used to create or update a conversation, followed by
+/// setting fields in the convo, and then giving it to convos_set().
+bool convos_get_or_construct_legacy_closed(
+        const config_object* conf, convo_legacy_closed_group* convo, const char* id)
         __attribute__((warn_unused_result));
 
 /// Adds or updates a conversation from the given convo info
@@ -107,7 +129,8 @@ void convos_set_legacy_closed(config_object* conf, const convo_legacy_closed_gro
 /// and removed, false if the conversation was not present.  You must not call this during
 /// iteration; see details below.
 bool convos_erase_1to1(config_object* conf, const char* session_id);
-bool convos_erase_open(config_object* conf, const char* base_url, const char* room, unsigned const char* pubkey);
+bool convos_erase_open(
+        config_object* conf, const char* base_url, const char* room, unsigned const char* pubkey);
 bool convos_erase_legacy_closed(config_object* conf, const char* group_id);
 
 /// Returns the number of conversations.
@@ -124,11 +147,11 @@ size_t convos_size_legacy_closed(const config_object* conf);
 ///     convo_legacy_closed_group c3;
 ///     convos_iterator *it = convos_iterator_new(my_convos);
 ///     for (; !convos_iterator_done(it); convos_iterator_advance(it)) {
-///         if (convo_it_is_1to1(it, &c1)) {
+///         if (convos_it_is_1to1(it, &c1)) {
 ///             // use c1.whatever
-///         } else if (convo_it_is_open(it, &c2)) {
+///         } else if (convos_it_is_open(it, &c2)) {
 ///             // use c2.whatever
-///         } else if (convo_it_is_legacy_closed(it, &c3)) {
+///         } else if (convos_it_is_legacy_closed(it, &c3)) {
 ///             // use c3.whatever
 ///         }
 ///     }
@@ -162,10 +185,10 @@ typedef struct convos_iterator {
 // Starts a new iterator that iterates over all conversations.
 convos_iterator* convos_iterator_new(const config_object* conf);
 
-// Starts a new iterator that iterates over just one type of conversation.  You still need to use
-// `convos_it_is_1to1` (or the alternatives) to load the data in each pass of the loop.  (You can
-// safely ignore the bool return value of the `it_is_whatever` function: it will always be true for
-// the particular type being iterated over).
+// The same as `convos_iterator_new` except that this iterates *only* over one type of conversation.
+// You still need to use `convos_it_is_1to1` (or the alternatives) to load the data in each pass of
+// the loop.  (You can, however, safely ignore the bool return value of the `it_is_whatever`
+// function: it will always be true for the particular type being iterated over).
 convos_iterator* convos_iterator_new_1to1(const config_object* conf);
 convos_iterator* convos_iterator_new_open(const config_object* conf);
 convos_iterator* convos_iterator_new_legacy_closed(const config_object* conf);
