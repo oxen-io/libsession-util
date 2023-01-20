@@ -5,6 +5,7 @@
 #include <oxenc/variant.h>
 #include <sodium/crypto_generichash_blake2b.h>
 
+#include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <variant>
@@ -90,21 +91,21 @@ void convo::open_group::load_encoded_key(std::string k) {
     if (new_url_size == std::string::npos)
         throw std::invalid_argument{
                 "Invalid encoded open group url: did not find URL/room separator"};
-    size_t pk_sep_pos = k.find('\0', url_size + 1);
+    size_t pk_sep_pos = k.find('\0', new_url_size + 1);
     if (pk_sep_pos == std::string::npos)
         throw std::invalid_argument{
                 "Invalid encoded open group url: did not find room/pubkey separator"};
-    if (pk_sep_pos + 32 != k.size())
+    if (pk_sep_pos + 33 != k.size())
         throw std::invalid_argument{"Invalid encoded open group url: did not find pubkey"};
 
     key = std::move(k);
     url_size = new_url_size;
 }
 
-std::string_view convo::open_group::base_url() {
+std::string_view convo::open_group::base_url() const {
     return {key.data(), url_size};
 }
-std::string_view convo::open_group::room() {
+std::string_view convo::open_group::room() const {
     if (key.empty())
         return {};
     std::string_view r{key};
@@ -112,12 +113,12 @@ std::string_view convo::open_group::room() {
     r.remove_suffix(1 /*null separator*/ + 32 /*pubkey*/);
     return r;
 }
-ustring_view convo::open_group::pubkey() {
+ustring_view convo::open_group::pubkey() const {
     if (key.empty())
         return {};
     return {reinterpret_cast<const unsigned char*>(key.data()) + (key.size() - 32), 32};
 }
-std::string convo::open_group::pubkey_hex() {
+std::string convo::open_group::pubkey_hex() const {
     auto pk = pubkey();
     return oxenc::to_hex(pk.begin(), pk.end());
 }
@@ -292,13 +293,14 @@ void Conversations::set(const convo::open_group& c) {
 }
 
 void Conversations::set(const convo::legacy_closed_group& c) {
-    auto info = data["C"][c.id];
+    std::string pk = session_id_to_bytes(c.id);
+    auto info = data["C"][pk];
     info["r"] = c.last_read;
 }
 
 template <typename Data>
 static bool erase_impl(Data& data, std::string top_key, std::string sub_key) {
-    auto convo = data[std::move(top_key)][std::move(sub_key)];
+    auto convo = data[top_key][sub_key];
     bool ret = convo.exists();
     convo.erase();
     return ret;
@@ -356,19 +358,22 @@ size_t Conversations::size() const {
     return size_1to1() + size_open() + size_legacy_closed();
 }
 
-Conversations::iterator::iterator(const DictFieldRoot& data) {
-    if (auto* d = data["1"].dict()) {
-        _it_11 = d->begin();
-        _end_11 = d->end();
-    }
-    if (auto* d = data["o"].dict()) {
-        _it_open = d->begin();
-        _end_open = d->end();
-    }
-    if (auto* d = data["C"].dict()) {
-        _it_lclosed = d->begin();
-        _end_lclosed = d->end();
-    }
+Conversations::iterator::iterator(const DictFieldRoot& data, bool oneto1, bool open, bool closed) {
+    if (oneto1)
+        if (auto* d = data["1"].dict()) {
+            _it_11 = d->begin();
+            _end_11 = d->end();
+        }
+    if (open)
+        if (auto* d = data["o"].dict()) {
+            _it_open = d->begin();
+            _end_open = d->end();
+        }
+    if (closed)
+        if (auto* d = data["C"].dict()) {
+            _it_lclosed = d->begin();
+            _end_lclosed = d->end();
+        }
     _load_val();
 }
 
@@ -393,7 +398,7 @@ void Conversations::iterator::_load_val() {
 
         if (k.size() == 33 && k[0] == 0x05) {
             if (auto* info_dict = std::get_if<dict>(&v)) {
-                _val = std::make_shared<convo::any>(convo::one_to_one{k});
+                _val = std::make_shared<convo::any>(convo::one_to_one{oxenc::to_hex(k)});
                 std::get<convo::one_to_one>(*_val).load(*info_dict);
                 return;
             }
@@ -420,7 +425,7 @@ void Conversations::iterator::_load_val() {
         auto& og = std::get<convo::open_group>(*_val);
         try {
             og.load_encoded_key(k);
-        } catch (...) {
+        } catch (const std::exception& e) {
             ++*_it_open;
             continue;
         }
@@ -439,7 +444,7 @@ void Conversations::iterator::_load_val() {
 
         if (k.size() == 33 && k[0] == 0x05) {
             if (auto* info_dict = std::get_if<dict>(&v)) {
-                _val = std::make_shared<convo::any>(convo::legacy_closed_group{k});
+                _val = std::make_shared<convo::any>(convo::legacy_closed_group{oxenc::to_hex(k)});
                 std::get<convo::legacy_closed_group>(*_val).load(*info_dict);
                 return;
             }
@@ -468,4 +473,3 @@ Conversations::iterator& Conversations::iterator::operator++() {
     _load_val();
     return *this;
 }
-

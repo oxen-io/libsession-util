@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstddef>
 #include <chrono>
+#include <cstddef>
 #include <iterator>
 #include <memory>
 #include <session/config.hpp>
@@ -39,39 +39,35 @@ class Conversations;
 ///
 /// c - reserved for future tracking of new closed group conversations.
 
-
-
 namespace convo {
 
-    enum class expiration_mode : int8_t {
-        none,
-        after_send,
-        after_read
-    };
+    enum class expiration_mode : int8_t { none, after_send, after_read };
 
     struct one_to_one {
-        std::string session_id; // in hex
+        std::string session_id;  // in hex
         int64_t last_read = 0;
         expiration_mode expiration = expiration_mode::none;
         std::chrono::minutes expiration_timer{0};
 
-        // Constructs an empty one_to_one from a session_id
+        // Constructs an empty one_to_one from a session_id.  Session ID can be either bytes (33) or
+        // hex (66).
         explicit one_to_one(std::string&& session_id);
         explicit one_to_one(std::string_view session_id);
 
-        private:
+      private:
         friend class session::config::Conversations;
         void load(const dict& info_dict);
     };
 
     struct open_group {
-        std::string_view base_url();  // Accesses the base url (i.e. not including room or pubkey).
-                                      // Always lower-case.
-        std::string_view room(); // Accesses the room name, always in lower-case.  (Note that the
-                                 // actual open group info might not be lower-case; it is just in
-                                 // the open group convo where we force it lower-case).
-        ustring_view pubkey(); // Accesses the server pubkey (32 bytes).
-        std::string pubkey_hex(); // Accesses the server pubkey as hex (64 hex digits).
+        std::string_view base_url() const;  // Accesses the base url (i.e. not including room or
+                                            // pubkey). Always lower-case.
+        std::string_view room()
+                const;  // Accesses the room name, always in lower-case.  (Note that the
+                        // actual open group info might not be lower-case; it is just in
+                        // the open group convo where we force it lower-case).
+        ustring_view pubkey() const;     // Accesses the server pubkey (32 bytes).
+        std::string pubkey_hex() const;  // Accesses the server pubkey as hex (64 hex digits).
 
         int64_t last_read = 0;
 
@@ -87,15 +83,16 @@ namespace convo {
 
         // Replaces the baseurl/room/pubkey of this object.
         void set_server(std::string_view base_url, std::string_view room, ustring_view pubkey);
-        void set_server(std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
+        void set_server(
+                std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
 
         // Loads the baseurl/room/pubkey of this object from an encoded key.  Throws
         // std::invalid_argument if the encoded key does not look right.
         void load_encoded_key(std::string key);
 
-        private:
-            std::string key;
-            size_t url_size = 0;
+      private:
+        std::string key;
+        size_t url_size = 0;
 
         friend class session::config::Conversations;
 
@@ -103,25 +100,27 @@ namespace convo {
 
         // Returns the key value we use in the stored dict for this open group, i.e.
         // lc(URL) + lc(NAME) + PUBKEY_BYTES.
-        static std::string make_key(std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
-        static std::string make_key(std::string_view base_url, std::string_view room, ustring_view pubkey);
+        static std::string make_key(
+                std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
+        static std::string make_key(
+                std::string_view base_url, std::string_view room, ustring_view pubkey);
     };
 
     struct legacy_closed_group {
-        std::string id; // in hex, indistinguishable from a Session ID
+        std::string id;  // in hex, indistinguishable from a Session ID
         int64_t last_read = 0;
 
         // Constructs an empty legacy_closed_group from a quasi-session_id
         explicit legacy_closed_group(std::string&& group_id);
         explicit legacy_closed_group(std::string_view group_id);
 
-        private:
+      private:
         friend class session::config::Conversations;
         void load(const dict& info_dict);
     };
 
     using any = std::variant<one_to_one, open_group, legacy_closed_group>;
-}
+}  // namespace convo
 
 class Conversations : public ConfigBase {
 
@@ -153,14 +152,12 @@ class Conversations : public ConfigBase {
     /// Looks up and returns an open group conversation.  Takes the base URL, room name (case
     /// insensitive), and pubkey (in hex).  Retuns nullopt if the open group was not found,
     /// otherwise a filled out `convo::open_group`.
-    std::optional<convo::open_group> get_open(std::string_view base_url,
-            std::string_view room,
-            std::string_view pubkey_hex) const;
+    std::optional<convo::open_group> get_open(
+            std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const;
 
     /// Same as above, but takes the pubkey as bytes instead of hex
-    std::optional<convo::open_group> get_open(std::string_view base_url,
-            std::string_view room,
-            ustring_view pubkey) const;
+    std::optional<convo::open_group> get_open(
+            std::string_view base_url, std::string_view room, ustring_view pubkey) const;
 
     /// Looks up and returns a legacy closed group conversation by ID.  The ID looks like a hex
     /// Session ID, but isn't really a Session ID.  Returns nullopt if there is no record of the
@@ -170,14 +167,11 @@ class Conversations : public ConfigBase {
     /// These are the same as the above methods (without "_or_construct" in the name), except that
     /// when the conversation doesn't exist a new one is created, prefilled with the pubkey/url/etc.
     convo::one_to_one get_or_construct_1to1(std::string_view session_id) const;
-    convo::open_group get_or_construct_open(std::string_view base_url,
-            std::string_view room,
-            std::string_view pubkey_hex) const;
-    convo::open_group get_or_construct_open(std::string_view base_url,
-            std::string_view room,
-            ustring_view pubkey) const;
+    convo::open_group get_or_construct_open(
+            std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const;
+    convo::open_group get_or_construct_open(
+            std::string_view base_url, std::string_view room, ustring_view pubkey) const;
     convo::legacy_closed_group get_or_construct_legacy_closed(std::string_view pubkey_hex) const;
-
 
     /// Inserts or replaces existing conversation info.  For example, to update a 1-to-1
     /// conversation last read time you would do:
@@ -190,7 +184,7 @@ class Conversations : public ConfigBase {
     void set(const convo::legacy_closed_group& c);
     void set(const convo::open_group& c);
 
-    void set(const convo::any& c); // Variant which can be any of the above
+    void set(const convo::any& c);  // Variant which can be any of the above
 
     /// Removes a one-to-one conversation.  Returns true if found and removed, false if not present.
     bool erase_1to1(std::string_view pubkey);
@@ -208,7 +202,7 @@ class Conversations : public ConfigBase {
     bool erase(const convo::open_group& c);
     bool erase(const convo::legacy_closed_group& c);
 
-    bool erase(const convo::any& c); // Variant of any of them
+    bool erase(const convo::any& c);  // Variant of any of them
 
     struct iterator;
 
@@ -230,8 +224,8 @@ class Conversations : public ConfigBase {
     /// Returns true if the conversation list is empty.
     bool empty() const { return size() == 0; }
 
-    /// Iterators for iterating through all conversations.  Typically you access this implicit via a for
-    /// loop over the `Conversations` object:
+    /// Iterators for iterating through all conversations.  Typically you access this implicit via a
+    /// for loop over the `Conversations` object:
     ///
     ///     for (auto& convo : conversations) {
     ///         if (auto* dm = std::get_if<convo::one_to_one>(&convo)) {
@@ -265,22 +259,36 @@ class Conversations : public ConfigBase {
     /// through that vector calling `erase_1to1()`/`erase_open()`/`erase_legacy_closed()` for each
     /// one.
     ///
-    iterator begin() const;
+    iterator begin() const { return iterator{data}; }
     iterator end() const { return iterator{}; }
 
+    template <typename ConvoType>
+    struct subtype_iterator;
+
+    /// Returns an iterator that iterates only through one type of conversations
+    subtype_iterator<convo::one_to_one> begin_1to1() const { return {data}; }
+    subtype_iterator<convo::open_group> begin_open() const { return {data}; }
+    subtype_iterator<convo::legacy_closed_group> begin_legacy_closed() const { return {data}; }
+
     using iterator_category = std::input_iterator_tag;
-    using value_type = std::variant<convo::one_to_one, convo::open_group, convo::legacy_closed_group>;
+    using value_type =
+            std::variant<convo::one_to_one, convo::open_group, convo::legacy_closed_group>;
     using reference = value_type&;
     using pointer = value_type*;
     using difference_type = std::ptrdiff_t;
 
     struct iterator {
-      private:
+      protected:
         std::shared_ptr<convo::any> _val;
-        std::optional<dict::const_iterator> _it_11, _end_11, _it_open, _end_open, _it_lclosed, _end_lclosed;
+        std::optional<dict::const_iterator> _it_11, _end_11, _it_open, _end_open, _it_lclosed,
+                _end_lclosed;
         void _load_val();
-        iterator() = default; // Constructs an end tombstone
-        explicit iterator(const DictFieldRoot& data);
+        iterator() = default;  // Constructs an end tombstone
+        explicit iterator(
+                const DictFieldRoot& data,
+                bool oneto1 = true,
+                bool open = true,
+                bool closed = true);
         friend class Conversations;
 
       public:
@@ -291,6 +299,31 @@ class Conversations : public ConfigBase {
         convo::any* operator->() const { return _val.get(); }
         iterator& operator++();
         iterator operator++(int) {
+            auto copy{*this};
+            ++*this;
+            return copy;
+        }
+    };
+
+    template <typename ConvoType>
+    struct subtype_iterator : iterator {
+      protected:
+        subtype_iterator(const DictFieldRoot& data) :
+                iterator(
+                        data,
+                        std::is_same_v<convo::one_to_one, ConvoType>,
+                        std::is_same_v<convo::open_group, ConvoType>,
+                        std::is_same_v<convo::legacy_closed_group, ConvoType>) {}
+        friend class Conversations;
+
+      public:
+        ConvoType& operator*() const { return std::get<ConvoType>(*_val); }
+        ConvoType* operator->() const { return &std::get<ConvoType>(*_val); }
+        subtype_iterator& operator++() {
+            iterator::operator++();
+            return *this;
+        }
+        subtype_iterator operator++(int) {
             auto copy{*this};
             ++*this;
             return copy;

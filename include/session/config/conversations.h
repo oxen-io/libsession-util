@@ -159,8 +159,17 @@ typedef struct convos_iterator {
     void* _internals;
 } convos_iterator;
 
-// Starts a new iterator.
+// Starts a new iterator that iterates over all conversations.
 convos_iterator* convos_iterator_new(const config_object* conf);
+
+// Starts a new iterator that iterates over just one type of conversation.  You still need to use
+// `convos_it_is_1to1` (or the alternatives) to load the data in each pass of the loop.  (You can
+// safely ignore the bool return value of the `it_is_whatever` function: it will always be true for
+// the particular type being iterated over).
+convos_iterator* convos_iterator_new_1to1(const config_object* conf);
+convos_iterator* convos_iterator_new_open(const config_object* conf);
+convos_iterator* convos_iterator_new_legacy_closed(const config_object* conf);
+
 // Frees an iterator once no longer needed.
 void convos_iterator_free(convos_iterator* it);
 

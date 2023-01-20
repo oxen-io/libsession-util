@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <string_view>
+#include <variant>
 
 #include "utils.hpp"
 
@@ -34,7 +35,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
 
 
     constexpr auto definitely_real_id =
-            "050000000000000000000000000000000000000000000000000000000000000000"sv;
+            "055000000000000000000000000000000000000000000000000000000000000000"sv;
 
     CHECK_FALSE(convos.get_1to1(definitely_real_id));
 
@@ -119,104 +120,86 @@ TEST_CASE("Conversations", "[config][conversations]") {
     c2.expiration_timer = 15min;
     convos2.set(c2);
 
+    auto c3 = convos.get_or_construct_legacy_closed("05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+    c3.last_read = now_ms - 50;
+    convos2.set(c3);
+
     CHECK(convos2.needs_push());
 
     std::tie(to_push, seqno) = convos2.push();
 
     CHECK(seqno == 2);
 
-    /*
     std::vector<ustring_view> merge_configs;
     merge_configs.push_back(to_push);
-    contacts.merge(merge_configs);
-    contacts2.confirm_pushed(seqno);
+    convos.merge(merge_configs);
+    convos2.confirm_pushed(seqno);
 
-    CHECK_FALSE(contacts.needs_push());
-    CHECK(contacts.push().second == seqno);
+    CHECK_FALSE(convos.needs_push());
+    CHECK(convos.push().second == seqno);
 
-    // Iterate through and make sure we got everything we expected
-    std::vector<std::string> session_ids;
-    std::vector<std::string> nicknames;
-    CHECK(contacts.size() == 2);
-    CHECK_FALSE(contacts.empty());
-    for (const auto& cc : contacts) {
-        session_ids.push_back(cc.session_id);
-        nicknames.emplace_back(cc.nickname.value_or("(N/A)"));
+    using session::config::convo::one_to_one;
+    using session::config::convo::open_group;
+    using session::config::convo::legacy_closed_group;
+
+    std::vector<std::string> seen;
+    for (auto* conv : {&convos, &convos2} ) {
+        // Iterate through and make sure we got everything we expected
+        seen.clear();
+        CHECK(conv->size() == 4);
+        CHECK(conv->size_1to1() == 2);
+        CHECK(conv->size_open() == 1);
+        CHECK(conv->size_legacy_closed() == 1);
+        CHECK_FALSE(conv->empty());
+        for (const auto& convo : *conv) {
+            if (auto* c = std::get_if<one_to_one>(&convo))
+                seen.push_back("1-to-1: "s + c->session_id);
+            else if (auto* c = std::get_if<open_group>(&convo))
+                seen.push_back("og: " + std::string{c->base_url()} + "/r/" + std::string{c->room()});
+            else if (auto* c = std::get_if<legacy_closed_group>(&convo))
+                seen.push_back("cl: " + c->id);
+        }
+
+        CHECK(seen == std::vector<std::string>{{
+            "1-to-1: 051111111111111111111111111111111111111111111111111111111111111111",
+            "1-to-1: 055000000000000000000000000000000000000000000000000000000000000000",
+            "og: http://example.org:5678/r/sudokuroom",
+            "cl: 05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }});
     }
 
-    REQUIRE(session_ids.size() == 2);
-    REQUIRE(session_ids.size() == contacts.size());
-    CHECK(session_ids[0] == definitely_real_id);
-    CHECK(session_ids[1] == another_id);
-    CHECK(nicknames[0] == "Joey");
-    CHECK(nicknames[1] == "(N/A)");
+    CHECK_FALSE(convos.needs_push());
+    convos.erase_1to1("052000000000000000000000000000000000000000000000000000000000000000");
+    CHECK_FALSE(convos.needs_push());
+    convos.erase_1to1("055000000000000000000000000000000000000000000000000000000000000000");
+    CHECK(convos.needs_push());
+    CHECK(convos.size() == 3);
+    CHECK(convos.size_1to1() == 1);
 
-    // Conflict! Oh no!
+    // Check the single-type iterators:
+    seen.clear();
+    for (auto it = convos.begin_1to1(); it != convos.end(); ++it)
+        seen.push_back(it->session_id);
+    CHECK(seen == std::vector<std::string>{{
+        "051111111111111111111111111111111111111111111111111111111111111111",
+    }});
 
-    // On client 1 delete a contact:
-    contacts.erase(definitely_real_id);
+    seen.clear();
+    for (auto it = convos.begin_open(); it != convos.end(); ++it)
+        seen.emplace_back(it->base_url());
+    CHECK(seen == std::vector<std::string>{{
+        "http://example.org:5678",
+    }});
 
-    // Client 2 adds a new friend:
-    auto third_id = "052222222222222222222222222222222222222222222222222222222222222222"sv;
-    contacts2.set_nickname(third_id, "Nickname 3");
-    contacts2.set_approved(third_id, true);
-    contacts2.set_blocked(third_id, true);
-
-    session::config::profile_pic p;
-    {
-        // These don't stay alive, so we use set_key/set_url to make a local copy:
-        ustring key = "qwerty"_bytes;
-        std::string url = "http://example.com/huge.bmp";
-        p.set_key(std::move(key));
-        p.set_url(std::move(url));
-    }
-    contacts2.set_profile_pic(third_id, std::move(p));
-
-    CHECK(contacts.needs_push());
-    CHECK(contacts2.needs_push());
-    std::tie(to_push, seqno) = contacts.push();
-    auto [to_push2, seqno2] = contacts2.push();
-
-    CHECK(seqno == seqno2);
-    CHECK(to_push != to_push2);
-
-    contacts.confirm_pushed(seqno);
-    contacts2.confirm_pushed(seqno2);
-
-    merge_configs.clear();
-    merge_configs.push_back(to_push2);
-    contacts.merge(merge_configs);
-    CHECK(contacts.needs_push());
-
-    merge_configs.clear();
-    merge_configs.push_back(to_push);
-    contacts2.merge(merge_configs);
-    CHECK(contacts2.needs_push());
-
-    std::tie(to_push, seqno) = contacts.push();
-    CHECK(seqno == seqno2 + 1);
-    std::tie(to_push2, seqno2) = contacts2.push();
-    CHECK(seqno == seqno2);
-    CHECK(to_push == to_push2);
-
-    contacts.confirm_pushed(seqno);
-    contacts2.confirm_pushed(seqno2);
-
-    CHECK_FALSE(contacts.needs_push());
-    CHECK_FALSE(contacts2.needs_push());
-
-    session_ids.clear();
-    nicknames.clear();
-    for (const auto& cc : contacts) {
-        session_ids.push_back(cc.session_id);
-        nicknames.emplace_back(cc.nickname.value_or("(N/A)"));
-    }
-    REQUIRE(session_ids.size() == 2);
-    CHECK(session_ids[0] == another_id);
-    CHECK(session_ids[1] == third_id);
-    CHECK(nicknames[0] == "(N/A)");
-    CHECK(nicknames[1] == "Nickname 3");
+    seen.clear();
+    for (auto it = convos.begin_legacy_closed(); it != convos.end(); ++it)
+        seen.emplace_back(it->id);
+    CHECK(seen == std::vector<std::string>{{
+        "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    }});
 }
+
+/*
 
 TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
@@ -363,5 +346,5 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
 
     CHECK(contacts_get(conf, &ci, definitely_real_id));
     CHECK_FALSE(contacts_get(conf, &ci, another_id));
-    */
 }
+    */
