@@ -1,11 +1,9 @@
 #include "session/config/conversations.hpp"
 
-#include <fmt/format.h>
 #include <oxenc/hex.h>
 #include <oxenc/variant.h>
 #include <sodium/crypto_generichash_blake2b.h>
 
-#include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <variant>
