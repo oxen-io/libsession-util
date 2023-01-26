@@ -10,4 +10,7 @@ extern "C" {
 /// robust one: it does not check the leading byte prefix, nor the cryptographic properties of the
 /// pubkey for actual validity.
 bool session_id_is_valid(const char* session_id);
+
+#ifdef __cplusplus
 }
+#endif
