@@ -1,9 +1,12 @@
 #include "session/config/conversations.hpp"
 
 #include <oxenc/hex.h>
+#include <oxenc/base64.h>
+#include <oxenc/base32z.h>
 #include <oxenc/variant.h>
 #include <sodium/crypto_generichash_blake2b.h>
 
+#include <charconv>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -71,16 +74,13 @@ namespace convo {
         check_session_id(session_id);
     }
     one_to_one::one_to_one(const struct convo_one_to_one& c) :
-            session_id{c.session_id, 66},
-            last_read{c.last_read},
-            expiration{static_cast<expiration_mode>(c.exp_mode)},
-            expiration_timer{c.exp_minutes} {}
+        base{c.last_read, c.unread},
+            session_id{c.session_id, 66} {}
 
     void one_to_one::into(convo_one_to_one& c) const {
         std::memcpy(c.session_id, session_id.data(), 67);
         c.last_read = last_read;
-        c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(expiration);
-        c.exp_minutes = expiration_timer.count();
+        c.unread = unread;
     }
 
     open_group::open_group(
@@ -93,7 +93,7 @@ namespace convo {
         set_server(base_url_, room_, pubkey_hex_);
     }
 
-    open_group::open_group(const struct convo_open_group& c) : last_read{c.last_read} {
+    open_group::open_group(const struct convo_open_group& c) : base{c.last_read, c.unread} {
         set_server(c.base_url, c.room, ustring_view{c.pubkey, 32});
     }
 
@@ -106,6 +106,12 @@ namespace convo {
     void open_group::set_server(
             std::string_view base_url_, std::string_view room_, std::string_view pubkey_hex_) {
         key = make_key(base_url_, room_, pubkey_hex_);
+        url_size = base_url_.size();
+    }
+
+    void open_group::set_server(std::string_view full_url) {
+        auto [base_url_, room_, pubkey_] = parse_full_url(full_url);
+        key = make_key(base_url_, room_, pubkey_);
         url_size = base_url_.size();
     }
 
@@ -137,10 +143,10 @@ namespace convo {
         return r;
     }
     ustring_view open_group::pubkey() const {
-        const auto* data = reinterpret_cast<const unsigned char*>(key.data());
-        if (key.empty())
-            return {data, 0};
-        return {data + (key.size() - 32), 32};
+        auto data = to_unsigned_sv(key);
+        if (data.empty())
+            return data;
+        return data.substr(data.size() - 32);
     }
     std::string open_group::pubkey_hex() const {
         auto pk = pubkey();
@@ -154,6 +160,7 @@ namespace convo {
         copy_c_str(c.room, room());
         std::memcpy(c.pubkey, pubkey().data(), 32);
         c.last_read = last_read;
+        c.unread = unread;
     }
 
     legacy_closed_group::legacy_closed_group(std::string&& cgid) : id{std::move(cgid)} {
@@ -163,36 +170,136 @@ namespace convo {
         check_session_id(id);
     }
     legacy_closed_group::legacy_closed_group(const struct convo_legacy_closed_group& c) :
-            id{c.group_id, 66}, last_read{c.last_read} {}
+            base{c.last_read, c.unread}, id{c.group_id, 66} {}
 
     void legacy_closed_group::into(convo_legacy_closed_group& c) const {
         std::memcpy(c.group_id, id.data(), 67);
         c.last_read = last_read;
+        c.unread = unread;
     }
 
-    void one_to_one::load(const dict& info_dict) {
+    void base::load(const dict& info_dict) {
         last_read = maybe_int(info_dict, "r").value_or(0);
-        auto exp = maybe_int(info_dict, "e").value_or(0);
-        expiration =
-                exp == static_cast<int>(expiration_mode::after_send)   ? expiration_mode::after_send
-                : exp == static_cast<int>(expiration_mode::after_read) ? expiration_mode::after_read
-                                                                       : expiration_mode::none;
-        if (expiration == expiration_mode::none)
-            expiration_timer = 0min;
-        else if (auto exp_mins = maybe_int(info_dict, "E").value_or(0); exp_mins > 0)
-            expiration_timer = exp_mins * 1min;
-        else {
-            expiration = expiration_mode::none;
-            expiration_timer = 0min;
+        unread = (bool) maybe_int(info_dict, "u").value_or(0);
+    }
+
+    // returns protocol, host, port.  Port can be empty; throws on unparseable values.  protocol and
+    // host get normalized to lower-case.  Port will be 0 if not present in the URL, or if set to
+    // the default for the protocol. The URL must not include a path (though a single optional `/`
+    // after the domain is accepted and ignored).
+    std::tuple<std::string, std::string, uint16_t> parse_url(std::string_view url) {
+        std::tuple<std::string, std::string, uint16_t> result{};
+        auto& [proto, host, port] = result;
+        if (auto pos = url.find("://"); pos != std::string::npos) {
+            auto proto_name = url.substr(0, pos);
+            url.remove_prefix(proto_name.size() + 3);
+            if (string_iequal(proto_name, "http"))
+                proto = "http://";
+            else if (string_iequal(proto_name, "https"))
+                proto = "https://";
         }
+        if (proto.empty())
+            throw std::invalid_argument{"Invalid open group URL: invalid/missing protocol://"};
+
+        bool next_allow_dot = false;
+        bool has_dot = false;
+        while (!url.empty()) {
+            auto c = url.front();
+            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '-') {
+                host += c;
+                next_allow_dot = true;
+            } else if (c >= 'A' && c <= 'Z') {
+                host += c + ('a' - 'A');
+                next_allow_dot = true;
+            } else if (next_allow_dot && c == '.') {
+                host += '.';
+                has_dot = true;
+                next_allow_dot = false;
+            } else {
+                break;
+            }
+            url.remove_prefix(1);
+        }
+        if (host.size() < 4 || !has_dot || host.back() == '.')
+            throw std::invalid_argument{"Invalid open group URL: invalid hostname"};
+
+        if (!url.empty() && url.front() == ':') {
+            url.remove_prefix(1);
+            if (auto [p, ec] = std::from_chars(url.data(), url.data() + url.size(), port);
+                    ec == std::errc{})
+                url.remove_prefix(p - url.data());
+            else
+                throw std::invalid_argument{"Invalid open group URL: invalid port"};
+            if ((port == 80 && proto == "http://") || (port == 443 && proto == "https://"))
+                port = 0;
+        }
+
+        if (!url.empty() && url.front() == '/')
+            url.remove_prefix(1);
+
+        // We don't (currently) allow a /path in a SOGS URL
+        if (!url.empty())
+            throw std::invalid_argument{"Invalid open group URL: found unexpected trailing value"};
+
+        return result;
     }
 
-    void open_group::load(const dict& info_dict) {
-        last_read = maybe_int(info_dict, "r").value_or(0);
+    std::string open_group::canonical_url(std::string_view url) {
+        const auto& [proto, host, port] = parse_url(url);
+        std::string result;
+        result += proto;
+        result += host;
+        if (port != 0) {
+            result += ':';
+            result += std::to_string(port);
+        }
+        return result;
     }
 
-    void legacy_closed_group::load(const dict& info_dict) {
-        last_read = maybe_int(info_dict, "r").value_or(0);
+    static constexpr std::string_view qs_pubkey = "?public_key="sv;
+
+    std::tuple<std::string, std::string, ustring> open_group::parse_full_url(std::string_view full_url) {
+        std::tuple<std::string, std::string, ustring> result;
+        auto& [base_url, room_token, pubkey] = result;
+
+        // Consume the URL from back to front; first the public key:
+        if (auto pos = full_url.rfind(qs_pubkey); pos != std::string_view::npos) {
+            auto pk = full_url.substr(pos + qs_pubkey.size());
+            if (pk.size() == 64 && oxenc::is_hex(pk))
+                oxenc::from_hex(pk.begin(), pk.end(), std::back_inserter(pubkey));
+            else if (pk.size() == 43 && oxenc::is_base64(pk))
+                oxenc::from_base64(pk.begin(), pk.end(), std::back_inserter(pubkey));
+            else if (pk.size() == 52 && oxenc::is_base32z(pk))
+                oxenc::from_base32z(pk.begin(), pk.end(), std::back_inserter(pubkey));
+            else
+                throw std::invalid_argument{"Invalid SOGS URL: public_key is not recognizable"};
+            full_url = full_url.substr(0, pos);
+        }
+        if (pubkey.empty())
+            throw std::invalid_argument{"Invalid SOGS URL: no valid server pubkey"};
+
+        // Now look for /r/TOKEN or /TOKEN:
+        if (auto pos = full_url.rfind("/r/"); pos != std::string_view::npos) {
+            room_token = full_url.substr(pos + 3);
+            full_url = full_url.substr(0, pos);
+        }
+        else if (pos = full_url.rfind("/"); pos != std::string_view::npos) {
+            room_token = full_url.substr(pos + 1);
+            full_url = full_url.substr(0, pos);
+        }
+        for (auto& c : room_token)
+            if (c >= 'A' && c <= 'Z')
+                c += 'a' - 'A';
+        if (room_token.size() > MAX_ROOM)
+            throw std::invalid_argument{"Invalid SOGS URL: room token too long"};
+        if (room_token.empty())
+            throw std::invalid_argument{"Invalid SOGS URL: no room token"};
+        if (room_token.find_first_not_of("-0123456789_abcdefghijklmnopqrstuvwxyz") != std::string_view::npos)
+            throw std::invalid_argument{"Invalid SOGS URL: room token contains invalid characters"};
+
+        base_url = canonical_url(full_url);
+
+        return result;
     }
 
     std::string open_group::make_key(
@@ -205,8 +312,8 @@ namespace convo {
             throw std::invalid_argument{"Invalid open group room: room token is too long"};
         std::string key;
         key.reserve(base_url.size() + room.size() + 32 /*pubkey*/ + 2 /* null separators */);
-        for (auto c : base_url)
-            key += (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+        key += canonical_url(base_url);
+
         key += '\0';
         for (auto c : room)
             key += (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
@@ -317,28 +424,26 @@ convo::legacy_closed_group Conversations::get_or_construct_legacy_closed(
 }
 
 void Conversations::set(const convo::one_to_one& c) {
-    std::string pk = session_id_to_bytes(c.session_id);
-    auto info = data["1"][pk];
+    auto info = data["1"][session_id_to_bytes(c.session_id)];
+    set_base(c, info);
+}
 
+void Conversations::set_base(const convo::base& c, DictFieldProxy& info) {
     info["r"] = c.last_read;
-    if (c.expiration != convo::expiration_mode::none && c.expiration_timer != 0min) {
-        info["e"] = static_cast<int8_t>(c.expiration);
-        info["E"] = c.expiration_timer.count();
-    } else {
-        info["e"].erase();
-        info["E"].erase();
-    }
+    if (c.unread)
+        info["u"] = 1;
+    else
+        info["u"].erase();
 }
 
 void Conversations::set(const convo::open_group& c) {
     auto info = data["o"][c.key];
-    info["r"] = c.last_read;
+    set_base(c, info);
 }
 
 void Conversations::set(const convo::legacy_closed_group& c) {
-    std::string pk = session_id_to_bytes(c.id);
-    auto info = data["C"][pk];
-    info["r"] = c.last_read;
+    auto info = data["C"][session_id_to_bytes(c.id)];
+    set_base(c, info);
 }
 
 template <typename Data>

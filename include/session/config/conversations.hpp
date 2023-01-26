@@ -20,13 +20,14 @@ class Conversations;
 
 /// keys used in this config, either currently or in the past (so that we don't reuse):
 ///
+/// Note that this is a high-frequency object, intended only for properties that change frequently (
+/// (currently just the read timestamp for each conversation).
+///
 /// 1 - dict of one-to-one conversations.  Each key is the Session ID of the contact (in hex).
 ///     Values are dicts with keys:
 ///     r - the unix timestamp (in integer milliseconds) of the last-read message.  Always
 ///         included, but will be 0 if no messages are read.
-///     e - Disappearing messages expiration type.  Omitted if disappearing messages are not enabled
-///         for this conversation, 1 for delete-after-send, and 2 for delete-after-read.
-///     E - Disappearing message timer, in minutes.  Omitted when `e` is omitted.
+///     u - will be present and set to 1 if this conversation is specifically marked unread.
 ///
 /// o - open group conversations.  Each key is: BASE_URL + '\0' + LC_ROOM_NAME + '\0' +
 ///     SERVER_PUBKEY (in bytes).  Note that room name is *always* lower-cased here (so that clients
@@ -34,24 +35,29 @@ class Conversations;
 ///     with keys:
 ///     r - the unix timestamp (in integer milliseconds) of the last-read message.  Always included,
 ///         but will be 0 if no messages are read.
+///     u - will be present and set to 1 if this conversation is specifically marked unread.
 ///
 /// C - legacy closed group conversations.  The key is the closed group identifier (which looks
 ///     indistinguishable from a Session ID, but isn't really a proper Session ID).  Values are
 ///     dicts with keys:
 ///     r - the unix timestamp (integer milliseconds) of the last-read message.  Always included,
 ///         but will be 0 if no messages are read.
+///     u - will be present and set to 1 if this conversation is specifically marked unread.
 ///
 /// c - reserved for future tracking of new closed group conversations.
 
 namespace convo {
 
-    enum class expiration_mode : int8_t { none = 0, after_send = 1, after_read = 2 };
-
-    struct one_to_one {
-        std::string session_id;  // in hex
+    struct base {
         int64_t last_read = 0;
-        expiration_mode expiration = expiration_mode::none;
-        std::chrono::minutes expiration_timer{0};
+        bool unread = false;
+
+      protected:
+        void load(const dict& info_dict);
+    };
+
+    struct one_to_one : base {
+        std::string session_id;  // in hex
 
         // Constructs an empty one_to_one from a session_id.  Session ID can be either bytes (33) or
         // hex (66).
@@ -62,13 +68,12 @@ namespace convo {
         one_to_one(const struct convo_one_to_one& c);  // From c struct
         void into(convo_one_to_one& c) const;          // Into c struct
 
-      private:
         friend class session::config::Conversations;
-        void load(const dict& info_dict);
     };
 
-    struct open_group {
-        static constexpr size_t MAX_URL = 320, MAX_ROOM = 150;
+    struct open_group : base {
+        // 267 = len('https://') + 253 (max valid DNS name length) + len(':XXXXX')
+        static constexpr size_t MAX_URL = 267, MAX_ROOM = 64;
 
         std::string_view base_url() const;  // Accesses the base url (i.e. not including room or
                                             // pubkey). Always lower-case.
@@ -78,8 +83,6 @@ namespace convo {
                         // the open group convo where we force it lower-case).
         ustring_view pubkey() const;     // Accesses the server pubkey (32 bytes).
         std::string pubkey_hex() const;  // Accesses the server pubkey as hex (64 hex digits).
-
-        int64_t last_read = 0;
 
         open_group() = default;
 
@@ -91,26 +94,47 @@ namespace convo {
         // Same as above, but takes pubkey as a hex string.
         open_group(std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
 
+        // Takes a combined room URL (e.g. https://whatever.com/r/Room?public_key=01234....), either
+        // new style (with /r/) or old style (without /r/).  Note that the URL gets canonicalized so
+        // the resulting `base_url()` and `room()` values may not be exactly equal to what is given.
+        //
+        // See also `parse_full_url` which does the same thing but returns it in pieces rather than
+        // constructing a new `open_group` object.
+        explicit open_group(std::string_view full_url);
+
         // Internal ctor/method for C API implementations:
         open_group(const struct convo_open_group& c);  // From c struct
         void into(convo_open_group& c) const;          // Into c struct
 
-        // Replaces the baseurl/room/pubkey of this object.
+        // Replaces the baseurl/room/pubkey of this object.  Note that changing this and then giving
+        // it to `set` will end up inserting a *new* record but not removing the *old* one (you need
+        // to erase first to do that).
         void set_server(std::string_view base_url, std::string_view room, ustring_view pubkey);
         void set_server(
                 std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
+        void set_server(std::string_view full_url);
 
         // Loads the baseurl/room/pubkey of this object from an encoded key.  Throws
         // std::invalid_argument if the encoded key does not look right.
         void load_encoded_key(std::string key);
+
+        // Takes a base URL as input and returns it in canonical form.  This involves doing things
+        // like lower casing it and removing redundant ports (e.g. :80 when using http://).
+        static std::string canonical_url(std::string_view url);
+
+        // Takes a full room URL, splits it up into canonical url (see above), lower-case room
+        // token, and server pubkey.  We take both the deprecated form (e.g.
+        // https://example.com/SomeRoom?public_key=...) and new form
+        // (https://example.com/r/SomeRoom?public_key=...).  The public_key is typically specified
+        // in hex (64 digits), but we also accept unpadded base64 (43 chars) and base32z (52 chars)
+        // encodings (for slightly shorter URLs).
+        static std::tuple<std::string, std::string, ustring> parse_full_url(std::string_view full_url);
 
       private:
         std::string key;
         size_t url_size = 0;
 
         friend class session::config::Conversations;
-
-        void load(const dict& info_dict);
 
         // Returns the key value we use in the stored dict for this open group, i.e.
         // lc(URL) + lc(NAME) + PUBKEY_BYTES.
@@ -120,9 +144,8 @@ namespace convo {
                 std::string_view base_url, std::string_view room, ustring_view pubkey);
     };
 
-    struct legacy_closed_group {
+    struct legacy_closed_group : base {
         std::string id;  // in hex, indistinguishable from a Session ID
-        int64_t last_read = 0;
 
         // Constructs an empty legacy_closed_group from a quasi-session_id
         explicit legacy_closed_group(std::string&& group_id);
@@ -134,7 +157,6 @@ namespace convo {
 
       private:
         friend class session::config::Conversations;
-        void load(const dict& info_dict);
     };
 
     using any = std::variant<one_to_one, open_group, legacy_closed_group>;
@@ -203,6 +225,11 @@ class Conversations : public ConfigBase {
     void set(const convo::open_group& c);
 
     void set(const convo::any& c);  // Variant which can be any of the above
+
+  protected:
+    void set_base(const convo::base& c, DictFieldProxy& info);
+
+  public:
 
     /// Removes a one-to-one conversation.  Returns true if found and removed, false if not present.
     bool erase_1to1(std::string_view pubkey);

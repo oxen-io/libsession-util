@@ -7,28 +7,21 @@ extern "C" {
 #include "base.h"
 #include "profile_pic.h"
 
-enum CONVO_EXPIRATION_MODE {
-    EXPIRATION_NONE = 0,
-    EXPIRATION_AFTER_SEND = 1,
-    EXPIRATION_AFTER_READ = 2,
-};
-
 typedef struct convo_one_to_one {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
 
-    // milliseconds since unix epoch:
-    int64_t last_read;
-
-    // expiration mode & time:
-    CONVO_EXPIRATION_MODE exp_mode;
-    int64_t exp_minutes;
+    int64_t last_read;  // milliseconds since unix epoch
+    bool unread;        // true if the conversation is explicitly marked unread
 } convo_one_to_one;
 
 typedef struct convo_open_group {
-    char base_url[321];        // null-terminated (max length 320), always lower-case
-    char room[151];            // null-terminated (max length 150), always lower-case
+    char base_url[268];  // null-terminated (max length 267), normalized (i.e. always lower-case,
+                         // only has port if non-default, has trailing / removed)
+    char room[65];       // null-terminated (max length 64), normalized (always lower-case)
     unsigned char pubkey[32];  // 32 bytes (not terminated, can contain nulls)
-    int64_t last_read;         // ms since unix epoch
+
+    int64_t last_read;  // ms since unix epoch
+    bool unread;        // true if marked unread
 } convo_open_group;
 
 typedef struct convo_legacy_closed_group {
@@ -36,6 +29,7 @@ typedef struct convo_legacy_closed_group {
                         // though isn't really one.
 
     int64_t last_read;  // ms since unix epoch
+    bool unread;        // true if marked unread
 } convo_legacy_closed_group;
 
 /// Constructs a conversations config object and sets a pointer to it in `conf`.

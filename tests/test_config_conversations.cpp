@@ -13,6 +13,45 @@
 using namespace std::literals;
 using namespace oxenc::literals;
 
+TEST_CASE("Open Group URLs", "[config][open_group_urls]") {
+
+    using namespace session::config::convo;
+    auto [base1, room1, pk1] = open_group::parse_full_url("https://example.com/SomeRoom?public_key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    auto [base2, room2, pk2] = open_group::parse_full_url("HTTPS://EXAMPLE.COM/sOMErOOM?public_key=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
+    auto [base3, room3, pk3] = open_group::parse_full_url("HTTPS://EXAMPLE.COM/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base4, room4, pk4] = open_group::parse_full_url("http://example.com/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base5, room5, pk5] = open_group::parse_full_url("HTTPS://EXAMPLE.com:443/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base6, room6, pk6] = open_group::parse_full_url("HTTP://EXAMPLE.com:80/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base7, room7, pk7] = open_group::parse_full_url("http://example.com:80/r/someroom?public_key=ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8");
+    auto [base8, room8, pk8] = open_group::parse_full_url("http://example.com:80/r/someroom?public_key=yrtwk3hjixg66yjdeiuauk6p7hy1gtm8tgih55abrpnsxnpm3zzo");
+
+    CHECK(base1 == "https://example.com");
+    CHECK(base1 == base2);
+    CHECK(base1 == base3);
+    CHECK(base1 != base4);
+    CHECK(base4 == "http://example.com");
+    CHECK(base1 == base5);
+    CHECK(base4 == base6);
+    CHECK(base4 == base7);
+    CHECK(base4 == base8);
+    CHECK(room1 == "someroom");
+    CHECK(room2 == "someroom");
+    CHECK(room3 == "someroom");
+    CHECK(room4 == "someroom");
+    CHECK(room5 == "someroom");
+    CHECK(room6 == "someroom");
+    CHECK(room7 == "someroom");
+    CHECK(room8 == "someroom");
+    CHECK(to_hex(pk1) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk2) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk3) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk4) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk5) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk6) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk7) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(to_hex(pk8) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+}
+
 TEST_CASE("Conversations", "[config][conversations]") {
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
@@ -32,8 +71,6 @@ TEST_CASE("Conversations", "[config][conversations]") {
 
     session::config::Conversations convos{ustring_view{seed}, std::nullopt};
 
-    using session::config::convo::expiration_mode;
-
     constexpr auto definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000"sv;
 
@@ -46,9 +83,6 @@ TEST_CASE("Conversations", "[config][conversations]") {
 
     CHECK(c.session_id == definitely_real_id);
     CHECK(c.last_read == 0);
-    CHECK(c.expiration == expiration_mode::none);
-    CHECK(c.expiration_timer == 0min);
-    CHECK(c.expiration_timer.count() == 0);  // Equivalent to the above
 
     CHECK_FALSE(convos.needs_push());
     CHECK_FALSE(convos.needs_dump());
@@ -65,8 +99,6 @@ TEST_CASE("Conversations", "[config][conversations]") {
 
     REQUIRE_FALSE(convos.get_legacy_closed(definitely_real_id).has_value());
     REQUIRE(convos.get_1to1(definitely_real_id).has_value());
-    CHECK(convos.get_1to1(definitely_real_id)->expiration == expiration_mode::none);
-    CHECK(convos.get_1to1(definitely_real_id)->expiration_timer == 0min);
     CHECK(convos.get_1to1(definitely_real_id)->last_read == now_ms);
 
     CHECK(convos.needs_push());
@@ -81,6 +113,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
     CHECK(og.room() == "sudokuroom");                   // Note: lower-case
     CHECK(og.pubkey().size() == 32);
     CHECK(og.pubkey_hex() == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    og.unread = true;
 
     // The new data doesn't get stored until we call this:
     convos.set(og);
@@ -108,19 +141,18 @@ TEST_CASE("Conversations", "[config][conversations]") {
     REQUIRE(x1);
     CHECK(x1->last_read == now_ms);
     CHECK(x1->session_id == definitely_real_id);
-    CHECK(x1->expiration == expiration_mode::none);
-    CHECK(x1->expiration_timer == 0min);
+    CHECK_FALSE(x1->unread);
 
     auto x2 = convos2.get_open("http://EXAMPLE.org:5678", "sudokuRoom", to_hex(open_group_pubkey));
     REQUIRE(x2);
     CHECK(x2->base_url() == "http://example.org:5678");
     CHECK(x2->room() == "sudokuroom");
     CHECK(x2->pubkey_hex() == to_hex(open_group_pubkey));
+    CHECK(x2->unread);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111"sv;
     auto c2 = convos.get_or_construct_1to1(another_id);
-    c2.expiration = expiration_mode::after_read;
-    c2.expiration_timer = 15min;
+    c2.unread = true;
     convos2.set(c2);
 
     auto c3 = convos2.get_or_construct_legacy_closed(
@@ -236,17 +268,9 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     CHECK(convos_get_or_construct_1to1(conf, &c, definitely_real_id));
 
-    REQUIRE((int)EXPIRATION_NONE == (int)session::config::convo::expiration_mode::none);
-    REQUIRE((int)EXPIRATION_NONE == 0);
-    REQUIRE((int)EXPIRATION_AFTER_SEND == (int)session::config::convo::expiration_mode::after_send);
-    REQUIRE((int)EXPIRATION_AFTER_SEND == 1);
-    REQUIRE((int)EXPIRATION_AFTER_READ == (int)session::config::convo::expiration_mode::after_read);
-    REQUIRE((int)EXPIRATION_AFTER_READ == 2);
-
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK(c.last_read == 0);
-    CHECK(c.exp_mode == EXPIRATION_NONE);
-    CHECK(c.exp_minutes == 0);
+    CHECK_FALSE(c.unread);
 
     CHECK_FALSE(config_needs_push(conf));
     CHECK_FALSE(config_needs_dump(conf));
@@ -263,8 +287,6 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     convo_legacy_closed_group cg;
     REQUIRE_FALSE(convos_get_legacy_closed(conf, &cg, definitely_real_id));
     REQUIRE(convos_get_1to1(conf, &c, definitely_real_id));
-    CHECK(c.exp_mode == EXPIRATION_NONE);
-    CHECK(c.exp_minutes == 0);
     CHECK(c.last_read == now_ms);
 
     CHECK(config_needs_push(conf));
@@ -280,6 +302,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     CHECK(og.room == "sudokuroom"sv);                   // Note: lower-case
     CHECK(oxenc::to_hex(og.pubkey, og.pubkey + 32) ==
           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    og.unread = true;
 
     // The new data doesn't get stored until we call this:
     convos_set_open(conf, &og);
@@ -309,8 +332,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     REQUIRE(convos_get_1to1(conf2, &c, definitely_real_id));
     CHECK(c.last_read == now_ms);
     CHECK(c.session_id == std::string_view{definitely_real_id});
-    CHECK(c.exp_mode == EXPIRATION_NONE);
-    CHECK(c.exp_minutes == 0);
+    CHECK_FALSE(c.unread);
 
     REQUIRE(convos_get_open_group(
             conf2, &og, "http://EXAMPLE.org:5678", "sudokuRoom", open_group_pubkey.data()));
@@ -321,8 +343,6 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
     convo_one_to_one c2;
     REQUIRE(convos_get_or_construct_1to1(conf, &c2, another_id));
-    c2.exp_mode = EXPIRATION_AFTER_READ;  // or == 1
-    c2.exp_minutes = 15;
     convos_set_1to1(conf2, &c2);
 
     REQUIRE(convos_get_or_construct_legacy_closed(
