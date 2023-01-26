@@ -18,7 +18,7 @@ add_library(config
     config.cpp
     config/base.cpp
     config/contacts.cpp
-    config/conversations.cpp
+    config/convo_info_volatile.cpp
     config/encrypt.cpp
     config/error.c
     config/profile_pic.cpp

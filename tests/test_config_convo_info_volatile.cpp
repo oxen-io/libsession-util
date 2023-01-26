@@ -1,10 +1,10 @@
 #include <oxenc/hex.h>
-#include <session/config/conversations.h>
+#include <session/config/convo_info_volatile.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
-#include <session/config/conversations.hpp>
+#include <session/config/convo_info_volatile.hpp>
 #include <string_view>
 #include <variant>
 
@@ -69,7 +69,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
     CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
-    session::config::Conversations convos{ustring_view{seed}, std::nullopt};
+    session::config::ConvoInfoVolatile convos{ustring_view{seed}, std::nullopt};
 
     constexpr auto definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000"sv;
@@ -130,7 +130,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
     // NB: Not going to check encrypted data and decryption here because that's general (not
     // specific to convos) and is covered already in the user profile tests.
 
-    session::config::Conversations convos2{seed, convos.dump()};
+    session::config::ConvoInfoVolatile convos2{seed, convos.dump()};
     CHECK_FALSE(convos.needs_push());
     CHECK_FALSE(convos.needs_dump());
     CHECK(convos.push().second == 1);
@@ -256,17 +256,17 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
     config_object* conf;
-    REQUIRE(0 == conversations_init(&conf, ed_sk.data(), NULL, 0, NULL));
+    REQUIRE(0 == convo_info_volatile_init(&conf, ed_sk.data(), NULL, 0, NULL));
 
     const char* const definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000";
 
-    convo_one_to_one c;
-    CHECK_FALSE(convos_get_1to1(conf, &c, definitely_real_id));
+    convo_info_volatile_1to1 c;
+    CHECK_FALSE(convo_info_volatile_get_1to1(conf, &c, definitely_real_id));
 
-    CHECK(convos_size(conf) == 0);
+    CHECK(convo_info_volatile_size(conf) == 0);
 
-    CHECK(convos_get_or_construct_1to1(conf, &c, definitely_real_id));
+    CHECK(convo_info_volatile_get_or_construct_1to1(conf, &c, definitely_real_id));
 
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK(c.last_read == 0);
@@ -282,11 +282,11 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     c.last_read = now_ms;
 
     // The new data doesn't get stored until we call this:
-    convos_set_1to1(conf, &c);
+    convo_info_volatile_set_1to1(conf, &c);
 
-    convo_legacy_closed_group cg;
-    REQUIRE_FALSE(convos_get_legacy_closed(conf, &cg, definitely_real_id));
-    REQUIRE(convos_get_1to1(conf, &c, definitely_real_id));
+    convo_info_volatile_legacy_closed cg;
+    REQUIRE_FALSE(convo_info_volatile_get_legacy_closed(conf, &cg, definitely_real_id));
+    REQUIRE(convo_info_volatile_get_1to1(conf, &c, definitely_real_id));
     CHECK(c.last_read == now_ms);
 
     CHECK(config_needs_push(conf));
@@ -295,8 +295,8 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     const auto open_group_pubkey =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"_hexbytes;
 
-    convo_open_group og;
-    CHECK(convos_get_or_construct_open_group(
+    convo_info_volatile_open og;
+    CHECK(convo_info_volatile_get_or_construct_open(
             conf, &og, "http://Example.ORG:5678", "SudokuRoom", open_group_pubkey.data()));
     CHECK(og.base_url == "http://example.org:5678"sv);  // Note: lower-case
     CHECK(og.room == "sudokuroom"sv);                   // Note: lower-case
@@ -305,7 +305,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     og.unread = true;
 
     // The new data doesn't get stored until we call this:
-    convos_set_open(conf, &og);
+    convo_info_volatile_set_open(conf, &og);
 
     unsigned char* to_push;
     size_t to_push_len;
@@ -323,32 +323,32 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     config_dump(conf, &dump, &dumplen);
 
     config_object* conf2;
-    REQUIRE(conversations_init(&conf2, ed_sk.data(), dump, dumplen, NULL) == 0);
+    REQUIRE(convo_info_volatile_init(&conf2, ed_sk.data(), dump, dumplen, NULL) == 0);
     free(dump);
 
     CHECK_FALSE(config_needs_push(conf2));
     CHECK_FALSE(config_needs_dump(conf2));
 
-    REQUIRE(convos_get_1to1(conf2, &c, definitely_real_id));
+    REQUIRE(convo_info_volatile_get_1to1(conf2, &c, definitely_real_id));
     CHECK(c.last_read == now_ms);
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK_FALSE(c.unread);
 
-    REQUIRE(convos_get_open_group(
+    REQUIRE(convo_info_volatile_get_open(
             conf2, &og, "http://EXAMPLE.org:5678", "sudokuRoom", open_group_pubkey.data()));
     CHECK(og.base_url == "http://example.org:5678"sv);
     CHECK(og.room == "sudokuroom"sv);
     CHECK(oxenc::to_hex(og.pubkey, og.pubkey + 32) == to_hex(open_group_pubkey));
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
-    convo_one_to_one c2;
-    REQUIRE(convos_get_or_construct_1to1(conf, &c2, another_id));
-    convos_set_1to1(conf2, &c2);
+    convo_info_volatile_1to1 c2;
+    REQUIRE(convo_info_volatile_get_or_construct_1to1(conf, &c2, another_id));
+    convo_info_volatile_set_1to1(conf2, &c2);
 
-    REQUIRE(convos_get_or_construct_legacy_closed(
+    REQUIRE(convo_info_volatile_get_or_construct_legacy_closed(
             conf2, &cg, "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"));
     cg.last_read = now_ms - 50;
-    convos_set_legacy_closed(conf2, &cg);
+    convo_info_volatile_set_legacy_closed(conf2, &cg);
     CHECK(config_needs_push(conf2));
 
     seqno = config_push(conf2, &to_push, &to_push_len);
@@ -369,25 +369,25 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     for (auto* conf : {conf, conf2}) {
         // Iterate through and make sure we got everything we expected
         seen.clear();
-        CHECK(convos_size(conf) == 4);
-        CHECK(convos_size_1to1(conf) == 2);
-        CHECK(convos_size_open(conf) == 1);
-        CHECK(convos_size_legacy_closed(conf) == 1);
+        CHECK(convo_info_volatile_size(conf) == 4);
+        CHECK(convo_info_volatile_size_1to1(conf) == 2);
+        CHECK(convo_info_volatile_size_open(conf) == 1);
+        CHECK(convo_info_volatile_size_legacy_closed(conf) == 1);
 
-        convo_one_to_one c1;
-        convo_open_group c2;
-        convo_legacy_closed_group c3;
-        convos_iterator* it = convos_iterator_new(conf);
-        for (; !convos_iterator_done(it); convos_iterator_advance(it)) {
-            if (convos_it_is_1to1(it, &c1)) {
+        convo_info_volatile_1to1 c1;
+        convo_info_volatile_open c2;
+        convo_info_volatile_legacy_closed c3;
+        convo_info_volatile_iterator* it = convo_info_volatile_iterator_new(conf);
+        for (; !convo_info_volatile_iterator_done(it); convo_info_volatile_iterator_advance(it)) {
+            if (convo_info_volatile_it_is_1to1(it, &c1)) {
                 seen.push_back("1-to-1: "s + c1.session_id);
-            } else if (convos_it_is_open(it, &c2)) {
+            } else if (convo_info_volatile_it_is_open(it, &c2)) {
                 seen.push_back("og: "s + c2.base_url + "/r/" + c2.room);
-            } else if (convos_it_is_legacy_closed(it, &c3)) {
+            } else if (convo_info_volatile_it_is_legacy_closed(it, &c3)) {
                 seen.push_back("cl: "s + c3.group_id);
             }
         }
-        convos_iterator_free(it);
+        convo_info_volatile_iterator_free(it);
 
         CHECK(seen == std::vector<std::string>{
                               {"1-to-1: "
@@ -401,48 +401,48 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     }
 
     CHECK_FALSE(config_needs_push(conf));
-    convos_erase_1to1(conf, "052000000000000000000000000000000000000000000000000000000000000000");
+    convo_info_volatile_erase_1to1(conf, "052000000000000000000000000000000000000000000000000000000000000000");
     CHECK_FALSE(config_needs_push(conf));
-    convos_erase_1to1(conf, "055000000000000000000000000000000000000000000000000000000000000000");
+    convo_info_volatile_erase_1to1(conf, "055000000000000000000000000000000000000000000000000000000000000000");
     CHECK(config_needs_push(conf));
-    CHECK(convos_size(conf) == 3);
-    CHECK(convos_size_1to1(conf) == 1);
+    CHECK(convo_info_volatile_size(conf) == 3);
+    CHECK(convo_info_volatile_size_1to1(conf) == 1);
 
     // Check the single-type iterators:
     seen.clear();
 
-    convos_iterator* it;
-    convo_one_to_one ci;
-    for (it = convos_iterator_new_1to1(conf); !convos_iterator_done(it);
-         convos_iterator_advance(it)) {
-        REQUIRE(convos_it_is_1to1(it, &ci));
+    convo_info_volatile_iterator* it;
+    convo_info_volatile_1to1 ci;
+    for (it = convo_info_volatile_iterator_new_1to1(conf); !convo_info_volatile_iterator_done(it);
+         convo_info_volatile_iterator_advance(it)) {
+        REQUIRE(convo_info_volatile_it_is_1to1(it, &ci));
         seen.push_back(ci.session_id);
     }
-    convos_iterator_free(it);
+    convo_info_volatile_iterator_free(it);
     CHECK(seen == std::vector<std::string>{{
                           "051111111111111111111111111111111111111111111111111111111111111111",
                   }});
 
     seen.clear();
-    convo_open_group ogi;
-    for (it = convos_iterator_new_open(conf); !convos_iterator_done(it);
-         convos_iterator_advance(it)) {
-        REQUIRE(convos_it_is_open(it, &ogi));
+    convo_info_volatile_open ogi;
+    for (it = convo_info_volatile_iterator_new_open(conf); !convo_info_volatile_iterator_done(it);
+         convo_info_volatile_iterator_advance(it)) {
+        REQUIRE(convo_info_volatile_it_is_open(it, &ogi));
         seen.emplace_back(ogi.base_url);
     }
-    convos_iterator_free(it);
+    convo_info_volatile_iterator_free(it);
     CHECK(seen == std::vector<std::string>{{
                           "http://example.org:5678",
                   }});
 
     seen.clear();
-    convo_legacy_closed_group cgi;
-    for (it = convos_iterator_new_legacy_closed(conf); !convos_iterator_done(it);
-         convos_iterator_advance(it)) {
-        REQUIRE(convos_it_is_legacy_closed(it, &cgi));
+    convo_info_volatile_legacy_closed cgi;
+    for (it = convo_info_volatile_iterator_new_legacy_closed(conf); !convo_info_volatile_iterator_done(it);
+         convo_info_volatile_iterator_advance(it)) {
+        REQUIRE(convo_info_volatile_it_is_legacy_closed(it, &cgi));
         seen.emplace_back(cgi.group_id);
     }
-    convos_iterator_free(it);
+    convo_info_volatile_iterator_free(it);
     CHECK(seen == std::vector<std::string>{{
                           "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                   }});

@@ -9,14 +9,14 @@
 #include "base.hpp"
 
 extern "C" {
-struct convo_one_to_one;
-struct convo_open_group;
-struct convo_legacy_closed_group;
+struct convo_info_volatile_1to1;
+struct convo_info_volatile_open;
+struct convo_info_volatile_legacy_closed;
 }
 
 namespace session::config {
 
-class Conversations;
+class ConvoInfoVolatile;
 
 /// keys used in this config, either currently or in the past (so that we don't reuse):
 ///
@@ -65,10 +65,10 @@ namespace convo {
         explicit one_to_one(std::string_view session_id);
 
         // Internal ctor/method for C API implementations:
-        one_to_one(const struct convo_one_to_one& c);  // From c struct
-        void into(convo_one_to_one& c) const;          // Into c struct
+        one_to_one(const struct convo_info_volatile_1to1& c);  // From c struct
+        void into(convo_info_volatile_1to1& c) const;          // Into c struct
 
-        friend class session::config::Conversations;
+        friend class session::config::ConvoInfoVolatile;
     };
 
     struct open_group : base {
@@ -103,8 +103,8 @@ namespace convo {
         explicit open_group(std::string_view full_url);
 
         // Internal ctor/method for C API implementations:
-        open_group(const struct convo_open_group& c);  // From c struct
-        void into(convo_open_group& c) const;          // Into c struct
+        open_group(const struct convo_info_volatile_open& c);  // From c struct
+        void into(convo_info_volatile_open& c) const;          // Into c struct
 
         // Replaces the baseurl/room/pubkey of this object.  Note that changing this and then giving
         // it to `set` will end up inserting a *new* record but not removing the *old* one (you need
@@ -134,7 +134,7 @@ namespace convo {
         std::string key;
         size_t url_size = 0;
 
-        friend class session::config::Conversations;
+        friend class session::config::ConvoInfoVolatile;
 
         // Returns the key value we use in the stored dict for this open group, i.e.
         // lc(URL) + lc(NAME) + PUBKEY_BYTES.
@@ -152,21 +152,21 @@ namespace convo {
         explicit legacy_closed_group(std::string_view group_id);
 
         // Internal ctor/method for C API implementations:
-        legacy_closed_group(const struct convo_legacy_closed_group& c);  // From c struct
-        void into(convo_legacy_closed_group& c) const;                   // Into c struct
+        legacy_closed_group(const struct convo_info_volatile_legacy_closed& c);  // From c struct
+        void into(convo_info_volatile_legacy_closed& c) const;                   // Into c struct
 
       private:
-        friend class session::config::Conversations;
+        friend class session::config::ConvoInfoVolatile;
     };
 
     using any = std::variant<one_to_one, open_group, legacy_closed_group>;
 }  // namespace convo
 
-class Conversations : public ConfigBase {
+class ConvoInfoVolatile : public ConfigBase {
 
   public:
     // No default constructor
-    Conversations() = delete;
+    ConvoInfoVolatile() = delete;
 
     /// Constructs a conversation list from existing data (stored from `dump()`) and the user's
     /// secret key for generating the data encryption key.  To construct a blank list (i.e. with no
@@ -179,11 +179,11 @@ class Conversations : public ConfigBase {
     ///
     /// \param dumped - either `std::nullopt` to construct a new, empty object; or binary state data
     /// that was previously dumped from an instance of this class by calling `dump()`.
-    Conversations(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
+    ConvoInfoVolatile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
 
-    Namespace storage_namespace() const override { return Namespace::Conversations; }
+    Namespace storage_namespace() const override { return Namespace::ConvoInfoVolatile; }
 
-    const char* encryption_domain() const override { return "Conversations"; }
+    const char* encryption_domain() const override { return "ConvoInfoVolatile"; }
 
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `convo::one_to_one`.
@@ -271,7 +271,7 @@ class Conversations : public ConfigBase {
     bool empty() const { return size() == 0; }
 
     /// Iterators for iterating through all conversations.  Typically you access this implicit via a
-    /// for loop over the `Conversations` object:
+    /// for loop over the `ConvoInfoVolatile` object:
     ///
     ///     for (auto& convo : conversations) {
     ///         if (auto* dm = std::get_if<convo::one_to_one>(&convo)) {
@@ -335,7 +335,7 @@ class Conversations : public ConfigBase {
                 bool oneto1 = true,
                 bool open = true,
                 bool closed = true);
-        friend class Conversations;
+        friend class ConvoInfoVolatile;
 
       public:
         bool operator==(const iterator& other) const;
@@ -360,7 +360,7 @@ class Conversations : public ConfigBase {
                         std::is_same_v<convo::one_to_one, ConvoType>,
                         std::is_same_v<convo::open_group, ConvoType>,
                         std::is_same_v<convo::legacy_closed_group, ConvoType>) {}
-        friend class Conversations;
+        friend class ConvoInfoVolatile;
 
       public:
         ConvoType& operator*() const { return std::get<ConvoType>(*_val); }

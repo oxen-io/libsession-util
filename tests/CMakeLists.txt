@@ -6,7 +6,7 @@ add_executable(testAll
     test_config_userprofile.cpp
     test_configdata.cpp
     test_config_contacts.cpp
-    test_config_conversations.cpp
+    test_config_convo_info_volatile.cpp
     test_encrypt.cpp
     test_xed25519.cpp
     )
