@@ -128,7 +128,8 @@ namespace convo {
         // (https://example.com/r/SomeRoom?public_key=...).  The public_key is typically specified
         // in hex (64 digits), but we also accept unpadded base64 (43 chars) and base32z (52 chars)
         // encodings (for slightly shorter URLs).
-        static std::tuple<std::string, std::string, ustring> parse_full_url(std::string_view full_url);
+        static std::tuple<std::string, std::string, ustring> parse_full_url(
+                std::string_view full_url);
 
       private:
         std::string key;
@@ -230,7 +231,6 @@ class ConvoInfoVolatile : public ConfigBase {
     void set_base(const convo::base& c, DictFieldProxy& info);
 
   public:
-
     /// Removes a one-to-one conversation.  Returns true if found and removed, false if not present.
     bool erase_1to1(std::string_view pubkey);
 

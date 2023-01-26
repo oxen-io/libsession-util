@@ -62,7 +62,8 @@ int convo_info_volatile_init(
 /// Fills `convo` with the conversation info given a session ID (specified as a null-terminated hex
 /// string), if the conversation exists, and returns true.  If the conversation does not exist then
 /// `convo` is left unchanged and false is returned.
-bool convo_info_volatile_get_1to1(const config_object* conf, convo_info_volatile_1to1* convo, const char* session_id)
+bool convo_info_volatile_get_1to1(
+        const config_object* conf, convo_info_volatile_1to1* convo, const char* session_id)
         __attribute__((warn_unused_result));
 
 /// Same as the above except that when the conversation does not exist, this sets all the convo
@@ -117,7 +118,8 @@ bool convo_info_volatile_get_or_construct_legacy_closed(
 /// Adds or updates a conversation from the given convo info
 void convo_info_volatile_set_1to1(config_object* conf, const convo_info_volatile_1to1* convo);
 void convo_info_volatile_set_open(config_object* conf, const convo_info_volatile_open* convo);
-void convo_info_volatile_set_legacy_closed(config_object* conf, const convo_info_volatile_legacy_closed* convo);
+void convo_info_volatile_set_legacy_closed(
+        config_object* conf, const convo_info_volatile_legacy_closed* convo);
 
 /// Erases a conversation from the conversation list.  Returns true if the conversation was found
 /// and removed, false if the conversation was not present.  You must not call this during
@@ -151,12 +153,12 @@ size_t convo_info_volatile_size_legacy_closed(const config_object* conf);
 ///     }
 ///     convo_info_volatile_iterator_free(it);
 ///
-/// It is permitted to modify records (e.g. with a call to one of the `convo_info_volatile_set_*` functions) and
-/// add records while iterating.
+/// It is permitted to modify records (e.g. with a call to one of the `convo_info_volatile_set_*`
+/// functions) and add records while iterating.
 ///
 /// If you need to remove while iterating then usage is slightly different: you must advance the
-/// iteration by calling either convo_info_volatile_iterator_advance if not deleting, or convo_info_volatile_iterator_erase to
-/// erase and advance.  Usage looks like this:
+/// iteration by calling either convo_info_volatile_iterator_advance if not deleting, or
+/// convo_info_volatile_iterator_erase to erase and advance.  Usage looks like this:
 ///
 ///     convo_info_volatile_1to1 c1;
 ///     convo_info_volatile_iterator *it = convo_info_volatile_iterator_new(my_convos);
@@ -177,13 +179,15 @@ typedef struct convo_info_volatile_iterator convo_info_volatile_iterator;
 // Starts a new iterator that iterates over all conversations.
 convo_info_volatile_iterator* convo_info_volatile_iterator_new(const config_object* conf);
 
-// The same as `convo_info_volatile_iterator_new` except that this iterates *only* over one type of conversation.
-// You still need to use `convo_info_volatile_it_is_1to1` (or the alternatives) to load the data in each pass of
-// the loop.  (You can, however, safely ignore the bool return value of the `it_is_whatever`
-// function: it will always be true for the particular type being iterated over).
+// The same as `convo_info_volatile_iterator_new` except that this iterates *only* over one type of
+// conversation. You still need to use `convo_info_volatile_it_is_1to1` (or the alternatives) to
+// load the data in each pass of the loop.  (You can, however, safely ignore the bool return value
+// of the `it_is_whatever` function: it will always be true for the particular type being iterated
+// over).
 convo_info_volatile_iterator* convo_info_volatile_iterator_new_1to1(const config_object* conf);
 convo_info_volatile_iterator* convo_info_volatile_iterator_new_open(const config_object* conf);
-convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_closed(const config_object* conf);
+convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_closed(
+        const config_object* conf);
 
 // Frees an iterator once no longer needed.
 void convo_info_volatile_iterator_free(convo_info_volatile_iterator* it);
@@ -204,7 +208,8 @@ bool convo_info_volatile_it_is_open(convo_info_volatile_iterator* it, convo_info
 
 // If the current iterator record is a legacy closed group conversation this sets the details into
 // `c` and returns true.  Otherwise it returns false.
-bool convo_info_volatile_it_is_legacy_closed(convo_info_volatile_iterator* it, convo_info_volatile_legacy_closed* c);
+bool convo_info_volatile_it_is_legacy_closed(
+        convo_info_volatile_iterator* it, convo_info_volatile_legacy_closed* c);
 
 // Erases the current convo while advancing the iterator to the next convo in the iteration.
 void convo_info_volatile_iterator_erase(config_object* conf, convo_info_volatile_iterator* it);

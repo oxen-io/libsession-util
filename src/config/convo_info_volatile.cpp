@@ -70,7 +70,9 @@ namespace convo {
     one_to_one::one_to_one(std::string&& sid) : session_id{std::move(sid)} {
         check_session_id(session_id);
     }
-    one_to_one::one_to_one(std::string_view sid) : session_id{sid} { check_session_id(session_id); }
+    one_to_one::one_to_one(std::string_view sid) : session_id{sid} {
+        check_session_id(session_id);
+    }
     one_to_one::one_to_one(const struct convo_info_volatile_1to1& c) :
             base{c.last_read, c.unread}, session_id{c.session_id, 66} {}
 
@@ -128,7 +130,9 @@ namespace convo {
         url_size = new_url_size;
     }
 
-    std::string_view open_group::base_url() const { return {key.data(), url_size}; }
+    std::string_view open_group::base_url() const {
+        return {key.data(), url_size};
+    }
     std::string_view open_group::room() const {
         if (key.empty())
             return {};
@@ -721,10 +725,12 @@ LIBSESSION_C_API bool convo_info_volatile_get_or_construct_legacy_closed(
     }
 }
 
-LIBSESSION_C_API void convo_info_volatile_set_1to1(config_object* conf, const convo_info_volatile_1to1* convo) {
+LIBSESSION_C_API void convo_info_volatile_set_1to1(
+        config_object* conf, const convo_info_volatile_1to1* convo) {
     unbox<ConvoInfoVolatile>(conf)->set(convo::one_to_one{*convo});
 }
-LIBSESSION_C_API void convo_info_volatile_set_open(config_object* conf, const convo_info_volatile_open* convo) {
+LIBSESSION_C_API void convo_info_volatile_set_open(
+        config_object* conf, const convo_info_volatile_open* convo) {
     unbox<ConvoInfoVolatile>(conf)->set(convo::open_group{*convo});
 }
 LIBSESSION_C_API void convo_info_volatile_set_legacy_closed(
@@ -747,7 +753,8 @@ LIBSESSION_C_API bool convo_info_volatile_erase_open(
         return false;
     }
 }
-LIBSESSION_C_API bool convo_info_volatile_erase_legacy_closed(config_object* conf, const char* group_id) {
+LIBSESSION_C_API bool convo_info_volatile_erase_legacy_closed(
+        config_object* conf, const char* group_id) {
     try {
         return unbox<ConvoInfoVolatile>(conf)->erase_legacy_closed(group_id);
     } catch (...) {
@@ -768,23 +775,27 @@ LIBSESSION_C_API size_t convo_info_volatile_size_legacy_closed(const config_obje
     return unbox<ConvoInfoVolatile>(conf)->size_legacy_closed();
 }
 
-LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new(const config_object* conf) {
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new(
+        const config_object* conf) {
     auto* it = new convo_info_volatile_iterator{};
     it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin()};
     return it;
 }
 
-LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_1to1(const config_object* conf) {
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_1to1(
+        const config_object* conf) {
     auto* it = new convo_info_volatile_iterator{};
     it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_1to1()};
     return it;
 }
-LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_open(const config_object* conf) {
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_open(
+        const config_object* conf) {
     auto* it = new convo_info_volatile_iterator{};
     it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_open()};
     return it;
 }
-LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_closed(const config_object* conf) {
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_closed(
+        const config_object* conf) {
     auto* it = new convo_info_volatile_iterator{};
     it->_internals =
             new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_legacy_closed()};
@@ -817,11 +828,13 @@ bool convo_info_volatile_it_is_impl(convo_info_volatile_iterator* it, C* c) {
 }
 }  // namespace
 
-LIBSESSION_C_API bool convo_info_volatile_it_is_1to1(convo_info_volatile_iterator* it, convo_info_volatile_1to1* c) {
+LIBSESSION_C_API bool convo_info_volatile_it_is_1to1(
+        convo_info_volatile_iterator* it, convo_info_volatile_1to1* c) {
     return convo_info_volatile_it_is_impl<convo::one_to_one>(it, c);
 }
 
-LIBSESSION_C_API bool convo_info_volatile_it_is_open(convo_info_volatile_iterator* it, convo_info_volatile_open* c) {
+LIBSESSION_C_API bool convo_info_volatile_it_is_open(
+        convo_info_volatile_iterator* it, convo_info_volatile_open* c) {
     return convo_info_volatile_it_is_impl<convo::open_group>(it, c);
 }
 
@@ -830,7 +843,8 @@ LIBSESSION_C_API bool convo_info_volatile_it_is_legacy_closed(
     return convo_info_volatile_it_is_impl<convo::legacy_closed_group>(it, c);
 }
 
-LIBSESSION_C_API void convo_info_volatile_iterator_erase(config_object* conf, convo_info_volatile_iterator* it) {
+LIBSESSION_C_API void convo_info_volatile_iterator_erase(
+        config_object* conf, convo_info_volatile_iterator* it) {
     auto& real = *static_cast<ConvoInfoVolatile::iterator*>(it->_internals);
     real = unbox<ConvoInfoVolatile>(conf)->erase(real);
 }

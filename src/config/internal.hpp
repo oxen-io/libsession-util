@@ -50,5 +50,4 @@ void copy_c_str(char (&dest)[N], std::string_view src) {
     dest[src.size()] = 0;
 }
 
-
 }  // namespace session::config

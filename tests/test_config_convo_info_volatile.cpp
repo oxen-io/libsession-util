@@ -16,14 +16,30 @@ using namespace oxenc::literals;
 TEST_CASE("Open Group URLs", "[config][open_group_urls]") {
 
     using namespace session::config::convo;
-    auto [base1, room1, pk1] = open_group::parse_full_url("https://example.com/SomeRoom?public_key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    auto [base2, room2, pk2] = open_group::parse_full_url("HTTPS://EXAMPLE.COM/sOMErOOM?public_key=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
-    auto [base3, room3, pk3] = open_group::parse_full_url("HTTPS://EXAMPLE.COM/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base4, room4, pk4] = open_group::parse_full_url("http://example.com/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base5, room5, pk5] = open_group::parse_full_url("HTTPS://EXAMPLE.com:443/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base6, room6, pk6] = open_group::parse_full_url("HTTP://EXAMPLE.com:80/r/someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base7, room7, pk7] = open_group::parse_full_url("http://example.com:80/r/someroom?public_key=ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8");
-    auto [base8, room8, pk8] = open_group::parse_full_url("http://example.com:80/r/someroom?public_key=yrtwk3hjixg66yjdeiuauk6p7hy1gtm8tgih55abrpnsxnpm3zzo");
+    auto [base1, room1, pk1] = open_group::parse_full_url(
+            "https://example.com/"
+            "SomeRoom?public_key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    auto [base2, room2, pk2] = open_group::parse_full_url(
+            "HTTPS://EXAMPLE.COM/"
+            "sOMErOOM?public_key=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
+    auto [base3, room3, pk3] = open_group::parse_full_url(
+            "HTTPS://EXAMPLE.COM/r/"
+            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base4, room4, pk4] = open_group::parse_full_url(
+            "http://example.com/r/"
+            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base5, room5, pk5] = open_group::parse_full_url(
+            "HTTPS://EXAMPLE.com:443/r/"
+            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base6, room6, pk6] = open_group::parse_full_url(
+            "HTTP://EXAMPLE.com:80/r/"
+            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
+    auto [base7, room7, pk7] = open_group::parse_full_url(
+            "http://example.com:80/r/"
+            "someroom?public_key=ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8");
+    auto [base8, room8, pk8] = open_group::parse_full_url(
+            "http://example.com:80/r/"
+            "someroom?public_key=yrtwk3hjixg66yjdeiuauk6p7hy1gtm8tgih55abrpnsxnpm3zzo");
 
     CHECK(base1 == "https://example.com");
     CHECK(base1 == base2);
@@ -401,9 +417,11 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     }
 
     CHECK_FALSE(config_needs_push(conf));
-    convo_info_volatile_erase_1to1(conf, "052000000000000000000000000000000000000000000000000000000000000000");
+    convo_info_volatile_erase_1to1(
+            conf, "052000000000000000000000000000000000000000000000000000000000000000");
     CHECK_FALSE(config_needs_push(conf));
-    convo_info_volatile_erase_1to1(conf, "055000000000000000000000000000000000000000000000000000000000000000");
+    convo_info_volatile_erase_1to1(
+            conf, "055000000000000000000000000000000000000000000000000000000000000000");
     CHECK(config_needs_push(conf));
     CHECK(convo_info_volatile_size(conf) == 3);
     CHECK(convo_info_volatile_size_1to1(conf) == 1);
@@ -437,7 +455,8 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     seen.clear();
     convo_info_volatile_legacy_closed cgi;
-    for (it = convo_info_volatile_iterator_new_legacy_closed(conf); !convo_info_volatile_iterator_done(it);
+    for (it = convo_info_volatile_iterator_new_legacy_closed(conf);
+         !convo_info_volatile_iterator_done(it);
          convo_info_volatile_iterator_advance(it)) {
         REQUIRE(convo_info_volatile_it_is_legacy_closed(it, &cgi));
         seen.emplace_back(cgi.group_id);
