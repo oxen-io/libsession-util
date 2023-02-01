@@ -123,3 +123,11 @@ target_include_directories(libsodium-internal
     SYSTEM BEFORE
     INTERFACE
     ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include)
+
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "")
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "")
+set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "")
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "")
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "")
+set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "")
+add_subdirectory(zstd/build/cmake)

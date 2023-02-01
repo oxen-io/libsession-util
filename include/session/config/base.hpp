@@ -416,6 +416,11 @@ class ConfigBase {
     /// to use.  This is rarely needed externally; it is public merely for testing purposes.
     virtual const char* encryption_domain() const = 0;
 
+    /// The zstd compression level to use for this type.  Subclasses can override this if they have
+    /// some particular special compression level, or to disable compression entirely (by returning
+    /// std::nullopt).  The default is zstd level 1.
+    virtual std::optional<int> compression_level() const { return 1; }
+
     // How many config lags should be used for this object; default to 5.  Implementing subclasses
     // can override to return a different constant if desired.  More lags require more "diff"
     // storage in the config messages, but also allow for a higher tolerance of simultaneous message

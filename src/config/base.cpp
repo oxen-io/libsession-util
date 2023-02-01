@@ -3,6 +3,7 @@
 #include <oxenc/hex.h>
 #include <sodium/core.h>
 #include <sodium/utils.h>
+#include <zstd.h>
 
 #include <stdexcept>
 #include <string>
@@ -53,8 +54,6 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
     std::vector<ustring> plaintexts;
 
     // TODO:
-    // - handle zstd-compressed messages: if the decrypted data starts with a `z` (instead of a `d`)
-    //   then we decompress it first.
     // - handle multipart messages.  Each part of a multipart message starts with `m` and then is
     //   immediately followed by a bt_list where:
     //   - element 0 is 'z' for a zstd-compressed message, 'p' for an uncompressed message.
@@ -83,26 +82,62 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
         "successfully decrypted " + std::to_string(plaintexts.size()) + " of " +
                 std::to_string(configs.size()) + " incoming messages");
 
-    for (const auto& maybe_padded : plaintexts) {
-        ustring_view conf{maybe_padded};
-        if (auto p = maybe_padded.find_first_not_of('\0'); p > 0 && p != std::string_view::npos)
-            conf.remove_prefix(p);
-        if (conf[0] == 'd') {
-            // Plaintext config message, this is easy
-            all_confs.push_back(conf);
-        } else if (conf[0] == 'z') {
-            // TODO FIXME (see above)
-            log(LogLevel::warning, "decompression not yet supported!");
-        } else if (conf[0] == 'm') {
-            // TODO FIXME (see above)
+    for (auto& plain : plaintexts) {
+        // Remove prefix padding:
+        if (auto p = plain.find_first_not_of('\0'); p > 0 && p != std::string::npos) {
+            std::memmove(plain.data(), plain.data() + p, plain.size() - p);
+            plain.resize(plain.size() - p);
+        }
+        if (plain.empty()) {
+            log(LogLevel::error, "Invalid config message: contains no data");
+            continue;
+        }
+
+        // TODO FIXME (see above)
+        if (plain[0] == 'm') {
             log(LogLevel::warning, "multi-part messages not yet supported!");
-        } else {
+            continue;
+        }
+
+        // 'z' prefix indicates zstd-compressed data:
+        if (plain[0] == 'z') {
+            struct zstd_decomp_freer {
+                void operator()(ZSTD_DStream* z) const { ZSTD_freeDStream(z); }
+            };
+            std::unique_ptr<ZSTD_DStream, zstd_decomp_freer> z_decompressor{ZSTD_createDStream()};
+            auto* zds = z_decompressor.get();
+
+            ZSTD_initDStream(zds);
+            ZSTD_inBuffer input{.src = plain.data() + 1, .size = plain.size() - 1, .pos = 0};
+            unsigned char out_buf[4096];
+            ZSTD_outBuffer output{.dst = out_buf, .size = sizeof(out_buf)};
+            bool failed = false;
+            size_t ret;
+            ustring decompressed;
+            do {
+                output.pos = 0;
+                ret = ZSTD_decompressStream(zds, &output, &input);
+                if (ZSTD_isError(ret)) {
+                    failed = true;
+                    break;
+                }
+                decompressed += ustring_view{out_buf, output.pos};
+            } while (ret > 0 || input.pos < input.size);
+            if (failed || decompressed.empty()) {
+                log(LogLevel::warning, "Invalid config message: decompression failed");
+                continue;
+            }
+            plain = std::move(decompressed);
+        }
+
+        if (plain[0] != 'd')
             log(LogLevel::error,
                 "invalid/unsupported config message with type " +
-                        (conf[0] >= 0x20 && conf[0] <= 0x7e
-                                 ? "'" + std::string{from_unsigned_sv(conf.substr(0, 1))} + "'"
-                                 : "0x" + oxenc::to_hex(conf.begin(), conf.begin() + 1)));
-        }
+                        (plain[0] >= 0x20 && plain[0] <= 0x7e
+                                 ? "'" + std::string{from_unsigned_sv(plain.substr(0, 1))} + "'"
+                                 : "0x" + oxenc::to_hex(plain.begin(), plain.begin() + 1)));
+
+        all_confs.emplace_back(plain);
     }
 
     int good = all_confs.size();
@@ -132,6 +167,25 @@ bool ConfigBase::needs_push() const {
     return !is_clean();
 }
 
+// Tries to compresses the message; if the compressed version (including the 'z' prefix tag) is
+// smaller than the source message then we modify `msg` to contain the 'z'-prefixed compressed
+// message, otherwise we leave it as-is.
+void compress_message(ustring& msg, int level) {
+    if (!level)
+        return;
+    ustring compressed;
+    compressed.resize(1 + ZSTD_compressBound(msg.size()));
+    compressed[0] = 'z';  // our zstd compression marker prefix byte
+    auto size = ZSTD_compress(
+            compressed.data() + 1, compressed.size() - 1, msg.data(), msg.size(), level);
+    if (ZSTD_isError(size))
+        throw std::runtime_error{
+                "Unable to compress message: " + std::string{ZSTD_getErrorName(size)}};
+    compressed.resize(size + 1);
+    if (compressed.size() < msg.size())
+        msg = std::move(compressed);
+}
+
 std::pair<ustring, seqno_t> ConfigBase::push() {
     if (_keys_size == 0)
         throw std::logic_error{"Cannot push data without an encryption key!"};
@@ -141,8 +195,9 @@ std::pair<ustring, seqno_t> ConfigBase::push() {
 
     std::pair<ustring, seqno_t> ret{_config->serialize(), _config->seqno()};
 
-    // Prefix pad with nulls:
-    pad_message(ret.first);
+    if (auto lvl = compression_level())
+        compress_message(ret.first, *lvl);
+    pad_message(ret.first);  // Prefix pad with nulls
     encrypt_inplace(ret.first, key(), encryption_domain());
 
     return ret;
