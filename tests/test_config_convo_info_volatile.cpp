@@ -358,7 +358,8 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
     convo_info_volatile_1to1 c2;
-    REQUIRE(convo_info_volatile_get_or_construct_1to1(conf, &c2, another_id));
+    REQUIRE(convo_info_volatile_get_or_construct_1to1(conf2, &c2, another_id));
+    c2.unread = true;
     convo_info_volatile_set_1to1(conf2, &c2);
 
     REQUIRE(convo_info_volatile_get_or_construct_legacy_closed(
