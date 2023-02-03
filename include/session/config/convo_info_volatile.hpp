@@ -8,6 +8,8 @@
 
 #include "base.hpp"
 
+using namespace std::literals;
+
 extern "C" {
 struct convo_info_volatile_1to1;
 struct convo_info_volatile_open;
@@ -185,6 +187,16 @@ class ConvoInfoVolatile : public ConfigBase {
     Namespace storage_namespace() const override { return Namespace::ConvoInfoVolatile; }
 
     const char* encryption_domain() const override { return "ConvoInfoVolatile"; }
+
+    /// Our pruning ages.  We ignore added conversations that are more than PRUNE_LOW before now,
+    /// and we active remove (when doing a new push) any conversations that are more than PRUNE_HIGH
+    /// before now.  Clients can mostly ignore these and just add all conversations; the class just
+    /// transparently ignores (or removes) pruned values.
+    static constexpr auto PRUNE_LOW = 30 * 24h;
+    static constexpr auto PRUNE_HIGH = 45 * 24h;
+
+    /// Overrides push() to prune stale last-read values before we do the push.
+    std::pair<ustring, seqno_t> push() override;
 
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `convo::one_to_one`.

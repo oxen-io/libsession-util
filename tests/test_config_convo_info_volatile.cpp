@@ -466,3 +466,102 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
                           "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                   }});
 }
+
+TEST_CASE("Conversation pruning", "[config][conversations][pruning]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
+    REQUIRE(oxenc::to_hex(curve_pk.begin(), curve_pk.end()) ==
+            "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    session::config::ConvoInfoVolatile convos{ustring_view{seed}, std::nullopt};
+
+    auto some_pubkey = [](unsigned char x) -> ustring {
+        ustring s = "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes;
+        s[31] = x;
+        return s;
+    };
+    auto some_session_id = [&](unsigned char x) -> std::string {
+        auto pk = some_pubkey(x);
+        return "05" + oxenc::to_hex(pk.begin(), pk.end());
+    };
+    auto some_og_url = [&](unsigned char x) -> std::string {
+        return "https://example.com/r/room"s + std::to_string(x);
+    };
+    const auto now = std::chrono::system_clock::now() - 1ms;
+    auto unix_timestamp = [&now](int days_ago) -> int64_t {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                       (now - days_ago * 24h).time_since_epoch())
+                .count();
+    };
+    for (int i = 0; i <= 65; i++) {
+        if (i % 3 == 0) {
+            auto c = convos.get_or_construct_1to1(some_session_id(i));
+            c.last_read = unix_timestamp(i);
+            if (i % 5 == 0)
+                c.unread = true;
+            convos.set(c);
+        } else if (i % 3 == 1) {
+            auto c = convos.get_or_construct_legacy_closed(some_session_id(i));
+            c.last_read = unix_timestamp(i);
+            if (i % 5 == 0)
+                c.unread = true;
+            convos.set(c);
+        } else {
+            auto c = convos.get_or_construct_open(
+                    "https://example.org", "room" + std::to_string(i), some_pubkey(i));
+            c.last_read = unix_timestamp(i);
+            if (i % 5 == 0)
+                c.unread = true;
+            convos.set(c);
+        }
+    }
+
+    // 0, 3, 6, ..., 30 == 11 not-too-old last_read entries
+    // 45, 60 have unread flags
+    CHECK(convos.size_1to1() == 11 + 2);
+    // 1, 4, 7, ..., 28 == 10 last_read's
+    // 40, 55 = 2 unread flags
+    CHECK(convos.size_legacy_closed() == 10 + 2);
+    // 2, 5, 8, ..., 29 == 10 last_read's
+    // 35, 50, 65 = 3 unread flags
+    CHECK(convos.size_open() == 10 + 3);
+    // 31 (0-30) were recent enough to be kept
+    // 5 more (35, 40, 45, 50, 55) have `unread` set.
+    CHECK(convos.size() == 38);
+
+    // Now we deliberately set some values in the internals that are too old to see that they get
+    // properly pruned when we push.  (This is only for testing, clients should never touch the
+    // internals like this!)
+
+    // These ones wouldn't be stored by the normal `set()` interface, but won't get pruned either:
+    convos.data["1"][oxenc::from_hex(some_session_id(80))]["r"] = unix_timestamp(33);
+    convos.data["1"][oxenc::from_hex(some_session_id(81))]["r"] = unix_timestamp(40);
+    convos.data["1"][oxenc::from_hex(some_session_id(82))]["r"] = unix_timestamp(44);
+    // These ones should get pruned as soon as we push:
+    convos.data["1"][oxenc::from_hex(some_session_id(83))]["r"] = unix_timestamp(45);
+    convos.data["1"][oxenc::from_hex(some_session_id(84))]["r"] = unix_timestamp(46);
+    convos.data["1"][oxenc::from_hex(some_session_id(85))]["r"] = unix_timestamp(1000);
+
+    CHECK(convos.size_1to1() == 19);
+    int count = 0;
+    for (auto it = convos.begin_1to1(); it != convos.end(); it++) {
+        count++;
+    }
+    CHECK(count == 19);
+
+
+    CHECK(convos.size() == 44);
+    auto [push_data, seqno] = convos.push();
+    CHECK(convos.size() == 41);
+}

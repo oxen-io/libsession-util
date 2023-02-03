@@ -468,13 +468,16 @@ class ConfigBase {
     // the server.  This will be true whenever `is_clean()` is false: that is, if we are currently
     // "dirty" (i.e.  have changes that haven't been pushed) or are still awaiting confirmation of
     // storage of the most recent serialized push data.
-    bool needs_push() const;
+    virtual bool needs_push() const;
 
     // Returns the data messages to push to the server along with the seqno value of the data.  If
     // the config is currently dirty (i.e. has previously unsent modifications) then this marks it
     // as awaiting-confirmation instead of dirty so that any future change immediately increments
     // the seqno.
-    std::pair<ustring, seqno_t> push();
+    //
+    // Subclasses that need to perform pre-push tasks (such as pruning stale data) can override this
+    // to prune and then call the base method to perform the actual push generation.
+    virtual std::pair<ustring, seqno_t> push();
 
     // Should be called after the push is confirmed stored on the storage server swarm to let the
     // object know the data is stored.  (Once this is called `needs_push` will start returning false

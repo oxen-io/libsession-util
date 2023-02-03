@@ -7,7 +7,6 @@
 #include <sodium/crypto_generichash_blake2b.h>
 
 #include <charconv>
-#include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <variant>
@@ -70,9 +69,7 @@ namespace convo {
     one_to_one::one_to_one(std::string&& sid) : session_id{std::move(sid)} {
         check_session_id(session_id);
     }
-    one_to_one::one_to_one(std::string_view sid) : session_id{sid} {
-        check_session_id(session_id);
-    }
+    one_to_one::one_to_one(std::string_view sid) : session_id{sid} { check_session_id(session_id); }
     one_to_one::one_to_one(const struct convo_info_volatile_1to1& c) :
             base{c.last_read, c.unread}, session_id{c.session_id, 66} {}
 
@@ -130,9 +127,7 @@ namespace convo {
         url_size = new_url_size;
     }
 
-    std::string_view open_group::base_url() const {
-        return {key.data(), url_size};
-    }
+    std::string_view open_group::base_url() const { return {key.data(), url_size}; }
     std::string_view open_group::room() const {
         if (key.empty())
             return {};
@@ -430,11 +425,43 @@ void ConvoInfoVolatile::set(const convo::one_to_one& c) {
 }
 
 void ConvoInfoVolatile::set_base(const convo::base& c, DictFieldProxy& info) {
-    info["r"] = c.last_read;
+    auto r = info["r"];
+
+    // If we're making the last_read value *older* for some reason then ignore the prune cutoff
+    // (because we might be intentionally resetting the value after a deletion, for instance).
+    if (auto* val = r.integer(); val && c.last_read < *val)
+        r = c.last_read;
+    else {
+        std::chrono::system_clock::time_point last_read{std::chrono::milliseconds{c.last_read}};
+        if (last_read > std::chrono::system_clock::now() - PRUNE_LOW)
+            info["r"] = c.last_read;
+    }
+
     if (c.unread)
         info["u"] = 1;
     else
         info["u"].erase();
+}
+
+std::pair<ustring, seqno_t> ConvoInfoVolatile::push() {
+    // Prune off any conversations with last_read timestamps more than PRUNE_HIGH ago (unless they
+    // also have a `unread` flag set, in which case we keep them indefinitely).
+    const int64_t cutoff =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                    (std::chrono::system_clock::now() - PRUNE_HIGH).time_since_epoch())
+                    .count();
+
+    for (auto it = begin(); it != end();)
+        std::visit(
+                [&it, &cutoff, this](const auto& convo) {
+                    if (!convo.unread && convo.last_read < cutoff)
+                        it = erase(it);
+                    else
+                        ++it;
+                },
+                *it);
+
+    return ConfigBase::push();
 }
 
 void ConvoInfoVolatile::set(const convo::open_group& c) {
