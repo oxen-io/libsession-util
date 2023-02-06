@@ -123,3 +123,22 @@ target_include_directories(libsodium-internal
     SYSTEM BEFORE
     INTERFACE
     ${CMAKE_CURRENT_BINARY_DIR}/libsodium-internal/include)
+
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "")
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "")
+set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "")
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "")
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "")
+set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "")
+add_subdirectory(zstd/build/cmake)
+# zstd's cmake doesn't properly set up include paths on its targets, so we have to wrap it in an
+# interface target that does:
+add_library(libzstd_static_fixed_includes INTERFACE)
+target_include_directories(libzstd_static_fixed_includes INTERFACE zstd/lib zstd/lib/common)
+target_link_libraries(libzstd_static_fixed_includes INTERFACE libzstd_static)
+add_library(libzstd::static ALIAS libzstd_static_fixed_includes)
+export(
+    TARGETS libzstd_static_fixed_includes
+    NAMESPACE libsession::
+    FILE libsessionZstd.cmake
+)

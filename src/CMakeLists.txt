@@ -36,6 +36,7 @@ target_link_libraries(config
     PUBLIC
     crypto
     oxenc::oxenc
+    libzstd::static
     common)
 
 add_library(libsession::config ALIAS config)

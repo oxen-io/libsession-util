@@ -59,8 +59,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
     REQUIRE(to_push_decrypted);
     CHECK(to_push_decr_size == 216);  // 256 - 40 overhead
-    CHECK(ustring_view{to_push_decrypted, to_push_decr_size} ==
-          ustring(193, '\0') + "d1:#i0e1:&de1:<le1:=dee"_bytes);
+    CHECK(printable(to_push_decrypted, to_push_decr_size) ==
+          printable(
+                  ustring(193, '\0') +             // null prefix padding
+                  "d1:#i0e1:&de1:<le1:=dee"_bytes  // "compressed", but since this example is so
+                  )                                // small zstd doesn't actually compress anything.
+    );
 
     free(to_push);
     free(to_push_decrypted);
@@ -256,13 +260,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Now after the merge we *will* want to push from both client, since both will have generated a
     // merge conflict update (with seqno = 3).
-    CHECK(config_needs_push(conf));
-    CHECK(config_needs_push(conf2));
     seqno = config_push(conf, &to_push, &to_push_len);
     seqno2 = config_push(conf2, &to_push2, &to_push2_len);
 
-    CHECK(seqno == 3);
-    CHECK(seqno2 == 3);
+    REQUIRE(seqno == 3);
+    REQUIRE(seqno2 == 3);
+    REQUIRE(config_needs_push(conf));
+    REQUIRE(config_needs_push(conf2));
 
     // They should have resolved the conflict to the same thing:
     CHECK(user_profile_get_name(conf) == "Nibbler"sv);
