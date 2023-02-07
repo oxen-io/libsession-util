@@ -83,7 +83,9 @@ namespace convo {
     one_to_one::one_to_one(std::string&& sid) : session_id{std::move(sid)} {
         check_session_id(session_id);
     }
-    one_to_one::one_to_one(std::string_view sid) : session_id{sid} { check_session_id(session_id); }
+    one_to_one::one_to_one(std::string_view sid) : session_id{sid} {
+        check_session_id(session_id);
+    }
     one_to_one::one_to_one(const struct convo_info_volatile_1to1& c) :
             base{c.last_read, c.unread}, session_id{c.session_id, 66} {}
 
@@ -135,7 +137,9 @@ namespace convo {
             throw std::invalid_argument{"Invalid pubkey: expected a 32-byte pubkey"};
         pubkey_ = pubkey;
     }
-    void open_group::set_pubkey(std::string_view pubkey) { pubkey_ = decode_pubkey(pubkey); }
+    void open_group::set_pubkey(std::string_view pubkey) {
+        pubkey_ = decode_pubkey(pubkey);
+    }
 
     std::string open_group::pubkey_hex() const {
         const auto& pk = pubkey();
@@ -233,7 +237,9 @@ namespace convo {
         return result;
     }
 
-    void open_group::canonicalize_url(std::string& url) { url = canonical_url(url); }
+    void open_group::canonicalize_url(std::string& url) {
+        url = canonical_url(url);
+    }
     void open_group::canonicalize_room(std::string& room) {
         for (auto& c : room)
             if (c >= 'A' && c <= 'Z')
