@@ -37,6 +37,13 @@ int ConfigBase::merge(const std::vector<ustring>& configs) {
     return merge(config_views);
 }
 
+template <typename... Args>
+std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... args) {
+    if (from_dirty)
+        return std::make_unique<MutableConfigMessage>(std::forward<Args>(args)...);
+    return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
+}
+
 int ConfigBase::merge(const std::vector<ustring_view>& configs) {
 
     if (_keys_size == 0)
@@ -142,7 +149,8 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
 
     int good = all_confs.size();
 
-    auto new_conf = std::make_unique<ConfigMessage>(
+    auto new_conf = make_config_message(
+            _state == ConfigState::Dirty,
             all_confs,
             nullptr, /* FIXME for signed messages: verifier */
             nullptr, /* FIXME for signed messages: signer */

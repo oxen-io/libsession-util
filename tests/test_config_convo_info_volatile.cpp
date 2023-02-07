@@ -561,8 +561,107 @@ TEST_CASE("Conversation pruning", "[config][conversations][pruning]") {
     }
     CHECK(count == 19);
 
-
     CHECK(convos.size() == 44);
     auto [push_data, seqno] = convos.push();
     CHECK(convos.size() == 41);
+}
+
+TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
+    REQUIRE(oxenc::to_hex(curve_pk.begin(), curve_pk.end()) ==
+            "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    config_object* conf;
+    REQUIRE(0 == convo_info_volatile_init(&conf, ed_sk.data(), NULL, 0, NULL));
+
+    convo_info_volatile_1to1 c;
+    CHECK(convo_info_volatile_get_or_construct_1to1(
+            conf, &c, "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+    c.last_read = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    convo_info_volatile_set_1to1(conf, &c);
+
+    // Fake push:
+    unsigned char* to_push;
+    size_t to_push_len;
+    seqno_t seqno = config_push(conf, &to_push, &to_push_len);
+    free(to_push);
+    CHECK(seqno == 1);
+    config_confirm_pushed(conf, seqno);
+    CHECK(config_needs_dump(conf));
+
+    // Dump:
+    unsigned char* dump;
+    size_t dumplen;
+    config_dump(conf, &dump, &dumplen);
+
+    // Load the dump:
+    config_object* conf2;
+    REQUIRE(0 == convo_info_volatile_init(&conf2, ed_sk.data(), dump, dumplen, NULL));
+
+    free(dump);
+
+    // Change the original again, then push it for conf2:
+    CHECK(convo_info_volatile_get_or_construct_1to1(
+            conf, &c, "051111111111111111111111111111111111111111111111111111111111111111"));
+    c.last_read = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    convo_info_volatile_set_1to1(conf, &c);
+
+    seqno = config_push(conf, &to_push, &to_push_len);
+    CHECK(seqno == 2);
+    config_confirm_pushed(conf, seqno);
+
+    // But *before* we load the push make a dirtying change to conf2 that we *don't* push (so that
+    // we'll be merging into a dirty-state config):
+    CHECK(convo_info_volatile_get_or_construct_1to1(
+            conf2, &c, "052222111111111111111111111111111111111111111111111111111111111111"));
+    c.last_read = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    convo_info_volatile_set_1to1(conf2, &c);
+
+    // And now, *before* we push the dirty config, also merge the incoming push from `conf`:
+    const unsigned char* merge_data[1];
+    size_t merge_size[1];
+    merge_data[0] = to_push;
+    merge_size[0] = to_push_len;
+
+    config_merge(conf2, merge_data, merge_size, 1);
+    free(to_push);
+
+    CHECK(config_needs_push(conf2));
+
+    convo_info_volatile_1to1 c1;
+    REQUIRE(convo_info_volatile_get_or_construct_1to1(
+            conf2, &c1, "051111111111111111111111111111111111111111111111111111111111111111"));
+    c1.last_read += 10;
+    // Prior to the commit that added this test case (and fix), this call would fail with:
+    //     Internal error: unexpected dirty but non-mutable ConfigMessage
+    // because of the above dirty->merge->dirty (without an intermediate push) pattern.
+    REQUIRE_NOTHROW(convo_info_volatile_set_1to1(conf2, &c1));
+
+    CHECK(config_needs_push(conf2));
+    seqno = config_push(conf2, &to_push, &to_push_len);
+    CHECK(seqno == 3);
+    config_confirm_pushed(conf2, seqno);
+    CHECK_FALSE(config_needs_push(conf2));
+
+    config_dump(conf2, &dump, &dumplen);
+    free(dump);
+    CHECK_FALSE(config_needs_dump(conf2));
 }
