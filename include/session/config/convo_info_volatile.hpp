@@ -31,13 +31,14 @@ class ConvoInfoVolatile;
 ///         included, but will be 0 if no messages are read.
 ///     u - will be present and set to 1 if this conversation is specifically marked unread.
 ///
-/// o - open group conversations.  Each key is: BASE_URL + '\0' + LC_ROOM_NAME + '\0' +
-///     SERVER_PUBKEY (in bytes).  Note that room name is *always* lower-cased here (so that clients
-///     with the same room but with different cases will always set the same key).  Values are dicts
-///     with keys:
-///     r - the unix timestamp (in integer milliseconds) of the last-read message.  Always included,
-///         but will be 0 if no messages are read.
-///     u - will be present and set to 1 if this conversation is specifically marked unread.
+/// o - open group conversations.  This is a nested dict where the outer keys are the BASE_URL of
+///     the open group and the outer value is a dict containing:
+///     - `#` -- the 32-byte server pubkey
+///     - `R` -- dict of rooms on the server; each key is the lower-case room name, value is a dict
+///       containing keys:
+///       r - the unix timestamp (in integer milliseconds) of the last-read message.  Always
+///           included, but will be 0 if no messages are read.
+///       u - will be present and set to 1 if this conversation is specifically marked unread.
 ///
 /// C - legacy closed group conversations.  The key is the closed group identifier (which looks
 ///     indistinguishable from a Session ID, but isn't really a proper Session ID).  Values are
@@ -77,13 +78,15 @@ namespace convo {
         // 267 = len('https://') + 253 (max valid DNS name length) + len(':XXXXX')
         static constexpr size_t MAX_URL = 267, MAX_ROOM = 64;
 
-        std::string_view base_url() const;  // Accesses the base url (i.e. not including room or
-                                            // pubkey). Always lower-case.
-        std::string_view room()
-                const;  // Accesses the room name, always in lower-case.  (Note that the
-                        // actual open group info might not be lower-case; it is just in
-                        // the open group convo where we force it lower-case).
-        ustring_view pubkey() const;     // Accesses the server pubkey (32 bytes).
+        // Accesses the base url (i.e. not including room or pubkey). Always lower-case.
+        const std::string& base_url() const { return base_url_; }
+
+        // Accesses the room name, always in lower-case.  (Note that the actual open group info
+        // might not be lower-case; it is just in the open group convo where we force it
+        // lower-case).
+        const std::string& room() const { return room_; }
+
+        const ustring& pubkey() const { return pubkey_; }  // Accesses the server pubkey (32 bytes).
         std::string pubkey_hex() const;  // Accesses the server pubkey as hex (64 hex digits).
 
         open_group() = default;
@@ -110,41 +113,55 @@ namespace convo {
 
         // Replaces the baseurl/room/pubkey of this object.  Note that changing this and then giving
         // it to `set` will end up inserting a *new* record but not removing the *old* one (you need
-        // to erase first to do that).
+        // to erase first to do that).  For the version that takes the pubkey as a string_view and
+        // the URL the pubkey must be encoded in either hex, base32z, or base64.
         void set_server(std::string_view base_url, std::string_view room, ustring_view pubkey);
         void set_server(
-                std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
+                std::string_view base_url, std::string_view room, std::string_view pubkey_encoded);
         void set_server(std::string_view full_url);
 
-        // Loads the baseurl/room/pubkey of this object from an encoded key.  Throws
-        // std::invalid_argument if the encoded key does not look right.
-        void load_encoded_key(std::string key);
+        // Updates the pubkey of this open group (typically this is not called directly but rather
+        // via `set_server` or during construction).  Throws std::invalid_argument if the given
+        // pubkey does not look like a valid pubkey.  The std::string_view version takes the pubkey
+        // as any of hex/base64/base32z.
+        //
+        // NOTE: the pubkey of all open groups with the same URLs are stored in common, so changing
+        // one open group pubkey (and storing) will affect all open groups using the identical open
+        // group URL.
+        void set_pubkey(ustring_view pubkey);
+        void set_pubkey(std::string_view pubkey);
 
         // Takes a base URL as input and returns it in canonical form.  This involves doing things
-        // like lower casing it and removing redundant ports (e.g. :80 when using http://).
+        // like lower casing it and removing redundant ports (e.g. :80 when using http://).  Throws
+        // std::invalid_argument if given an invalid base URL.
         static std::string canonical_url(std::string_view url);
 
-        // Takes a full room URL, splits it up into canonical url (see above), lower-case room
-        // token, and server pubkey.  We take both the deprecated form (e.g.
+        // Takes a room token and returns it in canonical form (i.e. lower-cased).  Throws
+        // std::invalid_argument if given an invalid room token (e.g. too long, or containing token
+        // other than a-z, 0-9, -, _).
+        static std::string canonical_room(std::string_view room);
+
+        // Same as above, but modifies the argument in-place instead of returning a modified
+        // copy.
+        static void canonicalize_url(std::string& url);
+        static void canonicalize_room(std::string& room);
+
+        // Takes a full room URL, splits it up into canonical url and room (see above), and server
+        // pubkey.  We take both the deprecated form (e.g.
         // https://example.com/SomeRoom?public_key=...) and new form
         // (https://example.com/r/SomeRoom?public_key=...).  The public_key is typically specified
-        // in hex (64 digits), but we also accept unpadded base64 (43 chars) and base32z (52 chars)
-        // encodings (for slightly shorter URLs).
+        // in hex (64 digits), but we also accept base64 (43 chars or 44 with padding) and base32z
+        // (52 chars) encodings (for slightly shorter URLs).
+        //
+        // Throw std::invalid_argument if anything in the URL is unparseable or invalid.
         static std::tuple<std::string, std::string, ustring> parse_full_url(
                 std::string_view full_url);
 
       private:
-        std::string key;
-        size_t url_size = 0;
+        std::string base_url_, room_;
+        ustring pubkey_;
 
         friend class session::config::ConvoInfoVolatile;
-
-        // Returns the key value we use in the stored dict for this open group, i.e.
-        // lc(URL) + lc(NAME) + PUBKEY_BYTES.
-        static std::string make_key(
-                std::string_view base_url, std::string_view room, std::string_view pubkey_hex);
-        static std::string make_key(
-                std::string_view base_url, std::string_view room, ustring_view pubkey);
     };
 
     struct legacy_closed_group : base {
@@ -242,6 +259,11 @@ class ConvoInfoVolatile : public ConfigBase {
   protected:
     void set_base(const convo::base& c, DictFieldProxy& info);
 
+    // Drills into the nested dicts to access open group details
+    auto open_field(const convo::open_group& og) const {
+        return data["o"][og.base_url()]["R"][og.room()];
+    }
+
   public:
     /// Removes a one-to-one conversation.  Returns true if found and removed, false if not present.
     bool erase_1to1(std::string_view pubkey);
@@ -338,8 +360,8 @@ class ConvoInfoVolatile : public ConfigBase {
     struct iterator {
       protected:
         std::shared_ptr<convo::any> _val;
-        std::optional<dict::const_iterator> _it_11, _end_11, _it_open, _end_open, _it_lclosed,
-                _end_lclosed;
+        std::optional<dict::const_iterator> _it_11, _end_11, _it_open_server, _it_open_room,
+                _end_open_server, _end_open_room, _it_lclosed, _end_lclosed;
         void _load_val();
         iterator() = default;  // Constructs an end tombstone
         explicit iterator(

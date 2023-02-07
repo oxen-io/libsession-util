@@ -52,12 +52,26 @@ void make_lc(std::string& s) {
 }
 
 // Digs into a dict to get out an int64_t; nullopt if not there (or not int)
-static std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key) {
+std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key) {
     if (auto it = d.find(key); it != d.end())
         if (auto* sc = std::get_if<session::config::scalar>(&it->second))
             if (auto* i = std::get_if<int64_t>(sc))
                 return *i;
     return std::nullopt;
+}
+
+session::ustring decode_pubkey(std::string_view pk) {
+    session::ustring pubkey;
+    pubkey.reserve(32);
+    if (pk.size() == 64 && oxenc::is_hex(pk))
+        oxenc::from_hex(pk.begin(), pk.end(), std::back_inserter(pubkey));
+    else if ((pk.size() == 43 || (pk.size() == 44 && pk.back() == '=') && oxenc::is_base64(pk)))
+        oxenc::from_base64(pk.begin(), pk.end(), std::back_inserter(pubkey));
+    else if (pk.size() == 52 && oxenc::is_base32z(pk))
+        oxenc::from_base32z(pk.begin(), pk.end(), std::back_inserter(pubkey));
+    else
+        throw std::invalid_argument{"Invalid SOGS encoded pubkey: expected hex, base32z or base64"};
+    return pubkey;
 }
 
 }  // namespace
@@ -94,56 +108,37 @@ namespace convo {
     }
 
     void open_group::set_server(
-            std::string_view base_url_, std::string_view room_, ustring_view pubkey_) {
-        key = make_key(base_url_, room_, pubkey_);
-        url_size = base_url_.size();
+            std::string_view new_base_url, std::string_view new_room, ustring_view new_pubkey) {
+        base_url_ = canonical_url(new_base_url);
+        room_ = canonical_room(new_room);
+        set_pubkey(new_pubkey);
     }
 
     void open_group::set_server(
-            std::string_view base_url_, std::string_view room_, std::string_view pubkey_hex_) {
-        key = make_key(base_url_, room_, pubkey_hex_);
-        url_size = base_url_.size();
+            std::string_view new_base_url,
+            std::string_view new_room,
+            std::string_view new_pubkey_encoded) {
+        base_url_ = canonical_url(new_base_url);
+        room_ = canonical_room(new_room);
+        set_pubkey(new_pubkey_encoded);
     }
 
     void open_group::set_server(std::string_view full_url) {
-        auto [base_url_, room_, pubkey_] = parse_full_url(full_url);
-        key = make_key(base_url_, room_, pubkey_);
-        url_size = base_url_.size();
+        auto [b_url, r_token, s_pubkey] = parse_full_url(full_url);
+        base_url_ = std::move(b_url);
+        room_ = std::move(r_token);
+        pubkey_ = std::move(s_pubkey);
     }
 
-    void open_group::load_encoded_key(std::string k) {
-        size_t new_url_size = k.find('\0');
-        if (new_url_size == std::string::npos)
-            throw std::invalid_argument{
-                    "Invalid encoded open group url: did not find URL/room separator"};
-        size_t pk_sep_pos = k.find('\0', new_url_size + 1);
-        if (pk_sep_pos == std::string::npos)
-            throw std::invalid_argument{
-                    "Invalid encoded open group url: did not find room/pubkey separator"};
-        if (pk_sep_pos + 33 != k.size())
-            throw std::invalid_argument{"Invalid encoded open group url: did not find pubkey"};
+    void open_group::set_pubkey(ustring_view pubkey) {
+        if (pubkey.size() != 32)
+            throw std::invalid_argument{"Invalid pubkey: expected a 32-byte pubkey"};
+        pubkey_ = pubkey;
+    }
+    void open_group::set_pubkey(std::string_view pubkey) { pubkey_ = decode_pubkey(pubkey); }
 
-        key = std::move(k);
-        url_size = new_url_size;
-    }
-
-    std::string_view open_group::base_url() const { return {key.data(), url_size}; }
-    std::string_view open_group::room() const {
-        if (key.empty())
-            return {};
-        std::string_view r{key};
-        r.remove_prefix(url_size + 1 /*null separator*/);
-        r.remove_suffix(1 /*null separator*/ + 32 /*pubkey*/);
-        return r;
-    }
-    ustring_view open_group::pubkey() const {
-        auto data = to_unsigned_sv(key);
-        if (data.empty())
-            return data;
-        return data.substr(data.size() - 32);
-    }
     std::string open_group::pubkey_hex() const {
-        auto pk = pubkey();
+        const auto& pk = pubkey();
         return oxenc::to_hex(pk.begin(), pk.end());
     }
 
@@ -238,6 +233,19 @@ namespace convo {
         return result;
     }
 
+    void open_group::canonicalize_url(std::string& url) { url = canonical_url(url); }
+    void open_group::canonicalize_room(std::string& room) {
+        for (auto& c : room)
+            if (c >= 'A' && c <= 'Z')
+                c += ('a' - 'A');
+        if (room.size() > MAX_ROOM)
+            throw std::invalid_argument{"Invalid open group room: room token is too long"};
+        if (room.empty())
+            throw std::invalid_argument{"Invalid open group room: room token cannot be empty"};
+        if (room.find_first_not_of("-0123456789_abcdefghijklmnopqrstuvwxyz") !=
+            std::string_view::npos)
+            throw std::invalid_argument{"Invalid SOGS URL: room token contains invalid characters"};
+    }
     std::string open_group::canonical_url(std::string_view url) {
         const auto& [proto, host, port] = parse_url(url);
         std::string result;
@@ -247,7 +255,14 @@ namespace convo {
             result += ':';
             result += std::to_string(port);
         }
+        if (result.size() > MAX_URL)
+            throw std::invalid_argument{"Invalid open group URL: base URL is too long"};
         return result;
+    }
+    std::string open_group::canonical_room(std::string_view room) {
+        std::string r{room};
+        canonicalize_room(r);
+        return r;
     }
 
     static constexpr std::string_view qs_pubkey = "?public_key="sv;
@@ -260,18 +275,11 @@ namespace convo {
         // Consume the URL from back to front; first the public key:
         if (auto pos = full_url.rfind(qs_pubkey); pos != std::string_view::npos) {
             auto pk = full_url.substr(pos + qs_pubkey.size());
-            if (pk.size() == 64 && oxenc::is_hex(pk))
-                oxenc::from_hex(pk.begin(), pk.end(), std::back_inserter(pubkey));
-            else if (pk.size() == 43 && oxenc::is_base64(pk))
-                oxenc::from_base64(pk.begin(), pk.end(), std::back_inserter(pubkey));
-            else if (pk.size() == 52 && oxenc::is_base32z(pk))
-                oxenc::from_base32z(pk.begin(), pk.end(), std::back_inserter(pubkey));
-            else
-                throw std::invalid_argument{"Invalid SOGS URL: public_key is not recognizable"};
+            pubkey = decode_pubkey(pk);
             full_url = full_url.substr(0, pos);
-        }
-        if (pubkey.empty())
+        } else {
             throw std::invalid_argument{"Invalid SOGS URL: no valid server pubkey"};
+        }
 
         // Now look for /r/TOKEN or /TOKEN:
         if (auto pos = full_url.rfind("/r/"); pos != std::string_view::npos) {
@@ -281,50 +289,11 @@ namespace convo {
             room_token = full_url.substr(pos + 1);
             full_url = full_url.substr(0, pos);
         }
-        for (auto& c : room_token)
-            if (c >= 'A' && c <= 'Z')
-                c += 'a' - 'A';
-        if (room_token.size() > MAX_ROOM)
-            throw std::invalid_argument{"Invalid SOGS URL: room token too long"};
-        if (room_token.empty())
-            throw std::invalid_argument{"Invalid SOGS URL: no room token"};
-        if (room_token.find_first_not_of("-0123456789_abcdefghijklmnopqrstuvwxyz") !=
-            std::string_view::npos)
-            throw std::invalid_argument{"Invalid SOGS URL: room token contains invalid characters"};
 
         base_url = canonical_url(full_url);
+        canonicalize_room(room_token);
 
         return result;
-    }
-
-    std::string open_group::make_key(
-            std::string_view base_url, std::string_view room, ustring_view pubkey) {
-        if (pubkey.size() != 32)
-            throw std::invalid_argument{"Invalid open group pubkey: expected 32 bytes"};
-        if (base_url.size() > MAX_URL)
-            throw std::invalid_argument{"Invalid open group URL: base URL is too long"};
-        if (room.size() > MAX_ROOM)
-            throw std::invalid_argument{"Invalid open group room: room token is too long"};
-        std::string key;
-        key.reserve(base_url.size() + room.size() + 32 /*pubkey*/ + 2 /* null separators */);
-        key += canonical_url(base_url);
-
-        key += '\0';
-        for (auto c : room)
-            key += (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
-        key += '\0';
-        key.resize(key.size() + 32);
-        std::memcpy(key.data() + (key.size() - 32), pubkey.data(), 32);
-        return key;
-    }
-
-    std::string open_group::make_key(
-            std::string_view base_url, std::string_view room, std::string_view pubkey_hex) {
-        check_open_group_pubkey(pubkey_hex);
-        ustring pubkey;
-        pubkey.reserve(32);
-        oxenc::from_hex(pubkey_hex.begin(), pubkey_hex.end(), std::back_inserter(pubkey));
-        return make_key(base_url, room, pubkey);
     }
 
 }  // namespace convo
@@ -358,7 +327,7 @@ std::optional<convo::open_group> ConvoInfoVolatile::get_open(
         std::string_view base_url, std::string_view room, ustring_view pubkey) const {
     auto result = std::make_optional<convo::open_group>(base_url, room, pubkey);
 
-    if (auto* info_dict = data["o"][result->key].dict())
+    if (auto* info_dict = open_field(*result).dict())
         result->load(*info_dict);
     else
         result.reset();
@@ -370,7 +339,7 @@ std::optional<convo::open_group> ConvoInfoVolatile::get_open(
         std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const {
     auto result = std::make_optional<convo::open_group>(base_url, room, pubkey_hex);
 
-    if (auto* info_dict = data["o"][result->key].dict())
+    if (auto* info_dict = open_field(*result).dict())
         result->load(*info_dict);
     else
         result.reset();
@@ -382,7 +351,7 @@ convo::open_group ConvoInfoVolatile::get_or_construct_open(
         std::string_view base_url, std::string_view room, ustring_view pubkey) const {
     convo::open_group result{base_url, room, pubkey};
 
-    if (auto* info_dict = data["o"][result.key].dict())
+    if (auto* info_dict = open_field(result).dict())
         result.load(*info_dict);
 
     return result;
@@ -392,7 +361,7 @@ convo::open_group ConvoInfoVolatile::get_or_construct_open(
         std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const {
     convo::open_group result{base_url, room, pubkey_hex};
 
-    if (auto* info_dict = data["o"][result.key].dict())
+    if (auto* info_dict = open_field(result).dict())
         result.load(*info_dict);
 
     return result;
@@ -465,7 +434,8 @@ std::pair<ustring, seqno_t> ConvoInfoVolatile::push() {
 }
 
 void ConvoInfoVolatile::set(const convo::open_group& c) {
-    auto info = data["o"][c.key];
+    auto info = open_field(c);
+    data["o"][c.base_url()]["#"] = c.pubkey();
     set_base(c, info);
 }
 
@@ -474,22 +444,21 @@ void ConvoInfoVolatile::set(const convo::legacy_closed_group& c) {
     set_base(c, info);
 }
 
-template <typename Data>
-static bool erase_impl(Data& data, std::string top_key, std::string sub_key) {
-    auto convo = data[top_key][sub_key];
+template <typename Field>
+static bool erase_impl(Field convo) {
     bool ret = convo.exists();
     convo.erase();
     return ret;
 }
 
 bool ConvoInfoVolatile::erase(const convo::one_to_one& c) {
-    return erase_impl(data, "1", session_id_to_bytes(c.session_id));
+    return erase_impl(data["1"][session_id_to_bytes(c.session_id)]);
 }
 bool ConvoInfoVolatile::erase(const convo::open_group& c) {
-    return erase_impl(data, "o", c.key);
+    return erase_impl(open_field(c));
 }
 bool ConvoInfoVolatile::erase(const convo::legacy_closed_group& c) {
-    return erase_impl(data, "C", session_id_to_bytes(c.id));
+    return erase_impl(data["C"][session_id_to_bytes(c.id)]);
 }
 
 bool ConvoInfoVolatile::erase(const convo::any& c) {
@@ -523,9 +492,19 @@ size_t ConvoInfoVolatile::size_1to1() const {
 }
 
 size_t ConvoInfoVolatile::size_open() const {
-    if (auto* d = data["o"].dict())
-        return d->size();
-    return 0;
+    size_t count = 0;
+    auto og = data["o"];
+    if (auto* servers = og.dict()) {
+        for (const auto& [baseurl, info] : *servers) {
+            auto server = og[baseurl];
+            if (!server["#"].exists<std::string>())
+                continue;
+            auto rooms = server["R"];
+            if (auto* rd = rooms.dict())
+                count += rd->size();
+        }
+    }
+    return count;
 }
 
 size_t ConvoInfoVolatile::size_legacy_closed() const {
@@ -547,8 +526,8 @@ ConvoInfoVolatile::iterator::iterator(
         }
     if (open)
         if (auto* d = data["o"].dict()) {
-            _it_open = d->begin();
-            _end_open = d->end();
+            _it_open_server = d->begin();
+            _end_open_server = d->end();
         }
     if (closed)
         if (auto* d = data["C"].dict()) {
@@ -587,31 +566,78 @@ void ConvoInfoVolatile::iterator::_load_val() {
         ++*_it_11;
     }
 
-    while (_it_open) {
-        if (*_it_open == *_end_open) {
-            _it_open.reset();
-            _end_open.reset();
+    auto next_server = [this] {
+        ++*_it_open_server;
+        _it_open_room.reset();
+        _end_open_room.reset();
+    };
+
+    while (_it_open_server) {
+        if (*_it_open_server == *_end_open_server) {
+            _it_open_server.reset();
+            _end_open_server.reset();
             break;
         }
 
-        auto& [k, v] = **_it_open;
-
-        auto* info_dict = std::get_if<dict>(&v);
-        if (!info_dict) {
-            ++*_it_open;
+        auto& [base_url, server_info] = **_it_open_server;
+        auto* server_info_dict = std::get_if<dict>(&server_info);
+        if (!server_info_dict) {
+            next_server();
             continue;
         }
 
-        _val = std::make_shared<convo::any>(convo::open_group{});
-        auto& og = std::get<convo::open_group>(*_val);
-        try {
-            og.load_encoded_key(k);
-        } catch (const std::exception& e) {
-            ++*_it_open;
+        const std::string* pubkey_raw = nullptr;
+        if (auto pubkey_it = server_info_dict->find("#"); pubkey_it != server_info_dict->end())
+            if (auto* pk_sc = std::get_if<scalar>(&pubkey_it->second))
+                pubkey_raw = std::get_if<std::string>(pk_sc);
+
+        if (!pubkey_raw) {
+            next_server();
             continue;
         }
-        og.load(*info_dict);
-        return;
+
+        ustring_view pubkey{
+                reinterpret_cast<const unsigned char*>(pubkey_raw->data()), pubkey_raw->size()};
+
+        if (!_it_open_room) {
+            if (auto rit = server_info_dict->find("R");
+                rit != server_info_dict->end() && std::holds_alternative<dict>(rit->second)) {
+                auto& rooms_dict = std::get<dict>(rit->second);
+                _it_open_room = rooms_dict.begin();
+                _end_open_room = rooms_dict.end();
+            } else {
+                next_server();
+                continue;
+            }
+        }
+
+        while (_it_open_room) {
+            if (*_it_open_room == *_end_open_room) {
+                _it_open_room.reset();
+                _end_open_room.reset();
+                break;
+            }
+
+            auto& [room, data] = **_it_open_room;
+            auto* data_dict = std::get_if<dict>(&data);
+            if (!data_dict) {
+                ++*_it_open_room;
+                continue;
+            }
+
+            _val = std::make_shared<convo::any>(convo::open_group{});
+            auto& og = std::get<convo::open_group>(*_val);
+            try {
+                og.set_server(base_url, room, pubkey);
+            } catch (const std::exception& e) {
+                ++*_it_open_room;
+                continue;
+            }
+            og.load(*data_dict);
+            return;
+        }
+
+        ++*_it_open_server;
     }
 
     while (_it_lclosed) {
@@ -635,18 +661,21 @@ void ConvoInfoVolatile::iterator::_load_val() {
 }
 
 bool ConvoInfoVolatile::iterator::operator==(const iterator& other) const {
-    return _it_11 == other._it_11 && _it_open == other._it_open && _it_lclosed == other._it_lclosed;
+    return _it_11 == other._it_11 && _it_open_server == other._it_open_server &&
+           _it_open_room == other._it_open_room && _it_lclosed == other._it_lclosed;
 }
 
 bool ConvoInfoVolatile::iterator::done() const {
-    return !(_it_11 || _it_open || _it_lclosed);
+    return !(_it_11 || _it_open_server || _it_open_room || _it_lclosed);
 }
 
 ConvoInfoVolatile::iterator& ConvoInfoVolatile::iterator::operator++() {
     if (_it_11)
         ++*_it_11;
-    else if (_it_open)
-        ++*_it_open;
+    else if (_it_open_room)
+        ++*_it_open_room;
+    else if (_it_open_server)
+        ++*_it_open_server;
     else {
         assert(_it_lclosed);
         ++*_it_lclosed;
