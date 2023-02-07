@@ -100,7 +100,8 @@ if(STATIC_BUNDLE)
     combine_archives(session-util
         crypto
         config
-        libsodium-internal)
+        libsodium-internal
+        libzstd_static)
     set(lib_folder lib)
     if(IOS)
         set(lib_folder "${lib_folder}-${ARCH}")
