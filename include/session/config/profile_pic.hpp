@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdexcept>
+
 #include "session/types.hpp"
 
 namespace session::config {
@@ -15,16 +17,25 @@ struct profile_pic {
     std::string_view url;
     ustring_view key;
 
+    static void check_key(ustring_view key) {
+        if (key.size() != 32)
+            throw std::invalid_argument{"Invalid profile pic key: 32 bytes required"};
+    }
+
     // Default constructor, makes an empty profile pic
     profile_pic() = default;
 
     // Constructs from string views: the values must stay alive for the duration of the profile_pic
     // instance.  (If not, use `set_url`/`set_key` or the rvalue-argument constructor instead).
-    profile_pic(std::string_view url, ustring_view key) : url{url}, key{key} {}
+    profile_pic(std::string_view url, ustring_view key) : url{url}, key{key} {
+        check_key(this->key);
+    }
 
     // Constructs from temporary strings; the strings are stored/managed internally
     profile_pic(std::string&& url, ustring&& key) :
-            url_{std::move(url)}, key_{std::move(key)}, url{url_}, key{key_} {}
+            url_{std::move(url)}, key_{std::move(key)}, url{url_}, key{key_} {
+        check_key(this->key);
+    }
 
     // Returns true if either url or key are empty
     bool empty() const { return url.empty() || key.empty(); }

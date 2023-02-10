@@ -61,10 +61,10 @@ std::optional<profile_pic> UserProfile::get_profile_pic() const {
 }
 
 LIBSESSION_C_API user_profile_pic user_profile_get_pic(const config_object* conf) {
-    if (auto pic = unbox<UserProfile>(conf)->get_profile_pic())
-        return {pic->url.data(), pic->key.data(), pic->key.size()};
+    if (auto pic = unbox<UserProfile>(conf)->get_profile_pic(); pic && pic->key.size() == 32)
+        return {pic->url.data(), pic->key.data()};
 
-    return {nullptr, nullptr, 0};
+    return {nullptr, nullptr};
 }
 
 void UserProfile::set_profile_pic(std::string_view url, ustring_view key) {
@@ -86,8 +86,8 @@ LIBSESSION_C_API int user_profile_set_pic(config_object* conf, user_profile_pic 
     ustring_view key;
     if (pic.url)
         url = pic.url;
-    if (pic.key && pic.keylen)
-        key = {pic.key, pic.keylen};
+    if (pic.key)
+        key = {pic.key, 32};
 
     try {
         unbox<UserProfile>(conf)->set_profile_pic(url, key);
