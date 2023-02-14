@@ -5,6 +5,7 @@
 
 #include <variant>
 
+#include "internal.hpp"
 #include "session/config/contacts.h"
 #include "session/config/error.h"
 #include "session/export.h"
@@ -60,30 +61,7 @@ LIBSESSION_C_API int contacts_init(
         const unsigned char* dumpstr,
         size_t dumplen,
         char* error) {
-    assert(ed25519_secretkey_bytes);
-    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
-    auto c_conf = std::make_unique<config_object>();
-    auto c = std::make_unique<internals<Contacts>>();
-    std::optional<ustring_view> dump;
-    if (dumpstr && dumplen)
-        dump.emplace(dumpstr, dumplen);
-
-    try {
-        c->config = std::make_unique<Contacts>(ed25519_secretkey, dump);
-    } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return SESSION_ERR_INVALID_DUMP;
-    }
-
-    c_conf->internals = c.release();
-    c_conf->last_error = nullptr;
-    *conf = c_conf.release();
-    return SESSION_ERR_NONE;
+    return c_wrapper_init<Contacts>(conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
 }
 
 // Digs into a dict to get out a std::string_view, if it's there with a non-empty string; otherwise
@@ -120,7 +98,7 @@ void contact_info::load(const dict& info_dict) {
     blocked = maybe_int(info_dict, "b").value_or(0);
 }
 
-void contact_info::into(contacts_contact& c) {
+void contact_info::into(contacts_contact& c) const {
     std::memcpy(c.session_id, session_id.data(), 67);
     c.name = name && !name->empty() ? name->data() : nullptr;
     c.nickname = nickname && !nickname->empty() ? nickname->data() : nullptr;

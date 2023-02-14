@@ -43,11 +43,11 @@ struct contact_info {
     bool approved_me = false;
     bool blocked = false;
 
-    contact_info(std::string sid);
+    explicit contact_info(std::string sid);
 
     // Internal ctor/method for C API implementations:
     contact_info(const struct contacts_contact& c);  // From c struct
-    void into(contacts_contact& c);                  // Into c struct
+    void into(contacts_contact& c) const;            // Into c struct
 
     // Sets a name, storing the name internally in the object.  This is intended for use where the
     // source string is a temporary may not outlive the `contact_info` object: the name is first

@@ -103,39 +103,47 @@ class ConfigBase {
 
         // See if we can find the key without needing to create anything, so that we can attempt to
         // access values without mutating anything (which allows, among other things, for assigning
-        // of the existing value to not dirty anything).  Returns nullptr if the value or something
+        // of the existing value to not dirty anything).  Returns nullptrs if the value or something
         // along its path would need to be created, or has the wrong type; otherwise a const pointer
-        // to the value.  The templated type, if provided, can be one of the types a dict_value can
-        // hold to also check that the returned value has a particular type; if omitted you get back
-        // the dict_value pointer itself.
+        // to the key and the value.  The templated type, if provided, can be one of the types a
+        // dict_value can hold to also check that the returned value has a particular type; if
+        // omitted you get back the dict_value pointer itself.  If the field exists but is not the
+        // requested `T` type, you get back the key string pointer with a nullptr value.
         template <typename T = dict_value, typename = std::enable_if_t<is_dict_value<T>>>
-        const T* get_clean() const {
+        std::pair<const std::string*, const T*> get_clean_pair() const {
             const config::dict* data = &_conf._config->data();
             // All but the last need to be dicts:
             for (const auto& key : _inter_keys) {
                 auto it = data->find(key);
                 data = it != data->end() ? std::get_if<config::dict>(&it->second) : nullptr;
                 if (!data)
-                    return nullptr;
+                    return {nullptr, nullptr};
             }
 
+            const std::string* key;
             const dict_value* val;
             // The last can be any value type:
-            if (auto it = data->find(_last_key); it != data->end())
+            if (auto it = data->find(_last_key); it != data->end()) {
+                key = &it->first;
                 val = &it->second;
-            else
-                return nullptr;
+            } else
+                return {nullptr, nullptr};
 
             if constexpr (std::is_same_v<T, dict_value>)
-                return val;
+                return {key, val};
             else if constexpr (is_dict_subtype<T>) {
-                if (auto* v = std::get_if<T>(val))
-                    return v;
+                return {key, std::get_if<T>(val)};
             } else {  // int64 or std::string, i.e. the config::scalar sub-types.
                 if (auto* scalar = std::get_if<config::scalar>(val))
-                    return std::get_if<T>(scalar);
+                    return {key, std::get_if<T>(scalar)};
+                return {key, nullptr};
             }
-            return nullptr;
+        }
+
+        // Same as above but just gives back the value, not the key
+        template <typename T = dict_value, typename = std::enable_if_t<is_dict_value<T>>>
+        const T* get_clean() const {
+            return get_clean_pair<T>().second;
         }
 
         // Returns a lvalue reference to the value, stomping its way through the dict as it goes to
@@ -232,6 +240,11 @@ class ConfigBase {
             _last_key = std::move(subkey);
             return std::move(*this);
         }
+
+        /// Returns a pointer to the (deepest level) key for this dict pair *if* a pair exists at
+        /// the given location, nullptr otherwise.  This allows a caller to get a reference to the
+        /// actual key, rather than an ephemeral copy of the current key value.
+        const std::string* key() const { return get_clean_pair().first; }
 
         /// Returns a const pointer to the string if one exists at the given location, nullptr
         /// otherwise.
@@ -455,13 +468,16 @@ class ConfigBase {
     // the server.  This will be true whenever `is_clean()` is false: that is, if we are currently
     // "dirty" (i.e.  have changes that haven't been pushed) or are still awaiting confirmation of
     // storage of the most recent serialized push data.
-    bool needs_push() const;
+    virtual bool needs_push() const;
 
     // Returns the data messages to push to the server along with the seqno value of the data.  If
     // the config is currently dirty (i.e. has previously unsent modifications) then this marks it
     // as awaiting-confirmation instead of dirty so that any future change immediately increments
     // the seqno.
-    std::pair<ustring, seqno_t> push();
+    //
+    // Subclasses that need to perform pre-push tasks (such as pruning stale data) can override this
+    // to prune and then call the base method to perform the actual push generation.
+    virtual std::pair<ustring, seqno_t> push();
 
     // Should be called after the push is confirmed stored on the storage server swarm to let the
     // object know the data is stored.  (Once this is called `needs_push` will start returning false

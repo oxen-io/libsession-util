@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13...3.23)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Has to be set before `project()`, and ignored on non-macos:
-set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "macOS deployment target (Apple clang only)")
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.13 CACHE STRING "macOS deployment target (Apple clang only)")
 
 set(LANGS C CXX)
 find_program(CCACHE_PROGRAM ccache)
@@ -100,7 +100,8 @@ if(STATIC_BUNDLE)
     combine_archives(session-util
         crypto
         config
-        libsodium-internal)
+        libsodium-internal
+        libzstd_static)
     set(lib_folder lib)
     if(IOS)
         set(lib_folder "${lib_folder}-${ARCH}")
