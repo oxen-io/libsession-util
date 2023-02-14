@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include "base.h"
+#include "expiring.h"
 #include "profile_pic.h"
 #include "util.h"
 
@@ -19,6 +20,12 @@ typedef struct contacts_contact {
     bool approved;
     bool approved_me;
     bool blocked;
+    bool hidden;
+
+    int priority;
+
+    CONVO_EXPIRATION_MODE exp_mode;
+    int exp_minutes;
 
 } contacts_contact;
 

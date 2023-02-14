@@ -17,11 +17,14 @@ add_library(config
     bt_merge.cpp
     config.cpp
     config/base.cpp
+    config/community.cpp
     config/contacts.cpp
     config/convo_info_volatile.cpp
     config/encrypt.cpp
     config/error.c
+    config/internal.cpp
     config/profile_pic.cpp
+    config/user_groups.cpp
     config/user_profile.cpp
     fields.cpp
 )

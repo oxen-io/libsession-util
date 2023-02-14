@@ -90,6 +90,7 @@ class ConfigBase {
     // already dirty (i.e. Clean or Waiting) then calling this increments the seqno counter.
     MutableConfigMessage& dirty();
 
+  public:
     // class for proxying subfield access; this class should never be stored but only used
     // ephemerally (most of its methods are rvalue-qualified).  This lets constructs such as
     // foo["abc"]["def"]["ghi"] = 12;
@@ -391,6 +392,7 @@ class ConfigBase {
         }
     };
 
+  protected:
     // Called when dumping to obtain any extra data that a subclass needs to store to reconstitute
     // the object.  The base implementation does nothing.  The counterpart to this,
     // `load_extra_data()`, is called when loading from a dump that has extra data; a subclass

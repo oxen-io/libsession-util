@@ -96,6 +96,30 @@ void contact_info::load(const dict& info_dict) {
     approved = maybe_int(info_dict, "a").value_or(0);
     approved_me = maybe_int(info_dict, "A").value_or(0);
     blocked = maybe_int(info_dict, "b").value_or(0);
+    hidden = maybe_int(info_dict, "h").value_or(0);
+
+    priority = maybe_int(info_dict, "+").value_or(0);
+    if (priority < 0)
+        priority = 0;
+
+    int exp_mode_ = maybe_int(info_dict, "e").value_or(0);
+    if (exp_mode_ >= static_cast<int>(expiration_mode::none) &&
+        exp_mode_ <= static_cast<int>(expiration_mode::after_read))
+        exp_mode = static_cast<expiration_mode>(exp_mode_);
+    else
+        exp_mode = expiration_mode::none;
+
+    if (exp_mode == expiration_mode::none)
+        exp_timer = 0min;
+    else {
+        int mins = maybe_int(info_dict, "E").value_or(0);
+        if (mins <= 0) {
+            exp_mode = expiration_mode::none;
+            exp_timer = 0min;
+        } else {
+            exp_timer = std::chrono::minutes{mins};
+        }
+    }
 }
 
 void contact_info::into(contacts_contact& c) const {
@@ -105,15 +129,19 @@ void contact_info::into(contacts_contact& c) const {
     if (profile_picture && !profile_picture->empty()) {
         c.profile_pic.url = profile_picture->url.data();
         c.profile_pic.key = profile_picture->key.data();
-        c.profile_pic.keylen = profile_picture->key.size();
     } else {
         c.profile_pic.url = nullptr;
         c.profile_pic.key = nullptr;
-        c.profile_pic.keylen = 0;
     }
     c.approved = approved;
     c.approved_me = approved_me;
     c.blocked = blocked;
+    c.hidden = hidden;
+    c.priority = std::max(0, priority);
+    c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
+    c.exp_minutes = exp_timer.count();
+    if (c.exp_minutes <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
+        c.exp_mode = CONVO_EXPIRATION_NONE;
 }
 
 contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id, 66} {
@@ -121,13 +149,17 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
         name = c.name;
     if (c.nickname && std::strlen(c.nickname))
         nickname = c.nickname;
-    if (c.profile_pic.url && std::strlen(c.profile_pic.url) && c.profile_pic.key &&
-        c.profile_pic.keylen > 0)
-        profile_picture.emplace(
-                c.profile_pic.url, ustring{c.profile_pic.key, c.profile_pic.keylen});
+    if (c.profile_pic.url && std::strlen(c.profile_pic.url) && c.profile_pic.key)
+        profile_picture.emplace(c.profile_pic.url, ustring{c.profile_pic.key, 32});
     approved = c.approved;
     approved_me = c.approved_me;
     blocked = c.blocked;
+    hidden = c.hidden;
+    priority = std::max(0, c.priority);
+    exp_mode = static_cast<expiration_mode>(c.exp_mode);
+    exp_timer = exp_mode == expiration_mode::none ? 0min : std::chrono::minutes{c.exp_minutes};
+    if (exp_timer <= 0min && exp_mode != expiration_mode::none)
+        exp_mode = expiration_mode::none;
 }
 
 std::optional<contact_info> Contacts::get(std::string_view pubkey_hex) const {
@@ -171,6 +203,20 @@ LIBSESSION_C_API bool contacts_get_or_construct(
     }
 }
 
+static void set_optional_str(
+        ConfigBase::DictFieldProxy&& field, const std::optional<std::string_view>& val) {
+    if (val && !val->empty())
+        field = *val;
+    else
+        field.erase();
+}
+static void set_flag(ConfigBase::DictFieldProxy&& field, bool val) {
+    if (val)
+        field = 1;
+    else
+        field.erase();
+}
+
 void Contacts::set(const contact_info& contact) {
     std::string pk = session_id_to_bytes(contact.session_id);
     auto info = data["c"][pk];
@@ -179,15 +225,8 @@ void Contacts::set(const contact_info& contact) {
     // no other purpose.
     info["!"] = ""sv;
 
-    if (contact.name && !contact.name->empty())
-        info["n"] = *contact.name;
-    else
-        info["n"].erase();
-
-    if (contact.nickname && !contact.nickname->empty())
-        info["N"] = *contact.nickname;
-    else
-        info["N"].erase();
+    set_optional_str(info["n"], contact.name);
+    set_optional_str(info["N"], contact.nickname);
 
     if (contact.profile_picture && !contact.profile_picture->url.empty() &&
         !contact.profile_picture->key.empty()) {
@@ -198,20 +237,23 @@ void Contacts::set(const contact_info& contact) {
         info["q"].erase();
     }
 
-    if (contact.approved)
-        info["a"] = 1;
-    else
-        info["a"].erase();
+    set_flag(info["a"], contact.approved);
+    set_flag(info["A"], contact.approved_me);
+    set_flag(info["b"], contact.blocked);
+    set_flag(info["h"], contact.hidden);
 
-    if (contact.approved_me)
-        info["A"] = 1;
+    if (contact.priority > 0)
+        info["+"] = contact.priority;
     else
-        info["A"].erase();
+        info["+"].erase();
 
-    if (contact.blocked)
-        info["b"] = 1;
-    else
-        info["b"].erase();
+    if (contact.exp_mode != expiration_mode::none && contact.exp_timer > 0min) {
+        info["e"] = static_cast<int8_t>(contact.exp_mode);
+        info["E"] = contact.exp_timer.count();
+    } else {
+        info["e"].erase();
+        info["E"].erase();
+    }
 }
 
 LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* contact) {
@@ -246,6 +288,26 @@ void Contacts::set_approved_me(std::string_view session_id, bool approved_me) {
 void Contacts::set_blocked(std::string_view session_id, bool blocked) {
     auto c = get_or_construct(session_id);
     c.blocked = blocked;
+    set(c);
+}
+
+void Contacts::set_hidden(std::string_view session_id, bool hidden) {
+    auto c = get_or_construct(session_id);
+    c.hidden = hidden;
+    set(c);
+}
+
+void Contacts::set_priority(std::string_view session_id, int priority) {
+    auto c = get_or_construct(session_id);
+    c.priority = priority;
+    set(c);
+}
+
+void Contacts::set_expiry(
+        std::string_view session_id, expiration_mode mode, std::chrono::minutes timer) {
+    auto c = get_or_construct(session_id);
+    c.exp_mode = mode;
+    c.exp_timer = c.exp_mode == expiration_mode::none ? 0min : timer;
     set(c);
 }
 

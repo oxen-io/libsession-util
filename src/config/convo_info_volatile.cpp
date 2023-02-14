@@ -21,61 +21,6 @@
 using namespace std::literals;
 using session::ustring_view;
 
-namespace {
-
-void check_session_id(std::string_view session_id) {
-    if (session_id.size() != 66 || !oxenc::is_hex(session_id))
-        throw std::invalid_argument{
-                "Invalid pubkey: expected 66 hex digits, got " + std::to_string(session_id.size()) +
-                " and/or not hex"};
-}
-
-std::string session_id_to_bytes(std::string_view session_id) {
-    check_session_id(session_id);
-    return oxenc::from_hex(session_id);
-}
-
-void check_open_group_pubkey(std::string_view pk) {
-    if (pk.size() != 64 || !oxenc::is_hex(pk))
-        throw std::invalid_argument{"Invalid open group pubkey: expected 64 hex digits"};
-}
-
-std::string open_group_pubkey_to_bytes(std::string_view o_g_pk_hex) {
-    check_open_group_pubkey(o_g_pk_hex);
-    return oxenc::from_hex(o_g_pk_hex);
-}
-
-void make_lc(std::string& s) {
-    for (auto& c : s)
-        if (c >= 'A' && c <= 'Z')
-            c += ('a' - 'A');
-}
-
-// Digs into a dict to get out an int64_t; nullopt if not there (or not int)
-std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key) {
-    if (auto it = d.find(key); it != d.end())
-        if (auto* sc = std::get_if<session::config::scalar>(&it->second))
-            if (auto* i = std::get_if<int64_t>(sc))
-                return *i;
-    return std::nullopt;
-}
-
-session::ustring decode_pubkey(std::string_view pk) {
-    session::ustring pubkey;
-    pubkey.reserve(32);
-    if (pk.size() == 64 && oxenc::is_hex(pk))
-        oxenc::from_hex(pk.begin(), pk.end(), std::back_inserter(pubkey));
-    else if ((pk.size() == 43 || (pk.size() == 44 && pk.back() == '=') && oxenc::is_base64(pk)))
-        oxenc::from_base64(pk.begin(), pk.end(), std::back_inserter(pubkey));
-    else if (pk.size() == 52 && oxenc::is_base32z(pk))
-        oxenc::from_base32z(pk.begin(), pk.end(), std::back_inserter(pubkey));
-    else
-        throw std::invalid_argument{"Invalid SOGS encoded pubkey: expected hex, base32z or base64"};
-    return pubkey;
-}
-
-}  // namespace
-
 namespace session::config {
 
 namespace convo {
@@ -95,77 +40,30 @@ namespace convo {
         c.unread = unread;
     }
 
-    open_group::open_group(
-            std::string_view base_url_, std::string_view room_, ustring_view pubkey_) {
-        set_server(base_url_, room_, pubkey_);
-    }
+    community::community(const convo_info_volatile_community& c) :
+            config::community{c.base_url, c.room, ustring_view{c.pubkey, 32}},
+            base{c.last_read, c.unread} {}
 
-    open_group::open_group(
-            std::string_view base_url_, std::string_view room_, std::string_view pubkey_hex_) {
-        set_server(base_url_, room_, pubkey_hex_);
-    }
-
-    open_group::open_group(const struct convo_info_volatile_open& c) : base{c.last_read, c.unread} {
-        set_server(c.base_url, c.room, ustring_view{c.pubkey, 32});
-    }
-
-    void open_group::set_server(
-            std::string_view new_base_url, std::string_view new_room, ustring_view new_pubkey) {
-        base_url_ = canonical_url(new_base_url);
-        room_ = canonical_room(new_room);
-        set_pubkey(new_pubkey);
-    }
-
-    void open_group::set_server(
-            std::string_view new_base_url,
-            std::string_view new_room,
-            std::string_view new_pubkey_encoded) {
-        base_url_ = canonical_url(new_base_url);
-        room_ = canonical_room(new_room);
-        set_pubkey(new_pubkey_encoded);
-    }
-
-    void open_group::set_server(std::string_view full_url) {
-        auto [b_url, r_token, s_pubkey] = parse_full_url(full_url);
-        base_url_ = std::move(b_url);
-        room_ = std::move(r_token);
-        pubkey_ = std::move(s_pubkey);
-    }
-
-    void open_group::set_pubkey(ustring_view pubkey) {
-        if (pubkey.size() != 32)
-            throw std::invalid_argument{"Invalid pubkey: expected a 32-byte pubkey"};
-        pubkey_ = pubkey;
-    }
-    void open_group::set_pubkey(std::string_view pubkey) {
-        pubkey_ = decode_pubkey(pubkey);
-    }
-
-    std::string open_group::pubkey_hex() const {
-        const auto& pk = pubkey();
-        return oxenc::to_hex(pk.begin(), pk.end());
-    }
-
-    void open_group::into(convo_info_volatile_open& c) const {
-        static_assert(sizeof(c.base_url) == MAX_URL + 1);
-        static_assert(sizeof(c.room) == MAX_ROOM + 1);
+    void community::into(convo_info_volatile_community& c) const {
+        static_assert(sizeof(c.base_url) == URL_MAX_LENGTH + 1);
+        static_assert(sizeof(c.room) == ROOM_MAX_LENGTH + 1);
         copy_c_str(c.base_url, base_url());
-        copy_c_str(c.room, room());
+        copy_c_str(c.room, room_norm());
         std::memcpy(c.pubkey, pubkey().data(), 32);
         c.last_read = last_read;
         c.unread = unread;
     }
 
-    legacy_closed_group::legacy_closed_group(std::string&& cgid) : id{std::move(cgid)} {
+    legacy_group::legacy_group(std::string&& cgid) : id{std::move(cgid)} {
         check_session_id(id);
     }
-    legacy_closed_group::legacy_closed_group(std::string_view cgid) : id{cgid} {
+    legacy_group::legacy_group(std::string_view cgid) : id{cgid} {
         check_session_id(id);
     }
-    legacy_closed_group::legacy_closed_group(const struct convo_info_volatile_legacy_closed& c) :
+    legacy_group::legacy_group(const struct convo_info_volatile_legacy_group& c) :
             base{c.last_read, c.unread}, id{c.group_id, 66} {}
 
-    void legacy_closed_group::into(convo_info_volatile_legacy_closed& c) const {
+    void legacy_group::into(convo_info_volatile_legacy_group& c) const {
         std::memcpy(c.group_id, id.data(), 67);
         c.last_read = last_read;
         c.unread = unread;
@@ -174,132 +72,6 @@ namespace convo {
     void base::load(const dict& info_dict) {
         last_read = maybe_int(info_dict, "r").value_or(0);
         unread = (bool)maybe_int(info_dict, "u").value_or(0);
-    }
-
-    // returns protocol, host, port.  Port can be empty; throws on unparseable values.  protocol and
-    // host get normalized to lower-case.  Port will be 0 if not present in the URL, or if set to
-    // the default for the protocol. The URL must not include a path (though a single optional `/`
-    // after the domain is accepted and ignored).
-    std::tuple<std::string, std::string, uint16_t> parse_url(std::string_view url) {
-        std::tuple<std::string, std::string, uint16_t> result{};
-        auto& [proto, host, port] = result;
-        if (auto pos = url.find("://"); pos != std::string::npos) {
-            auto proto_name = url.substr(0, pos);
-            url.remove_prefix(proto_name.size() + 3);
-            if (string_iequal(proto_name, "http"))
-                proto = "http://";
-            else if (string_iequal(proto_name, "https"))
-                proto = "https://";
-        }
-        if (proto.empty())
-            throw std::invalid_argument{"Invalid open group URL: invalid/missing protocol://"};
-
-        bool next_allow_dot = false;
-        bool has_dot = false;
-        while (!url.empty()) {
-            auto c = url.front();
-            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '-') {
-                host += c;
-                next_allow_dot = true;
-            } else if (c >= 'A' && c <= 'Z') {
-                host += c + ('a' - 'A');
-                next_allow_dot = true;
-            } else if (next_allow_dot && c == '.') {
-                host += '.';
-                has_dot = true;
-                next_allow_dot = false;
-            } else {
-                break;
-            }
-            url.remove_prefix(1);
-        }
-        if (host.size() < 4 || !has_dot || host.back() == '.')
-            throw std::invalid_argument{"Invalid open group URL: invalid hostname"};
-
-        if (!url.empty() && url.front() == ':') {
-            url.remove_prefix(1);
-            if (auto [p, ec] = std::from_chars(url.data(), url.data() + url.size(), port);
-                ec == std::errc{})
-                url.remove_prefix(p - url.data());
-            else
-                throw std::invalid_argument{"Invalid open group URL: invalid port"};
-            if ((port == 80 && proto == "http://") || (port == 443 && proto == "https://"))
-                port = 0;
-        }
-
-        if (!url.empty() && url.front() == '/')
-            url.remove_prefix(1);
-
-        // We don't (currently) allow a /path in a SOGS URL
-        if (!url.empty())
-            throw std::invalid_argument{"Invalid open group URL: found unexpected trailing value"};
-
-        return result;
-    }
-
-    void open_group::canonicalize_url(std::string& url) {
-        url = canonical_url(url);
-    }
-    void open_group::canonicalize_room(std::string& room) {
-        for (auto& c : room)
-            if (c >= 'A' && c <= 'Z')
-                c += ('a' - 'A');
-        if (room.size() > MAX_ROOM)
-            throw std::invalid_argument{"Invalid open group room: room token is too long"};
-        if (room.empty())
-            throw std::invalid_argument{"Invalid open group room: room token cannot be empty"};
-        if (room.find_first_not_of("-0123456789_abcdefghijklmnopqrstuvwxyz") !=
-            std::string_view::npos)
-            throw std::invalid_argument{"Invalid SOGS URL: room token contains invalid characters"};
-    }
-    std::string open_group::canonical_url(std::string_view url) {
-        const auto& [proto, host, port] = parse_url(url);
-        std::string result;
-        result += proto;
-        result += host;
-        if (port != 0) {
-            result += ':';
-            result += std::to_string(port);
-        }
-        if (result.size() > MAX_URL)
-            throw std::invalid_argument{"Invalid open group URL: base URL is too long"};
-        return result;
-    }
-    std::string open_group::canonical_room(std::string_view room) {
-        std::string r{room};
-        canonicalize_room(r);
-        return r;
-    }
-
-    static constexpr std::string_view qs_pubkey = "?public_key="sv;
-
-    std::tuple<std::string, std::string, ustring> open_group::parse_full_url(
-            std::string_view full_url) {
-        std::tuple<std::string, std::string, ustring> result;
-        auto& [base_url, room_token, pubkey] = result;
-
-        // Consume the URL from back to front; first the public key:
-        if (auto pos = full_url.rfind(qs_pubkey); pos != std::string_view::npos) {
-            auto pk = full_url.substr(pos + qs_pubkey.size());
-            pubkey = decode_pubkey(pk);
-            full_url = full_url.substr(0, pos);
-        } else {
-            throw std::invalid_argument{"Invalid SOGS URL: no valid server pubkey"};
-        }
-
-        // Now look for /r/TOKEN or /TOKEN:
-        if (auto pos = full_url.rfind("/r/"); pos != std::string_view::npos) {
-            room_token = full_url.substr(pos + 3);
-            full_url = full_url.substr(0, pos);
-        } else if (pos = full_url.rfind("/"); pos != std::string_view::npos) {
-            room_token = full_url.substr(pos + 1);
-            full_url = full_url.substr(0, pos);
-        }
-
-        base_url = canonical_url(full_url);
-        canonicalize_room(room_token);
-
-        return result;
     }
 
 }  // namespace convo
@@ -329,51 +101,53 @@ convo::one_to_one ConvoInfoVolatile::get_or_construct_1to1(std::string_view pubk
     return convo::one_to_one{std::string{pubkey_hex}};
 }
 
-std::optional<convo::open_group> ConvoInfoVolatile::get_open(
-        std::string_view base_url, std::string_view room, ustring_view pubkey) const {
-    auto result = std::make_optional<convo::open_group>(base_url, room, pubkey);
-
-    if (auto* info_dict = open_field(*result).dict())
-        result->load(*info_dict);
-    else
-        result.reset();
-
-    return result;
+ConfigBase::DictFieldProxy ConvoInfoVolatile::community_field(
+        const convo::community& comm, ustring_view* get_pubkey) const {
+    auto record = data["o"][comm.base_url()];
+    if (get_pubkey) {
+        auto pkrec = record["#"];
+        if (auto pk = pkrec.string_view_or(""); pk.size() == 32)
+            *get_pubkey =
+                    ustring_view{reinterpret_cast<const unsigned char*>(pk.data()), pk.size()};
+    }
+    return record["R"][comm.room_norm()];
 }
 
-std::optional<convo::open_group> ConvoInfoVolatile::get_open(
-        std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const {
-    auto result = std::make_optional<convo::open_group>(base_url, room, pubkey_hex);
+std::optional<convo::community> ConvoInfoVolatile::get_community(
+        std::string_view base_url, std::string_view room) const {
+    convo::community og{base_url, community::canonical_room(room)};
 
-    if (auto* info_dict = open_field(*result).dict())
-        result->load(*info_dict);
-    else
-        result.reset();
-
-    return result;
+    ustring_view pubkey;
+    if (auto* info_dict = community_field(og, &pubkey).dict()) {
+        og.load(*info_dict);
+        if (!pubkey.empty())
+            og.set_pubkey(pubkey);
+        return og;
+    }
+    return std::nullopt;
 }
 
-convo::open_group ConvoInfoVolatile::get_or_construct_open(
+convo::community ConvoInfoVolatile::get_or_construct_community(
         std::string_view base_url, std::string_view room, ustring_view pubkey) const {
-    convo::open_group result{base_url, room, pubkey};
+    convo::community result{base_url, community::canonical_room(room), pubkey};
 
-    if (auto* info_dict = open_field(result).dict())
+    if (auto* info_dict = community_field(result).dict())
         result.load(*info_dict);
 
     return result;
 }
 
-convo::open_group ConvoInfoVolatile::get_or_construct_open(
+convo::community ConvoInfoVolatile::get_or_construct_community(
         std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const {
-    convo::open_group result{base_url, room, pubkey_hex};
+    convo::community result{base_url, room, pubkey_hex};
 
-    if (auto* info_dict = open_field(result).dict())
+    if (auto* info_dict = community_field(result).dict())
         result.load(*info_dict);
 
     return result;
 }
 
-std::optional<convo::legacy_closed_group> ConvoInfoVolatile::get_legacy_closed(
+std::optional<convo::legacy_group> ConvoInfoVolatile::get_legacy_group(
         std::string_view pubkey_hex) const {
     std::string pubkey = session_id_to_bytes(pubkey_hex);
 
@@ -381,17 +155,17 @@ std::optional<convo::legacy_closed_group> ConvoInfoVolatile::get_legacy_closed(
     if (!info_dict)
         return std::nullopt;
 
-    auto result = std::make_optional<convo::legacy_closed_group>(std::string{pubkey_hex});
+    auto result = std::make_optional<convo::legacy_group>(std::string{pubkey_hex});
     result->load(*info_dict);
     return result;
 }
 
-convo::legacy_closed_group ConvoInfoVolatile::get_or_construct_legacy_closed(
+convo::legacy_group ConvoInfoVolatile::get_or_construct_legacy_group(
         std::string_view pubkey_hex) const {
-    if (auto maybe = get_legacy_closed(pubkey_hex))
+    if (auto maybe = get_legacy_group(pubkey_hex))
         return *std::move(maybe);
 
-    return convo::legacy_closed_group{std::string{pubkey_hex}};
+    return convo::legacy_group{std::string{pubkey_hex}};
 }
 
 void ConvoInfoVolatile::set(const convo::one_to_one& c) {
@@ -439,13 +213,13 @@ std::pair<ustring, seqno_t> ConvoInfoVolatile::push() {
     return ConfigBase::push();
 }
 
-void ConvoInfoVolatile::set(const convo::open_group& c) {
-    auto info = open_field(c);
+void ConvoInfoVolatile::set(const convo::community& c) {
+    auto info = community_field(c);
     data["o"][c.base_url()]["#"] = c.pubkey();
     set_base(c, info);
 }
 
-void ConvoInfoVolatile::set(const convo::legacy_closed_group& c) {
+void ConvoInfoVolatile::set(const convo::legacy_group& c) {
     auto info = data["C"][session_id_to_bytes(c.id)];
     set_base(c, info);
 }
@@ -460,10 +234,20 @@ static bool erase_impl(Field convo) {
 bool ConvoInfoVolatile::erase(const convo::one_to_one& c) {
     return erase_impl(data["1"][session_id_to_bytes(c.session_id)]);
 }
-bool ConvoInfoVolatile::erase(const convo::open_group& c) {
-    return erase_impl(open_field(c));
+bool ConvoInfoVolatile::erase(const convo::community& c) {
+    bool gone = erase_impl(community_field(c));
+    if (gone) {
+        // If this was the last room on the server, also remove the server
+        auto server_info = data["o"][c.base_url()];
+        auto rooms = server_info["R"];
+        if (auto* rd = rooms.dict(); !rd || rd->empty()) {
+            rooms.erase();
+            server_info.erase();
+        }
+    }
+    return gone;
 }
-bool ConvoInfoVolatile::erase(const convo::legacy_closed_group& c) {
+bool ConvoInfoVolatile::erase(const convo::legacy_group& c) {
     return erase_impl(data["C"][session_id_to_bytes(c.id)]);
 }
 
@@ -473,16 +257,11 @@ bool ConvoInfoVolatile::erase(const convo::any& c) {
 bool ConvoInfoVolatile::erase_1to1(std::string_view session_id) {
     return erase(convo::one_to_one{session_id});
 }
-bool ConvoInfoVolatile::erase_open(
-        std::string_view base_url, std::string_view room, std::string_view pubkey_hex) {
-    return erase(convo::open_group{base_url, room, pubkey_hex});
+bool ConvoInfoVolatile::erase_community(std::string_view base_url, std::string_view room) {
+    return erase(convo::community{base_url, room});
 }
-bool ConvoInfoVolatile::erase_open(
-        std::string_view base_url, std::string_view room, ustring_view pubkey) {
-    return erase(convo::open_group{base_url, room, pubkey});
-}
-bool ConvoInfoVolatile::erase_legacy_closed(std::string_view id) {
-    return erase(convo::legacy_closed_group{id});
+bool ConvoInfoVolatile::erase_legacy_group(std::string_view id) {
+    return erase(convo::legacy_group{id});
 }
 
 ConvoInfoVolatile::iterator ConvoInfoVolatile::erase(iterator it) {
@@ -497,7 +276,7 @@ size_t ConvoInfoVolatile::size_1to1() const {
     return 0;
 }
 
-size_t ConvoInfoVolatile::size_open() const {
+size_t ConvoInfoVolatile::size_communities() const {
     size_t count = 0;
     auto og = data["o"];
     if (auto* servers = og.dict()) {
@@ -513,42 +292,40 @@ size_t ConvoInfoVolatile::size_open() const {
     return count;
 }
 
-size_t ConvoInfoVolatile::size_legacy_closed() const {
+size_t ConvoInfoVolatile::size_legacy_groups() const {
     if (auto* d = data["C"].dict())
         return d->size();
     return 0;
 }
 
 size_t ConvoInfoVolatile::size() const {
-    return size_1to1() + size_open() + size_legacy_closed();
+    return size_1to1() + size_communities() + size_legacy_groups();
 }
 
 ConvoInfoVolatile::iterator::iterator(
-        const DictFieldRoot& data, bool oneto1, bool open, bool closed) {
+        const DictFieldRoot& data, bool oneto1, bool communities, bool legacy_groups) {
     if (oneto1)
         if (auto* d = data["1"].dict()) {
             _it_11 = d->begin();
             _end_11 = d->end();
         }
-    if (open)
-        if (auto* d = data["o"].dict()) {
-            _it_open_server = d->begin();
-            _end_open_server = d->end();
-        }
-    if (closed)
+    if (communities)
+        if (auto* d = data["o"].dict())
+            _it_comm.emplace(d->begin(), d->end());
+    if (legacy_groups)
         if (auto* d = data["C"].dict()) {
-            _it_lclosed = d->begin();
-            _end_lclosed = d->end();
+            _it_lgroup = d->begin();
+            _end_lgroup = d->end();
         }
     _load_val();
 }
 
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until we
 /// find one that is valid (or hit the end).  We also span across three different iterators: first
-/// we exhaust _it_11, then _it_open, then _it_lclosed.
+/// we exhaust _it_11, then _it_comm, then _it_lgroup.
 ///
 /// We *always* call this after incrementing the iterator (and after iterator initialization), and
-/// this is responsible for making sure that _it_11, _it_open, etc. are only set to non-nullopt if
+/// this is responsible for making sure that _it_11, _it_comm, etc. are only set to non-nullopt if
 /// the respective sub-iterator is *not* at the end (and resetting them when we hit the end).  Thus,
 /// after calling this, our "end" condition will be simply that all of the three iterators are
 /// nullopt.
@@ -572,119 +349,49 @@ void ConvoInfoVolatile::iterator::_load_val() {
         ++*_it_11;
     }
 
-    auto next_server = [this] {
-        ++*_it_open_server;
-        _it_open_room.reset();
-        _end_open_room.reset();
-    };
-
-    while (_it_open_server) {
-        if (*_it_open_server == *_end_open_server) {
-            _it_open_server.reset();
-            _end_open_server.reset();
-            break;
-        }
-
-        auto& [base_url, server_info] = **_it_open_server;
-        auto* server_info_dict = std::get_if<dict>(&server_info);
-        if (!server_info_dict) {
-            next_server();
-            continue;
-        }
-
-        const std::string* pubkey_raw = nullptr;
-        if (auto pubkey_it = server_info_dict->find("#"); pubkey_it != server_info_dict->end())
-            if (auto* pk_sc = std::get_if<scalar>(&pubkey_it->second))
-                pubkey_raw = std::get_if<std::string>(pk_sc);
-
-        if (!pubkey_raw) {
-            next_server();
-            continue;
-        }
-
-        ustring_view pubkey{
-                reinterpret_cast<const unsigned char*>(pubkey_raw->data()), pubkey_raw->size()};
-
-        if (!_it_open_room) {
-            if (auto rit = server_info_dict->find("R");
-                rit != server_info_dict->end() && std::holds_alternative<dict>(rit->second)) {
-                auto& rooms_dict = std::get<dict>(rit->second);
-                _it_open_room = rooms_dict.begin();
-                _end_open_room = rooms_dict.end();
-            } else {
-                next_server();
-                continue;
-            }
-        }
-
-        while (_it_open_room) {
-            if (*_it_open_room == *_end_open_room) {
-                _it_open_room.reset();
-                _end_open_room.reset();
-                break;
-            }
-
-            auto& [room, data] = **_it_open_room;
-            auto* data_dict = std::get_if<dict>(&data);
-            if (!data_dict) {
-                ++*_it_open_room;
-                continue;
-            }
-
-            _val = std::make_shared<convo::any>(convo::open_group{});
-            auto& og = std::get<convo::open_group>(*_val);
-            try {
-                og.set_server(base_url, room, pubkey);
-            } catch (const std::exception& e) {
-                ++*_it_open_room;
-                continue;
-            }
-            og.load(*data_dict);
+    if (_it_comm) {
+        if (_it_comm->load<convo::community>(_val))
             return;
-        }
-
-        ++*_it_open_server;
+        else
+            _it_comm.reset();
     }
 
-    while (_it_lclosed) {
-        if (*_it_lclosed == *_end_lclosed) {
-            _it_lclosed.reset();
-            _end_lclosed.reset();
+    while (_it_lgroup) {
+        if (*_it_lgroup == *_end_lgroup) {
+            _it_lgroup.reset();
+            _end_lgroup.reset();
             break;
         }
 
-        auto& [k, v] = **_it_lclosed;
+        auto& [k, v] = **_it_lgroup;
 
         if (k.size() == 33 && k[0] == 0x05) {
             if (auto* info_dict = std::get_if<dict>(&v)) {
-                _val = std::make_shared<convo::any>(convo::legacy_closed_group{oxenc::to_hex(k)});
-                std::get<convo::legacy_closed_group>(*_val).load(*info_dict);
+                _val = std::make_shared<convo::any>(convo::legacy_group{oxenc::to_hex(k)});
+                std::get<convo::legacy_group>(*_val).load(*info_dict);
                 return;
             }
         }
-        ++*_it_lclosed;
+        ++*_it_lgroup;
     }
 }
 
 bool ConvoInfoVolatile::iterator::operator==(const iterator& other) const {
-    return _it_11 == other._it_11 && _it_open_server == other._it_open_server &&
-           _it_open_room == other._it_open_room && _it_lclosed == other._it_lclosed;
+    return _it_11 == other._it_11 && _it_comm == other._it_comm && _it_lgroup == other._it_lgroup;
 }
 
 bool ConvoInfoVolatile::iterator::done() const {
-    return !(_it_11 || _it_open_server || _it_open_room || _it_lclosed);
+    return !_it_11 && (!_it_comm || _it_comm->done()) && !_it_lgroup;
 }
 
 ConvoInfoVolatile::iterator& ConvoInfoVolatile::iterator::operator++() {
     if (_it_11)
         ++*_it_11;
-    else if (_it_open_room)
-        ++*_it_open_room;
-    else if (_it_open_server)
-        ++*_it_open_server;
+    else if (_it_comm && !_it_comm->done())
+        _it_comm->advance();
     else {
-        assert(_it_lclosed);
-        ++*_it_lclosed;
+        assert(_it_lgroup);
+        ++*_it_lgroup;
     }
     _load_val();
     return *this;
@@ -733,15 +440,13 @@ LIBSESSION_C_API bool convo_info_volatile_get_or_construct_1to1(
     }
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_open(
+LIBSESSION_C_API bool convo_info_volatile_get_community(
         const config_object* conf,
-        convo_info_volatile_open* og,
+        convo_info_volatile_community* og,
         const char* base_url,
-        const char* room,
-        unsigned const char* pubkey) {
+        const char* room) {
     try {
-        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_open(
-                    base_url, room, ustring_view{pubkey, 32})) {
+        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_community(base_url, room)) {
             c->into(*og);
             return true;
         }
@@ -749,15 +454,15 @@ LIBSESSION_C_API bool convo_info_volatile_get_open(
     }
     return false;
 }
-LIBSESSION_C_API bool convo_info_volatile_get_or_construct_open(
+LIBSESSION_C_API bool convo_info_volatile_get_or_construct_community(
         const config_object* conf,
-        convo_info_volatile_open* convo,
+        convo_info_volatile_community* convo,
         const char* base_url,
         const char* room,
         unsigned const char* pubkey) {
     try {
         unbox<ConvoInfoVolatile>(conf)
-                ->get_or_construct_open(base_url, room, ustring_view{pubkey, 32})
+                ->get_or_construct_community(base_url, room, ustring_view{pubkey, 32})
                 .into(*convo);
         return true;
     } catch (...) {
@@ -765,10 +470,10 @@ LIBSESSION_C_API bool convo_info_volatile_get_or_construct_open(
     }
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_legacy_closed(
-        const config_object* conf, convo_info_volatile_legacy_closed* convo, const char* id) {
+LIBSESSION_C_API bool convo_info_volatile_get_legacy_group(
+        const config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
     try {
-        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_legacy_closed(id)) {
+        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_legacy_group(id)) {
             c->into(*convo);
             return true;
         }
@@ -777,10 +482,10 @@ LIBSESSION_C_API bool convo_info_volatile_get_legacy_closed(
     return false;
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_or_construct_legacy_closed(
-        const config_object* conf, convo_info_volatile_legacy_closed* convo, const char* id) {
+LIBSESSION_C_API bool convo_info_volatile_get_or_construct_legacy_group(
+        const config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
     try {
-        unbox<ConvoInfoVolatile>(conf)->get_or_construct_legacy_closed(id).into(*convo);
+        unbox<ConvoInfoVolatile>(conf)->get_or_construct_legacy_group(id).into(*convo);
         return true;
     } catch (...) {
         return false;
@@ -791,13 +496,13 @@ LIBSESSION_C_API void convo_info_volatile_set_1to1(
         config_object* conf, const convo_info_volatile_1to1* convo) {
     unbox<ConvoInfoVolatile>(conf)->set(convo::one_to_one{*convo});
 }
-LIBSESSION_C_API void convo_info_volatile_set_open(
-        config_object* conf, const convo_info_volatile_open* convo) {
-    unbox<ConvoInfoVolatile>(conf)->set(convo::open_group{*convo});
+LIBSESSION_C_API void convo_info_volatile_set_community(
+        config_object* conf, const convo_info_volatile_community* convo) {
+    unbox<ConvoInfoVolatile>(conf)->set(convo::community{*convo});
 }
-LIBSESSION_C_API void convo_info_volatile_set_legacy_closed(
-        config_object* conf, const convo_info_volatile_legacy_closed* convo) {
-    unbox<ConvoInfoVolatile>(conf)->set(convo::legacy_closed_group{*convo});
+LIBSESSION_C_API void convo_info_volatile_set_legacy_group(
+        config_object* conf, const convo_info_volatile_legacy_group* convo) {
+    unbox<ConvoInfoVolatile>(conf)->set(convo::legacy_group{*convo});
 }
 
 LIBSESSION_C_API bool convo_info_volatile_erase_1to1(config_object* conf, const char* session_id) {
@@ -807,18 +512,18 @@ LIBSESSION_C_API bool convo_info_volatile_erase_1to1(config_object* conf, const 
         return false;
     }
 }
-LIBSESSION_C_API bool convo_info_volatile_erase_open(
-        config_object* conf, const char* base_url, const char* room, unsigned const char* pubkey) {
+LIBSESSION_C_API bool convo_info_volatile_erase_community(
+        config_object* conf, const char* base_url, const char* room) {
     try {
-        return unbox<ConvoInfoVolatile>(conf)->erase_open(base_url, room, ustring_view{pubkey, 32});
+        return unbox<ConvoInfoVolatile>(conf)->erase_community(base_url, room);
     } catch (...) {
         return false;
     }
 }
-LIBSESSION_C_API bool convo_info_volatile_erase_legacy_closed(
+LIBSESSION_C_API bool convo_info_volatile_erase_legacy_group(
         config_object* conf, const char* group_id) {
     try {
-        return unbox<ConvoInfoVolatile>(conf)->erase_legacy_closed(group_id);
+        return unbox<ConvoInfoVolatile>(conf)->erase_legacy_group(group_id);
     } catch (...) {
         return false;
     }
@@ -830,11 +535,11 @@ LIBSESSION_C_API size_t convo_info_volatile_size(const config_object* conf) {
 LIBSESSION_C_API size_t convo_info_volatile_size_1to1(const config_object* conf) {
     return unbox<ConvoInfoVolatile>(conf)->size_1to1();
 }
-LIBSESSION_C_API size_t convo_info_volatile_size_open(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size_open();
+LIBSESSION_C_API size_t convo_info_volatile_size_communities(const config_object* conf) {
+    return unbox<ConvoInfoVolatile>(conf)->size_communities();
 }
-LIBSESSION_C_API size_t convo_info_volatile_size_legacy_closed(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size_legacy_closed();
+LIBSESSION_C_API size_t convo_info_volatile_size_legacy_groups(const config_object* conf) {
+    return unbox<ConvoInfoVolatile>(conf)->size_legacy_groups();
 }
 
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new(
@@ -850,17 +555,18 @@ LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_
     it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_1to1()};
     return it;
 }
-LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_open(
-        const config_object* conf) {
-    auto* it = new convo_info_volatile_iterator{};
-    it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_open()};
-    return it;
-}
-LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_closed(
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_communities(
         const config_object* conf) {
     auto* it = new convo_info_volatile_iterator{};
     it->_internals =
-            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_legacy_closed()};
+            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_communities()};
+    return it;
+}
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_groups(
+        const config_object* conf) {
+    auto* it = new convo_info_volatile_iterator{};
+    it->_internals =
+            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_legacy_groups()};
     return it;
 }
 
@@ -895,14 +601,14 @@ LIBSESSION_C_API bool convo_info_volatile_it_is_1to1(
     return convo_info_volatile_it_is_impl<convo::one_to_one>(it, c);
 }
 
-LIBSESSION_C_API bool convo_info_volatile_it_is_open(
-        convo_info_volatile_iterator* it, convo_info_volatile_open* c) {
-    return convo_info_volatile_it_is_impl<convo::open_group>(it, c);
+LIBSESSION_C_API bool convo_info_volatile_it_is_community(
+        convo_info_volatile_iterator* it, convo_info_volatile_community* c) {
+    return convo_info_volatile_it_is_impl<convo::community>(it, c);
 }
 
-LIBSESSION_C_API bool convo_info_volatile_it_is_legacy_closed(
-        convo_info_volatile_iterator* it, convo_info_volatile_legacy_closed* c) {
-    return convo_info_volatile_it_is_impl<convo::legacy_closed_group>(it, c);
+LIBSESSION_C_API bool convo_info_volatile_it_is_legacy_group(
+        convo_info_volatile_iterator* it, convo_info_volatile_legacy_group* c) {
+    return convo_info_volatile_it_is_impl<convo::legacy_group>(it, c);
 }
 
 LIBSESSION_C_API void convo_info_volatile_iterator_erase(

@@ -155,7 +155,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     session::config::profile_pic p;
     {
         // These don't stay alive, so we use set_key/set_url to make a local copy:
-        ustring key = "qwerty"_bytes;
+        ustring key = "qwerty78901234567890123456789012"_bytes;
         std::string url = "http://example.com/huge.bmp";
         p.set_key(std::move(key));
         p.set_url(std::move(url));
@@ -243,7 +243,6 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK_FALSE(c.blocked);
     CHECK(c.profile_pic.url == nullptr);
     CHECK(c.profile_pic.key == nullptr);
-    CHECK(c.profile_pic.keylen == 0);
 
     c.name = "Joe";
     c.nickname = "Joey";

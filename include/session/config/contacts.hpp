@@ -1,15 +1,19 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <iterator>
 #include <memory>
 #include <session/config.hpp>
 
 #include "base.hpp"
+#include "expiring.hpp"
 #include "namespaces.hpp"
 #include "profile_pic.hpp"
 
 extern "C" struct contacts_contact;
+
+using namespace std::literals;
 
 namespace session::config {
 
@@ -28,6 +32,14 @@ namespace session::config {
 ///     a - 1 if approved, omitted otherwise (int)
 ///     A - 1 if remote has approved me, omitted otherwise (int)
 ///     b - 1 if contact is blocked, omitted otherwise
+///     h - 1 if the conversation with this contact is hidden, omitted if visible.
+///     + - the conversation priority, for pinned messages.  Omitted means not pinned; otherwise an
+///         integer value >0, where a higher priority means the conversation is meant to appear
+///         earlier in the pinned conversation list.
+///     e - Disappearing messages expiration type.  Omitted if disappearing messages are not enabled
+///         for the conversation with this contact; 1 for delete-after-send, and 2 for
+///         delete-after-read.
+///     E - Disappearing message timer, in minutes.  Omitted when `e` is omitted.
 
 /// Struct containing contact info.  Note that data must be copied/used immediately as the data will
 /// not remain valid beyond other calls into the library.  When settings things in this externally
@@ -42,6 +54,12 @@ struct contact_info {
     bool approved = false;
     bool approved_me = false;
     bool blocked = false;
+    bool hidden = false;  // True if the conversation with this contact is not visible in the convo
+                          // list (typically because it has been deleted).
+    int priority = 0;     // If >0 then this message is pinned; higher values mean higher priority
+                          // (i.e. pinned earlier in the pinned list).
+    expiration_mode exp_mode = expiration_mode::none;  // The expiry time; none if not expiring.
+    std::chrono::minutes exp_timer{0};                 // The expiration timer (in minutes)
 
     explicit contact_info(std::string sid);
 
@@ -111,13 +129,20 @@ class Contacts : public ConfigBase {
     ///     contacts.set(c);
     void set(const contact_info& contact);
 
-    /// Alternative to `set()` for setting individual fields.
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
     void set_name(std::string_view session_id, std::string name);
     void set_nickname(std::string_view session_id, std::string nickname);
     void set_profile_pic(std::string_view session_id, profile_pic pic);
     void set_approved(std::string_view session_id, bool approved);
     void set_approved_me(std::string_view session_id, bool approved_me);
     void set_blocked(std::string_view session_id, bool blocked);
+    void set_hidden(std::string_view session_id, bool hidden);
+    void set_priority(std::string_view session_id, int priority);
+    void set_expiry(
+            std::string_view session_id,
+            expiration_mode exp_mode,
+            std::chrono::minutes expiration_timer = 0min);
 
     /// Removes a contact, if present.  Returns true if it was found and removed, false otherwise.
     /// Note that this removes all fields related to a contact, even fields we do not know about.

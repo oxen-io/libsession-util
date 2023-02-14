@@ -1,4 +1,5 @@
 #include "session/config/profile_pic.hpp"
+
 #include <stdexcept>
 
 namespace session::config {
