@@ -272,7 +272,7 @@ class ConfigBase {
         std::string string_or(std::string fallback) const {
             if (auto* s = string())
                 return *s;
-            return std::move(fallback);
+            return fallback;
         }
 
         /// Returns a const pointer to the integer if one exists at the given location, nullptr
