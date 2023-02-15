@@ -4,6 +4,7 @@
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <cstring>
 #include <string_view>
 
 #include "utils.hpp"
@@ -71,14 +72,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // This should also be unset:
     auto pic = user_profile_get_pic(conf);
-    CHECK(pic.url == nullptr);  // (should be NULL instead of nullptr in C)
-    CHECK(pic.key == nullptr);  // (should be NULL instead of nullptr in C)
+    CHECK(strlen(pic.url) == 0);
 
     // Now let's go set a profile name and picture:
     CHECK(0 == user_profile_set_name(conf, "Kallie"));
     user_profile_pic p;
-    p.url = "http://example.org/omg-pic-123.bmp";
-    p.key = reinterpret_cast<const unsigned char*>("secret78901234567890123456789012");
+    strcpy(p.url, "http://example.org/omg-pic-123.bmp");  // NB: length must be < sizeof(p.url)!
+    memcpy(p.key, "secret78901234567890123456789012", 32);
     CHECK(0 == user_profile_set_pic(conf, p));
 
     // Retrieve them just to make sure they set properly:
@@ -215,8 +215,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     user_profile_set_name(conf2, "Raz");
 
     // And, on conf2, we're also going to change the profile pic:
-    p.url = "http://new.example.com/pic";
-    p.key = reinterpret_cast<const unsigned char*>("qwert\0yuio1234567890123456789012");
+    strcpy(p.url, "http://new.example.com/pic");
+    memcpy(p.key, "qwert\0yuio1234567890123456789012", 32);
     user_profile_set_pic(conf2, p);
 
     // Both have changes, so push need a push

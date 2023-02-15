@@ -23,7 +23,6 @@ add_library(config
     config/encrypt.cpp
     config/error.c
     config/internal.cpp
-    config/profile_pic.cpp
     config/user_groups.cpp
     config/user_profile.cpp
     fields.cpp

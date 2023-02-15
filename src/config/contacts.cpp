@@ -41,13 +41,15 @@ contact_info::contact_info(std::string sid) : session_id{std::move(sid)} {
 }
 
 void contact_info::set_name(std::string n) {
-    name_ = std::move(n);
-    name = name_;
+    if (n.size() > MAX_NAME_LENGTH)
+        throw std::invalid_argument{"Invalid contact name: exceeds maximum length"};
+    name = std::move(n);
 }
 
 void contact_info::set_nickname(std::string n) {
-    nickname_ = std::move(n);
-    nickname = nickname_;
+    if (n.size() > MAX_NAME_LENGTH)
+        throw std::invalid_argument{"Invalid contact nickname: exceeds maximum length"};
+    nickname = std::move(n);
 }
 
 Contacts::Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
@@ -64,34 +66,18 @@ LIBSESSION_C_API int contacts_init(
     return c_wrapper_init<Contacts>(conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
 }
 
-// Digs into a dict to get out a std::string_view, if it's there with a non-empty string; otherwise
-// returns nullopt.
-static std::optional<std::string_view> maybe_sv(const dict& d, const char* key) {
-    if (auto it = d.find(key); it != d.end())
-        if (auto* sc = std::get_if<scalar>(&it->second))
-            if (auto* s = std::get_if<std::string>(sc); s && !s->empty())
-                return *s;
-    return std::nullopt;
-}
-// Digs into a dict to get out an int64_t; nullopt if not there (or not int)
-static std::optional<int64_t> maybe_int(const dict& d, const char* key) {
-    if (auto it = d.find(key); it != d.end())
-        if (auto* sc = std::get_if<scalar>(&it->second))
-            if (auto* i = std::get_if<int64_t>(sc))
-                return *i;
-    return std::nullopt;
-}
-
 void contact_info::load(const dict& info_dict) {
-    name = maybe_sv(info_dict, "n");
-    nickname = maybe_sv(info_dict, "N");
+    name = maybe_string(info_dict, "n").value_or("");
+    nickname = maybe_string(info_dict, "N").value_or("");
 
-    auto url = maybe_sv(info_dict, "p");
-    auto key = maybe_sv(info_dict, "q");
-    if (url && key && !url->empty() && !key->empty())
-        profile_picture.emplace(*url, to_unsigned_sv(*key));
-    else
-        profile_picture.reset();
+    auto url = maybe_string(info_dict, "p");
+    auto key = maybe_ustring(info_dict, "q");
+    if (url && key && !url->empty() && key->size() == 32) {
+        profile_picture.url = std::move(*url);
+        profile_picture.key = std::move(*key);
+    } else {
+        profile_picture.clear();
+    }
 
     approved = maybe_int(info_dict, "a").value_or(0);
     approved_me = maybe_int(info_dict, "A").value_or(0);
@@ -122,16 +108,19 @@ void contact_info::load(const dict& info_dict) {
     }
 }
 
+static_assert(sizeof(contacts_contact::name) == contact_info::MAX_NAME_LENGTH + 1);
+static_assert(sizeof(contacts_contact::nickname) == contact_info::MAX_NAME_LENGTH + 1);
+static_assert(sizeof(user_profile_pic::url) == profile_pic::MAX_URL_LENGTH + 1);
+
 void contact_info::into(contacts_contact& c) const {
     std::memcpy(c.session_id, session_id.data(), 67);
-    c.name = name && !name->empty() ? name->data() : nullptr;
-    c.nickname = nickname && !nickname->empty() ? nickname->data() : nullptr;
-    if (profile_picture && !profile_picture->empty()) {
-        c.profile_pic.url = profile_picture->url.data();
-        c.profile_pic.key = profile_picture->key.data();
+    copy_c_str(c.name, name);
+    copy_c_str(c.nickname, nickname);
+    if (profile_picture) {
+        copy_c_str(c.profile_pic.url, profile_picture.url);
+        std::memcpy(c.profile_pic.key, profile_picture.key.data(), 32);
     } else {
-        c.profile_pic.url = nullptr;
-        c.profile_pic.key = nullptr;
+        copy_c_str(c.profile_pic.url, "");
     }
     c.approved = approved;
     c.approved_me = approved_me;
@@ -145,12 +134,15 @@ void contact_info::into(contacts_contact& c) const {
 }
 
 contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id, 66} {
-    if (c.name && std::strlen(c.name))
-        name = c.name;
-    if (c.nickname && std::strlen(c.nickname))
-        nickname = c.nickname;
-    if (c.profile_pic.url && std::strlen(c.profile_pic.url) && c.profile_pic.key)
-        profile_picture.emplace(c.profile_pic.url, ustring{c.profile_pic.key, 32});
+    assert(std::strlen(c.name) <= MAX_NAME_LENGTH);
+    name = c.name;
+    assert(std::strlen(c.nickname) <= MAX_NAME_LENGTH);
+    nickname = c.nickname;
+    assert(std::strlen(c.profile_pic.url) <= profile_pic::MAX_URL_LENGTH);
+    if (std::strlen(c.profile_pic.url)) {
+        profile_picture.url = c.profile_pic.url;
+        profile_picture.key = {c.profile_pic.key, 32};
+    }
     approved = c.approved;
     approved_me = c.approved_me;
     blocked = c.blocked;
@@ -203,35 +195,18 @@ LIBSESSION_C_API bool contacts_get_or_construct(
     }
 }
 
-static void set_optional_str(
-        ConfigBase::DictFieldProxy&& field, const std::optional<std::string_view>& val) {
-    if (val && !val->empty())
-        field = *val;
-    else
-        field.erase();
-}
-static void set_flag(ConfigBase::DictFieldProxy&& field, bool val) {
-    if (val)
-        field = 1;
-    else
-        field.erase();
-}
-
 void Contacts::set(const contact_info& contact) {
     std::string pk = session_id_to_bytes(contact.session_id);
     auto info = data["c"][pk];
 
-    // This key is here to keep the session_id entry alive even when we have no other keys.  It has
-    // no other purpose.
-    info["!"] = ""sv;
+    // Always set the name, even if empty, to keep the dict from getting pruned if there are no
+    // other entries.
+    info["n"] = contact.name.substr(0, contact_info::MAX_NAME_LENGTH);
+    set_nonempty_str(info["N"], contact.nickname.substr(0, contact_info::MAX_NAME_LENGTH));
 
-    set_optional_str(info["n"], contact.name);
-    set_optional_str(info["N"], contact.nickname);
-
-    if (contact.profile_picture && !contact.profile_picture->url.empty() &&
-        !contact.profile_picture->key.empty()) {
-        info["p"] = contact.profile_picture->url;
-        info["q"] = contact.profile_picture->key;
+    if (contact.profile_picture) {
+        info["p"] = contact.profile_picture.url;
+        info["q"] = contact.profile_picture.key;
     } else {
         info["p"].erase();
         info["q"].erase();
@@ -242,10 +217,7 @@ void Contacts::set(const contact_info& contact) {
     set_flag(info["b"], contact.blocked);
     set_flag(info["h"], contact.hidden);
 
-    if (contact.priority > 0)
-        info["+"] = contact.priority;
-    else
-        info["+"].erase();
+    set_positive_int(info["+"], contact.priority);
 
     if (contact.exp_mode != expiration_mode::none && contact.exp_timer > 0min) {
         info["e"] = static_cast<int8_t>(contact.exp_mode);

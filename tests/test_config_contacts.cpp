@@ -40,8 +40,8 @@ TEST_CASE("Contacts", "[config][contacts]") {
 
     auto c = contacts.get_or_construct(definitely_real_id);
 
-    CHECK_FALSE(c.name);
-    CHECK_FALSE(c.nickname);
+    CHECK(c.name.empty());
+    CHECK(c.nickname.empty());
     CHECK_FALSE(c.approved);
     CHECK_FALSE(c.approved_me);
     CHECK_FALSE(c.blocked);
@@ -51,14 +51,8 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(contacts.needs_dump());
     CHECK(contacts.push().second == 0);
 
-    {
-        // Setting temporaries via `.set_name` helper:
-        std::string myname = "Joe", mynick = "Joey";
-        c.set_name(myname);
-        c.set_nickname(std::move(mynick));
-        CHECK((void*)c.name->data() != (void*)myname.data());
-        CHECK((void*)c.nickname->data() != (void*)mynick.data());
-    }
+    c.set_name("Joe");
+    c.set_nickname("Joey");
     c.approved = true;
     c.approved_me = true;
 
@@ -131,7 +125,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(contacts.empty());
     for (const auto& cc : contacts) {
         session_ids.push_back(cc.session_id);
-        nicknames.emplace_back(cc.nickname.value_or("(N/A)"));
+        nicknames.emplace_back(cc.nickname.empty() ? "(N/A)" : cc.nickname);
     }
 
     REQUIRE(session_ids.size() == 2);
@@ -158,7 +152,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
         ustring key = "qwerty78901234567890123456789012"_bytes;
         std::string url = "http://example.com/huge.bmp";
         p.set_key(std::move(key));
-        p.set_url(std::move(url));
+        p.url = std::move(url);
     }
     contacts2.set_profile_pic(third_id, std::move(p));
 
@@ -199,7 +193,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     nicknames.clear();
     for (const auto& cc : contacts) {
         session_ids.push_back(cc.session_id);
-        nicknames.emplace_back(cc.nickname.value_or("(N/A)"));
+        nicknames.emplace_back(cc.nickname.empty() ? "(N/A)" : cc.nickname);
     }
     REQUIRE(session_ids.size() == 2);
     CHECK(session_ids[0] == another_id);
@@ -236,16 +230,15 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(contacts_get_or_construct(conf, &c, definitely_real_id));
 
     CHECK(c.session_id == std::string_view{definitely_real_id});
-    CHECK(c.name == nullptr);
-    CHECK(c.nickname == nullptr);
+    CHECK(strlen(c.name) == 0);
+    CHECK(strlen(c.nickname) == 0);
     CHECK_FALSE(c.approved);
     CHECK_FALSE(c.approved_me);
     CHECK_FALSE(c.blocked);
-    CHECK(c.profile_pic.url == nullptr);
-    CHECK(c.profile_pic.key == nullptr);
+    CHECK(strlen(c.profile_pic.url) == 0);
 
-    c.name = "Joe";
-    c.nickname = "Joey";
+    strcpy(c.name, "Joe");
+    strcpy(c.nickname, "Joey");
     c.approved = true;
     c.approved_me = true;
 
@@ -259,8 +252,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c2.approved);
     CHECK(c2.approved_me);
     CHECK_FALSE(c2.blocked);
-    CHECK(c2.profile_pic.key == nullptr);
-    CHECK(c2.profile_pic.url == nullptr);
+    CHECK(strlen(c2.profile_pic.url) == 0);
 
     CHECK(config_needs_push(conf));
     CHECK(config_needs_dump(conf));
@@ -290,18 +282,16 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c3.approved);
     CHECK(c3.approved_me);
     CHECK_FALSE(c3.blocked);
-    CHECK(c3.profile_pic.key == nullptr);
-    CHECK(c3.profile_pic.url == nullptr);
+    CHECK(strlen(c3.profile_pic.url) == 0);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
     REQUIRE(contacts_get_or_construct(conf, &c3, another_id));
-    CHECK(c3.name == nullptr);
-    CHECK(c3.nickname == nullptr);
+    CHECK(strlen(c3.name) == 0);
+    CHECK(strlen(c3.nickname) == 0);
     CHECK_FALSE(c3.approved);
     CHECK_FALSE(c3.approved_me);
     CHECK_FALSE(c3.blocked);
-    CHECK(c3.profile_pic.key == nullptr);
-    CHECK(c3.profile_pic.url == nullptr);
+    CHECK(strlen(c3.profile_pic.url) == 0);
 
     contacts_set(conf2, &c3);
 
@@ -324,7 +314,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     contacts_contact ci;
     for (; !contacts_iterator_done(it, &ci); contacts_iterator_advance(it)) {
         session_ids.push_back(ci.session_id);
-        nicknames.emplace_back(ci.nickname ? ci.nickname : "(N/A)");
+        nicknames.emplace_back(strlen(ci.nickname) ? ci.nickname : "(N/A)");
     }
     contacts_iterator_free(it);
 

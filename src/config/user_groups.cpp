@@ -39,16 +39,18 @@ void community_info::into(ugroups_community_info& c) const {
     c.priority = priority;
 }
 
+static_assert(sizeof(ugroups_legacy_group_info::name) == legacy_group_info::NAME_MAX_LENGTH + 1);
+
 legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c) :
         session_id{c.session_id, 66},
         name{c.name},
         disappearing_timer{c.disappearing_timer},
         hidden{c.hidden},
         priority{c.priority} {
-    assert(name.size() <= 511);  // Otherwise the caller messed up
+    assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
     if (c.have_enc_keys) {
-        enc_pubkey.emplace(c.enc_pubkey, 32);
-        enc_seckey.emplace(c.enc_pubkey, 32);
+        enc_pubkey.assign(c.enc_pubkey, 32);
+        enc_seckey.assign(c.enc_seckey, 32);
     }
 }
 
@@ -56,10 +58,10 @@ void legacy_group_info::into(ugroups_legacy_group_info& c) const {
     assert(session_id.size() == 66);
     copy_c_str(c.session_id, session_id);
     copy_c_str(c.name, name);
-    c.have_enc_keys = enc_pubkey && enc_seckey;
+    c.have_enc_keys = enc_pubkey.size() == 32 && enc_seckey.size() == 32;
     if (c.have_enc_keys) {
-        std::memcpy(c.enc_pubkey, enc_pubkey->data(), 32);
-        std::memcpy(c.enc_seckey, enc_seckey->data(), 32);
+        std::memcpy(c.enc_pubkey, enc_pubkey.data(), 32);
+        std::memcpy(c.enc_seckey, enc_seckey.data(), 32);
     }
     c.disappearing_timer = disappearing_timer.count();
     c.hidden = hidden;
@@ -71,14 +73,14 @@ void legacy_group_info::load(const dict& info_dict) {
         name = *n;
     // otherwise leave the current `name` alone at whatever the object was constructed with
 
-    auto enc_pub = maybe_sv(info_dict, "k");
-    auto enc_sec = maybe_sv(info_dict, "K");
+    auto enc_pub = maybe_ustring(info_dict, "k");
+    auto enc_sec = maybe_ustring(info_dict, "K");
     if (enc_pub && enc_sec && enc_pub->size() == 32 && enc_sec->size() == 32) {
-        enc_pubkey.emplace(reinterpret_cast<const unsigned char*>(enc_pub->data()), 32);
-        enc_seckey.emplace(reinterpret_cast<const unsigned char*>(enc_sec->data()), 32);
+        enc_pubkey = std::move(*enc_pub);
+        enc_seckey = std::move(*enc_sec);
     } else {
-        enc_pubkey.reset();
-        enc_seckey.reset();
+        enc_pubkey.clear();
+        enc_seckey.clear();
     }
     if (auto minutes = maybe_int(info_dict, "E").value_or(0); minutes > 0)
         disappearing_timer = std::chrono::minutes(minutes);
@@ -178,9 +180,10 @@ void UserGroups::set(const legacy_group_info& g) {
         info["n"] = g.name.substr(0, legacy_group_info::NAME_MAX_LENGTH);
     else
         info["n"] = g.name;
-    if (g.enc_pubkey && g.enc_seckey && g.enc_pubkey->size() == 32 && g.enc_seckey->size() == 32) {
-        info["k"] = *g.enc_pubkey;
-        info["K"] = *g.enc_seckey;
+
+    if (g.enc_pubkey.size() == 32 && g.enc_seckey.size() == 32) {
+        info["k"] = g.enc_pubkey;
+        info["K"] = g.enc_seckey;
     } else {
         info["k"].erase();
         info["K"].erase();

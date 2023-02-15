@@ -10,7 +10,7 @@ extern "C" {
 typedef struct ugroups_legacy_group_info {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
 
-    char name[512];  // Null-terminated C string (human-readable).  Max length is 511.  Will always
+    char name[101];  // Null-terminated C string (human-readable).  Max length is 511.  Will always
                      // be set (even if an empty string).
 
     bool have_enc_keys;            // Will be true if we have an encryption keypair, false if not.

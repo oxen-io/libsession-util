@@ -51,20 +51,24 @@ LIBSESSION_C_API int user_profile_set_name(config_object* conf, const char* name
     return 0;
 }
 
-std::optional<profile_pic> UserProfile::get_profile_pic() const {
-    auto* url = data["p"].string();
-    auto* key = data["q"].string();
-    if (url && key && !url->empty() && !key->empty())
-        return profile_pic{
-                *url, {reinterpret_cast<const unsigned char*>(key->data()), key->size()}};
-    return std::nullopt;
+profile_pic UserProfile::get_profile_pic() const {
+    profile_pic pic{};
+    if (auto* url = data["p"].string(); url && !url->empty())
+        pic.url = *url;
+    if (auto* key = data["q"].string(); key && key->size() == 32)
+        pic.key = {reinterpret_cast<const unsigned char*>(key->data()), 32};
+    return pic;
 }
 
 LIBSESSION_C_API user_profile_pic user_profile_get_pic(const config_object* conf) {
-    if (auto pic = unbox<UserProfile>(conf)->get_profile_pic(); pic && pic->key.size() == 32)
-        return {pic->url.data(), pic->key.data()};
-
-    return {nullptr, nullptr};
+    user_profile_pic p;
+    if (auto pic = unbox<UserProfile>(conf)->get_profile_pic(); pic) {
+        copy_c_str(p.url, pic.url);
+        std::memcpy(p.key, pic.key.data(), 32);
+    } else {
+        p.url[0] = 0;
+    }
+    return p;
 }
 
 void UserProfile::set_profile_pic(std::string_view url, ustring_view key) {
@@ -82,11 +86,9 @@ void UserProfile::set_profile_pic(profile_pic pic) {
 }
 
 LIBSESSION_C_API int user_profile_set_pic(config_object* conf, user_profile_pic pic) {
-    std::string_view url;
+    std::string_view url{pic.url};
     ustring_view key;
-    if (pic.url)
-        url = pic.url;
-    if (pic.key)
+    if (!url.empty())
         key = {pic.key, 32};
 
     try {

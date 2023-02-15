@@ -12,9 +12,9 @@ extern "C" {
 typedef struct contacts_contact {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
 
-    // These can be NULL.  When setting, either NULL or empty string will clear the setting.
-    const char* name;
-    const char* nickname;
+    // These two will be 0-length strings when unset:
+    char name[101];
+    char nickname[101];
     user_profile_pic profile_pic;
 
     bool approved;

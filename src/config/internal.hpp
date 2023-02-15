@@ -73,7 +73,19 @@ std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key
 // Digs into a config `dict` to get out a string; nullopt if not there (or not string)
 std::optional<std::string> maybe_string(const session::config::dict& d, const char* key);
 
-// Digs into a config `dict` to get out a string_view; nullopt if not there (or not string)
-std::optional<std::string_view> maybe_sv(const session::config::dict& d, const char* key);
+// Digs into a config `dict` to get out a ustring; nullopt if not there (or not string)
+std::optional<ustring> maybe_ustring(const session::config::dict& d, const char* key);
+
+/// Sets a value to 1 if true, removes it if false.
+void set_flag(ConfigBase::DictFieldProxy&& field, bool val);
+
+/// Sets a string value if non-empty, clears it if empty.
+void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string val);
+
+/// Sets an integer value, if non-zero; removes it if 0.
+void set_nonzero_int(ConfigBase::DictFieldProxy&& field, int64_t val);
+
+/// Sets an integer value, if positive; removes it if <= 0.
+void set_positive_int(ConfigBase::DictFieldProxy&& field, int64_t val);
 
 }  // namespace session::config

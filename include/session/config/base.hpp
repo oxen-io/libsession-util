@@ -298,7 +298,7 @@ class ConfigBase {
         /// Replaces the current value with the given string.  This also auto-vivifies any
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path.
-        void operator=(std::string value) { assign_if_changed(std::move(value)); }
+        void operator=(std::string&& value) { assign_if_changed(std::move(value)); }
         /// Same as above, but takes a string_view for convenience (this makes a copy).
         void operator=(std::string_view value) { *this = std::string{value}; }
         /// Same as above, but takes a ustring_view

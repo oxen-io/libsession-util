@@ -53,13 +53,13 @@ namespace session::config {
 
 /// Struct containing legacy group info (aka "closed groups").
 struct legacy_group_info {
-    static constexpr size_t NAME_MAX_LENGTH = 511;  // in bytes; name will be truncated if exceeded
+    static constexpr size_t NAME_MAX_LENGTH = 100;  // in bytes; name will be truncated if exceeded
 
     std::string session_id;  // The legacy group "session id" (33 bytes).
     std::string name;  // human-readable; this should normally always be set, but in theory could be
                        // set to an empty string.
-    std::optional<ustring_view> enc_pubkey;      // bytes (32)
-    std::optional<ustring_view> enc_seckey;      // bytes (32)
+    ustring enc_pubkey;                          // bytes (32 or empty)
+    ustring enc_seckey;                          // bytes (32 or empty)
     std::chrono::minutes disappearing_timer{0};  // 0 == disabled.
     bool hidden = false;  // true if the conversation is hidden from the convo list
     int priority = 0;     // The priority; 0 means unpinned, larger means pinned higher (i.e.
@@ -69,34 +69,25 @@ struct legacy_group_info {
     /// if id is invalid.
     explicit legacy_group_info(std::string sid);
 
-    // Accesses the set of session ids (in hex) of members of this group.  The value indicates
-    // whether the member is an admin (true) or not (false).
+    // Accesses the session ids (in hex) of members of this group.  The key is the hex session_id;
+    // the value indicates whether the member is an admin (true) or not (false).
     const std::map<std::string, bool>& members() const;
 
     // Adds a member (by session id and admin status) to this group.  Returns true if the member was
     // inserted or changed admin status, false if the member already existed.  Throws
     // std::invalid_argument if the given session id is invalid.
     bool insert(std::string_view session_id, bool admin);
+    bool insert(std::string&& session_id, bool admin);
 
     // Removes a member (by session id) from this group.  Returns true if the member was
     // removed, false if the member was not present.
-    bool erase(std::string_view session_id);
+    bool erase(const std::string& session_id);
 
     // Internal ctor/method for C API implementations:
     legacy_group_info(const struct ugroups_legacy_group_info& c);  // From c struct
     void into(struct ugroups_legacy_group_info& c) const;          // Into c struct
 
-    // Sets the group keypair to copies of the given inputs, for use when a long-lived value isn't
-    // easily available: this copies the values into internal object storage.
-    void set_keys(ustring pubkey, ustring seckey) {
-        enc_pubkey = (enc_pubkey_ = std::move(pubkey));
-        enc_seckey = (enc_seckey_ = std::move(seckey));
-    }
-
   private:
-    ustring enc_pubkey_, enc_seckey_;  // Backing for enc_pubkey/enc_seckey when the value is stored
-                                       // locally in the object.
-
     // session_id => (is admin)
     std::map<std::string, bool> members_;
 

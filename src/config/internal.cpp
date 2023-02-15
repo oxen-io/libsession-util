@@ -5,6 +5,7 @@
 #include <oxenc/hex.h>
 
 #include <iterator>
+#include <optional>
 
 namespace session::config {
 
@@ -56,25 +57,51 @@ const Scalar* maybe_scalar(const session::config::dict& d, const char* key) {
     return nullptr;
 }
 
-// Digs into a dict to get out an int64_t; nullopt if not there (or not int)
 std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key) {
     if (auto* i = maybe_scalar<int64_t>(d, key))
         return *i;
     return std::nullopt;
 }
 
-// Digs into a dict to get out an int64_t; nullopt if not there (or not int)
 std::optional<std::string> maybe_string(const session::config::dict& d, const char* key) {
     if (auto* s = maybe_scalar<std::string>(d, key))
         return *s;
     return std::nullopt;
 }
 
-// Similar to maybe_string, but returns a string_view into the value
-std::optional<std::string_view> maybe_sv(const session::config::dict& d, const char* key) {
+std::optional<ustring> maybe_ustring(const session::config::dict& d, const char* key) {
+    std::optional<ustring> result;
     if (auto* s = maybe_scalar<std::string>(d, key))
-        return *s;
-    return std::nullopt;
+        result.emplace(reinterpret_cast<const unsigned char*>(s->data()), s->size());
+    return result;
+}
+
+void set_flag(ConfigBase::DictFieldProxy&& field, bool val) {
+    if (val)
+        field = 1;
+    else
+        field.erase();
+}
+
+void set_positive_int(ConfigBase::DictFieldProxy&& field, int64_t val) {
+    if (val > 0)
+        field = val;
+    else
+        field.erase();
+}
+
+void set_nonzero_int(ConfigBase::DictFieldProxy&& field, int64_t val) {
+    if (val != 0)
+        field = val;
+    else
+        field.erase();
+}
+
+void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string val) {
+    if (!val.empty())
+        field = std::move(val);
+    else
+        field.erase();
 }
 
 }  // namespace session::config
