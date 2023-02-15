@@ -496,7 +496,18 @@ void MutableConfigMessage::increment_impl() {
     diff_.clear();
 }
 
-MutableConfigMessage::MutableConfigMessage(const ConfigMessage& m, increment_seqno_t) {
+MutableConfigMessage::MutableConfigMessage(ConfigMessage&& m, const retain_seqno_t&) {
+    // We do the derived class cast here rather than using two overloaded constructors so that the
+    // *caller* can give us a ConfigMessage reference without worrying about whether it is actually
+    // a MutableConfigMessage under the hood.
+    if (auto* mut = dynamic_cast<MutableConfigMessage*>(&m)) {
+        *this = std::move(*mut);
+    } else {
+        ConfigMessage::operator=(std::move(m));
+    }
+}
+
+MutableConfigMessage::MutableConfigMessage(const ConfigMessage& m, const increment_seqno_t&) {
     // We do the derived class cast here rather than using two overloaded constructors so that the
     // *caller* can give us a ConfigMessage reference without worrying about whether it is actually
     // a MutableConfigMessage under the hood.

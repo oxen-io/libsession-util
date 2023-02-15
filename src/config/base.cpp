@@ -162,8 +162,22 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
             });
 
     if (new_conf->seqno() != old_seqno) {
-        _config = std::move(new_conf);
-        set_state(_config->merged() ? ConfigState::Dirty : ConfigState::Clean);
+        if (new_conf->merged()) {
+
+            if (_state != ConfigState::Dirty) {
+                // Merging resulted in a merge conflict resolution message, but won't currently be
+                // mutable (because we weren't dirty to start with).  Convert into a Mutable message
+                // and mark ourselves dirty so that we'll get pushed.
+                _config =
+                        std::make_unique<MutableConfigMessage>(std::move(*new_conf), retain_seqno);
+            } else {
+                _config = std::move(new_conf);
+            }
+            set_state(ConfigState::Dirty);
+        } else {
+            _config = std::move(new_conf);
+            set_state(ConfigState::Clean);
+        }
     }
     // else: the merging affect nothing (if it had seqno would have been incremented), so don't
     // pointlessly replace the inner config object.
