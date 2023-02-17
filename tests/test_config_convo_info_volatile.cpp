@@ -13,69 +13,6 @@
 using namespace std::literals;
 using namespace oxenc::literals;
 
-TEST_CASE("Open Group URLs", "[config][community_urls]") {
-
-    using namespace session::config::convo;
-    auto [base1, room1, pk1] = community::parse_full_url(
-            "https://example.com/"
-            "SomeRoom?public_key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    auto [base2, room2, pk2] = community::parse_full_url(
-            "HTTPS://EXAMPLE.COM/"
-            "sOMErOOM?public_key=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
-    auto [base3, room3, pk3] = community::parse_full_url(
-            "HTTPS://EXAMPLE.COM/r/"
-            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base4, room4, pk4] = community::parse_full_url(
-            "http://example.com/r/"
-            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base5, room5, pk5] = community::parse_full_url(
-            "HTTPS://EXAMPLE.com:443/r/"
-            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base6, room6, pk6] = community::parse_full_url(
-            "HTTP://EXAMPLE.com:80/r/"
-            "someroom?public_key=0123456789aBcdEF0123456789abCDEF0123456789ABCdef0123456789ABCDEF");
-    auto [base7, room7, pk7] = community::parse_full_url(
-            "http://example.com:80/r/"
-            "someroom?public_key=ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8");
-    auto [base8, room8, pk8] = community::parse_full_url(
-            "http://example.com:80/r/"
-            "someroom?public_key=yrtwk3hjixg66yjdeiuauk6p7hy1gtm8tgih55abrpnsxnpm3zzo");
-
-    CHECK(base1 == "https://example.com");
-    CHECK(base1 == base2);
-    CHECK(base1 == base3);
-    CHECK(base1 != base4);
-    CHECK(base4 == "http://example.com");
-    CHECK(base1 == base5);
-    CHECK(base4 == base6);
-    CHECK(base4 == base7);
-    CHECK(base4 == base8);
-    CHECK(room1 == "SomeRoom");
-    CHECK(room2 == "sOMErOOM");
-    CHECK(room3 == "someroom");
-    CHECK(room4 == "someroom");
-    CHECK(room5 == "someroom");
-    CHECK(room6 == "someroom");
-    CHECK(room7 == "someroom");
-    CHECK(room8 == "someroom");
-    CHECK(community::canonical_room(room1) == "someroom");
-    CHECK(community::canonical_room(room2) == "someroom");
-    CHECK(community::canonical_room(room3) == "someroom");
-    CHECK(community::canonical_room(room4) == "someroom");
-    CHECK(community::canonical_room(room5) == "someroom");
-    CHECK(community::canonical_room(room6) == "someroom");
-    CHECK(community::canonical_room(room7) == "someroom");
-    CHECK(community::canonical_room(room8) == "someroom");
-    CHECK(to_hex(pk1) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk2) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk3) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk4) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk5) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk6) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk7) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    CHECK(to_hex(pk8) == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-}
-
 TEST_CASE("Conversations", "[config][conversations]") {
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;

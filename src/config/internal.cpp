@@ -10,10 +10,11 @@
 namespace session::config {
 
 void check_session_id(std::string_view session_id) {
-    if (session_id.size() != 66 || !oxenc::is_hex(session_id))
+    if (!(session_id.size() == 66 && oxenc::is_hex(session_id) && session_id[0] == '0' &&
+          session_id[1] == '5'))
         throw std::invalid_argument{
-                "Invalid pubkey: expected 66 hex digits, got " + std::to_string(session_id.size()) +
-                " and/or not hex"};
+                "Invalid session ID: expected 66 hex digits starting with 05; got " +
+                std::string{session_id}};
 }
 
 std::string session_id_to_bytes(std::string_view session_id) {
@@ -57,6 +58,13 @@ const Scalar* maybe_scalar(const session::config::dict& d, const char* key) {
     return nullptr;
 }
 
+const session::config::set* maybe_set(const session::config::dict& d, const char* key) {
+    if (auto it = d.find(key); it != d.end())
+        if (auto* s = std::get_if<session::config::set>(&it->second))
+            return s;
+    return nullptr;
+}
+
 std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key) {
     if (auto* i = maybe_scalar<int64_t>(d, key))
         return *i;
@@ -64,6 +72,12 @@ std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key
 }
 
 std::optional<std::string> maybe_string(const session::config::dict& d, const char* key) {
+    if (auto* s = maybe_scalar<std::string>(d, key))
+        return *s;
+    return std::nullopt;
+}
+
+std::optional<std::string_view> maybe_sv(const session::config::dict& d, const char* key) {
     if (auto* s = maybe_scalar<std::string>(d, key))
         return *s;
     return std::nullopt;
@@ -100,6 +114,13 @@ void set_nonzero_int(ConfigBase::DictFieldProxy&& field, int64_t val) {
 void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string val) {
     if (!val.empty())
         field = std::move(val);
+    else
+        field.erase();
+}
+
+void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string_view val) {
+    if (!val.empty())
+        field = val;
     else
         field.erase();
 }

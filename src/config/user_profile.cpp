@@ -37,10 +37,7 @@ LIBSESSION_C_API const char* user_profile_get_name(const config_object* conf) {
 }
 
 void UserProfile::set_name(std::string_view new_name) {
-    if (new_name.empty())
-        data["n"].erase();
-    else
-        data["n"] = new_name;
+    set_nonempty_str(data["n"], new_name);
 }
 LIBSESSION_C_API int user_profile_set_name(config_object* conf, const char* name) {
     try {
@@ -72,13 +69,7 @@ LIBSESSION_C_API user_profile_pic user_profile_get_pic(const config_object* conf
 }
 
 void UserProfile::set_profile_pic(std::string_view url, ustring_view key) {
-    if (key.empty() || url.empty()) {
-        data["p"].erase();
-        data["q"].erase();
-    } else {
-        data["p"] = std::string{url};
-        data["q"] = std::string{reinterpret_cast<const char*>(key.data()), key.size()};
-    }
+    set_pair_if(!url.empty() && key.size() == 32, data["p"], url, data["q"], key);
 }
 
 void UserProfile::set_profile_pic(profile_pic pic) {

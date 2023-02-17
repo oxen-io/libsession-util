@@ -186,10 +186,7 @@ void ConvoInfoVolatile::set_base(const convo::base& c, DictFieldProxy& info) {
             info["r"] = c.last_read;
     }
 
-    if (c.unread)
-        info["u"] = 1;
-    else
-        info["u"].erase();
+    set_flag(info["u"], c.unread);
 }
 
 std::pair<ustring, seqno_t> ConvoInfoVolatile::push() {

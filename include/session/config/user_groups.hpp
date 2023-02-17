@@ -71,13 +71,16 @@ struct legacy_group_info {
 
     // Accesses the session ids (in hex) of members of this group.  The key is the hex session_id;
     // the value indicates whether the member is an admin (true) or not (false).
-    const std::map<std::string, bool>& members() const;
+    const std::map<std::string, bool>& members() const { return members_; }
+
+    // Returns a pair of the number of admins, and regular members of this group.  (If all you want
+    // is the overall number just use `.members().size()` instead).
+    std::pair<size_t, size_t> counts() const;
 
     // Adds a member (by session id and admin status) to this group.  Returns true if the member was
     // inserted or changed admin status, false if the member already existed.  Throws
     // std::invalid_argument if the given session id is invalid.
-    bool insert(std::string_view session_id, bool admin);
-    bool insert(std::string&& session_id, bool admin);
+    bool insert(std::string session_id, bool admin);
 
     // Removes a member (by session id) from this group.  Returns true if the member was
     // removed, false if the member was not present.

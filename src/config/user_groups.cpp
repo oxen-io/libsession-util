@@ -88,6 +88,43 @@ void legacy_group_info::load(const dict& info_dict) {
         disappearing_timer = 0min;
     hidden = maybe_int(info_dict, "h").value_or(0);
     priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
+
+    members_.clear();
+    if (auto* members = maybe_set(info_dict, "m"))
+        for (const auto& field : *members)
+            if (auto* s = std::get_if<std::string>(&field))
+                if (s->size() == 33 && (*s)[0] == 0x05)
+                    members_.emplace_hint(members_.end(), oxenc::to_hex(*s), false);
+
+    if (auto* members = maybe_set(info_dict, "a"))
+        for (const auto& field : *members)
+            if (auto* s = std::get_if<std::string>(&field))
+                if (s->size() == 33 && (*s)[0] == 0x05)
+                    members_.emplace(oxenc::to_hex(*s), true);
+}
+
+std::pair<size_t, size_t> legacy_group_info::counts() const {
+    std::pair<size_t, size_t> counts{0, 0};
+    auto& [admins, members] = counts;
+    for (const auto& [sid, admin] : members_)
+        ++(admin ? admins : members);
+    return counts;
+}
+
+bool legacy_group_info::insert(std::string session_id, bool admin) {
+    check_session_id(session_id);
+    auto [it, inserted] = members_.emplace(std::move(session_id), admin);
+    if (inserted)
+        return true;
+    if (it->second != admin) {
+        it->second = admin;
+        return true;
+    }
+    return false;
+}
+
+bool legacy_group_info::erase(const std::string& session_id) {
+    return members_.erase(session_id);
 }
 
 void community_info::load(const dict& info_dict) {
@@ -110,7 +147,7 @@ ConfigBase::DictFieldProxy UserGroups::community_field(
             *get_pubkey =
                     ustring_view{reinterpret_cast<const unsigned char*>(pk.data()), pk.size()};
     }
-    return record["R"][og.room()];
+    return record["R"][og.room_norm()];
 }
 
 std::optional<community_info> UserGroups::get_community(
@@ -170,8 +207,7 @@ void UserGroups::set(const community_info& c) {
     data["o"][c.base_url()]["#"] = c.pubkey();
     auto info = community_field(c);  // data["o"][base]["R"][lc_room]
     info["n"] = c.room();
-    if (c.priority > 0)
-        info["+"] = c.priority;
+    set_positive_int(info["+"], c.priority);
 }
 
 void UserGroups::set(const legacy_group_info& g) {
@@ -181,13 +217,12 @@ void UserGroups::set(const legacy_group_info& g) {
     else
         info["n"] = g.name;
 
-    if (g.enc_pubkey.size() == 32 && g.enc_seckey.size() == 32) {
-        info["k"] = g.enc_pubkey;
-        info["K"] = g.enc_seckey;
-    } else {
-        info["k"].erase();
-        info["K"].erase();
-    }
+    set_pair_if(
+            g.enc_pubkey.size() == 32 && g.enc_seckey.size() == 32,
+            info["k"],
+            g.enc_pubkey,
+            info["K"],
+            g.enc_seckey);
 
     config::set members, admins;
     for (const auto& [member, admin] : g.members_) {
@@ -196,15 +231,9 @@ void UserGroups::set(const legacy_group_info& g) {
     }
     info["m"] = std::move(members);
     info["a"] = std::move(admins);
-    if (g.disappearing_timer > 0min)
-        info["E"] = g.disappearing_timer.count();
-    else
-        info["E"].erase();
-
-    if (g.hidden)
-        info["h"] = 1;
-    else
-        info["h"].erase();
+    set_positive_int(info["E"], g.disappearing_timer.count());
+    set_positive_int(info["+"], g.priority);
+    set_flag(info["h"], g.hidden);
 }
 
 template <typename Field>
@@ -491,11 +520,12 @@ bool user_groups_it_is_impl(user_groups_iterator* it, C* c) {
 }
 }  // namespace
 
-LIBSESSION_C_API bool user_groups_it_is_open(user_groups_iterator* it, ugroups_community_info* c) {
+LIBSESSION_C_API bool user_groups_it_is_community(
+        user_groups_iterator* it, ugroups_community_info* c) {
     return user_groups_it_is_impl<community_info>(it, c);
 }
 
-LIBSESSION_C_API bool user_groups_it_is_legacy_closed(
+LIBSESSION_C_API bool user_groups_it_is_legacy_group(
         user_groups_iterator* it, ugroups_legacy_group_info* g) {
     return user_groups_it_is_impl<legacy_group_info>(it, g);
 }

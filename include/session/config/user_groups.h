@@ -104,7 +104,7 @@ bool user_groups_erase_legacy_group(config_object* conf, const char* group_id);
 size_t user_groups_size(const config_object* conf);
 /// Returns the number of conversations of the specific type.
 size_t user_groups_size_communities(const config_object* conf);
-size_t user_groups_size_legacy_group(const config_object* conf);
+size_t user_groups_size_legacy_groups(const config_object* conf);
 
 /// Functions for iterating through the entire conversation list.  Intended use is:
 ///
@@ -169,9 +169,9 @@ void user_groups_iterator_advance(user_groups_iterator* it);
 // returns true.  Otherwise it returns false.
 bool user_groups_it_is_community(user_groups_iterator* it, ugroups_community_info* c);
 
-// If the current iterator record is a legacy closed group conversation this sets the details into
+// If the current iterator record is a legacy group conversation this sets the details into
 // `c` and returns true.  Otherwise it returns false.
-bool user_groups_it_is_legacy_closed(user_groups_iterator* it, ugroups_legacy_group_info* c);
+bool user_groups_it_is_legacy_group(user_groups_iterator* it, ugroups_legacy_group_info* c);
 
 // Erases the current group while advancing the iterator to the next group in the iteration.
 void user_groups_iterator_erase(config_object* conf, user_groups_iterator* it);

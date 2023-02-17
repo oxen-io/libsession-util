@@ -204,13 +204,12 @@ void Contacts::set(const contact_info& contact) {
     info["n"] = contact.name.substr(0, contact_info::MAX_NAME_LENGTH);
     set_nonempty_str(info["N"], contact.nickname.substr(0, contact_info::MAX_NAME_LENGTH));
 
-    if (contact.profile_picture) {
-        info["p"] = contact.profile_picture.url;
-        info["q"] = contact.profile_picture.key;
-    } else {
-        info["p"].erase();
-        info["q"].erase();
-    }
+    set_pair_if(
+            contact.profile_picture,
+            info["p"],
+            contact.profile_picture.url,
+            info["q"],
+            contact.profile_picture.key);
 
     set_flag(info["a"], contact.approved);
     set_flag(info["A"], contact.approved_me);
@@ -219,13 +218,12 @@ void Contacts::set(const contact_info& contact) {
 
     set_positive_int(info["+"], contact.priority);
 
-    if (contact.exp_mode != expiration_mode::none && contact.exp_timer > 0min) {
-        info["e"] = static_cast<int8_t>(contact.exp_mode);
-        info["E"] = contact.exp_timer.count();
-    } else {
-        info["e"].erase();
-        info["E"].erase();
-    }
+    set_pair_if(
+            contact.exp_mode != expiration_mode::none && contact.exp_timer > 0min,
+            info["e"],
+            static_cast<int8_t>(contact.exp_mode),
+            info["E"],
+            contact.exp_timer.count());
 }
 
 LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* contact) {
