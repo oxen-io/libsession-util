@@ -43,6 +43,13 @@ target_link_libraries(config
     common)
 
 
+if(WARNINGS_AS_ERRORS AND NOT USE_LTO AND CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION MATCHES "^11\\.")
+    # GCC 11 has an overzealous (and false) stringop-overread warning, but only when LTO is off.
+    # Um, yeah.
+    target_compile_options(config PUBLIC -Wno-error=stringop-overread)
+endif()
+
+
 if(LIBSESSION_UTIL_VERSIONTAG)
     set(PROJECT_VERSION_TAG "${LIBSESSION_UTIL_VERSIONTAG}")
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/version.c.in" "${CMAKE_CURRENT_BINARY_DIR}/version.c")
