@@ -100,6 +100,7 @@ if(STATIC_BUNDLE)
     combine_archives(session-util
         crypto
         config
+        version
         libsodium-internal
         libzstd_static)
     set(lib_folder lib)

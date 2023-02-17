@@ -8,6 +8,7 @@
 #include <session/config.hpp>
 
 #include "session/bt_merge.hpp"
+#include "session/version.h"
 #include "utils.hpp"
 
 using namespace session;
@@ -18,6 +19,14 @@ using config::MutableConfigMessage;
 using oxenc::bt_dict;
 using oxenc::bt_list;
 
+TEST_CASE("libsession-util version", "[version]") {
+    CHECK(LIBSESSION_UTIL_VERSION[0] + LIBSESSION_UTIL_VERSION[1] + LIBSESSION_UTIL_VERSION[2] > 0);
+    CHECK(LIBSESSION_UTIL_VERSION_STR[0] == 'v');
+    CHECK('0' <= LIBSESSION_UTIL_VERSION_STR[1]);
+    CHECK(LIBSESSION_UTIL_VERSION_STR[1] <= '9');
+    CHECK(std::string_view{LIBSESSION_UTIL_VERSION_STR}.find(".") != std::string_view::npos);
+    CHECK(std::string_view{LIBSESSION_UTIL_VERSION_FULL}.substr(0, 17) == "libsession-util v");
+}
 TEST_CASE("config data scalar encoding", "[config][data][scalar]") {
     CHECK(oxenc::bt_serialize(config::scalar{3}) == "i3e");
     CHECK(oxenc::bt_serialize(config::scalar{"hi"}) == "2:hi");
