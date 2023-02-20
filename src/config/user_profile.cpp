@@ -11,6 +11,8 @@
 using namespace session::config;
 using session::ustring_view;
 
+LIBSESSION_C_API const size_t PROFILE_PIC_MAX_URL_LENGTH = profile_pic::MAX_URL_LENGTH;
+
 UserProfile::UserProfile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
         ConfigBase{dumped} {
     load_key(ed25519_secretkey);

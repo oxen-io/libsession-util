@@ -21,6 +21,12 @@
 using namespace std::literals;
 using session::ustring_view;
 
+LIBSESSION_C_API const size_t GROUP_NAME_MAX_LENGTH =
+        session::config::legacy_group_info::NAME_MAX_LENGTH;
+LIBSESSION_C_API const size_t COMMUNITY_URL_MAX_LENGTH = session::config::community::URL_MAX_LENGTH;
+LIBSESSION_C_API const size_t COMMUNITY_ROOM_MAX_LENGTH =
+        session::config::community::ROOM_MAX_LENGTH;
+
 namespace session::config {
 
 legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid)} {
