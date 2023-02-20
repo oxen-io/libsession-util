@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
+#include <iostream>
 #include <session/config.hpp>
 
 #include "session/bt_merge.hpp"
@@ -662,6 +663,26 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
           "1:=" "de"
         "e"_bytes));
     // clang-format on
+}
+
+TEST_CASE("config message deserialization 2", "[config][deserialization]") {
+    // clang-format off
+    auto m = (
+        "d"
+           "1:#" "i0e"
+           "1:&" "d"
+              "0:" "le"
+              "e"
+           "1:<" "le"
+           "1:=" "de"
+        "e"_bytes);
+    // clang-format on
+
+    std::cerr << "Start to load." << std::endl;
+    MutableConfigMessage mut{m};
+    std::cerr << "Start to diff." << std::endl;
+    mut.diff();
+    std::cerr << "Should not crash above." << std::endl;
 }
 
 void updates_124(MutableConfigMessage& m) {
