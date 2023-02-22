@@ -80,6 +80,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     strcpy(p.url, "http://example.org/omg-pic-123.bmp");  // NB: length must be < sizeof(p.url)!
     memcpy(p.key, "secret78901234567890123456789012", 32);
     CHECK(0 == user_profile_set_pic(conf, p));
+    user_profile_set_nts_priority(conf, 9);
 
     // Retrieve them just to make sure they set properly:
     name = user_profile_get_name(conf);
@@ -91,6 +92,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     REQUIRE(pic.key);
     CHECK(pic.url == "http://example.org/omg-pic-123.bmp"sv);
     CHECK(ustring_view{pic.key, 32} == "secret78901234567890123456789012"_bytes);
+
+    CHECK(user_profile_get_nts_priority(conf) == 9);
 
     // Since we've made changes, we should need to push new config to the swarm, *and* should need
     // to dump the updated state:
@@ -110,6 +113,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "d"
           "1:#" "i1e"
           "1:&" "d"
+            "1:+" "i9e"
             "1:n" "6:Kallie"
             "1:p" "34:http://example.org/omg-pic-123.bmp"
             "1:q" "32:secret78901234567890123456789012"
@@ -118,6 +122,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "l" "i0e" "32:"_bytes + exp_hash0 + "de" "e"
           "e"
           "1:=" "d"
+            "1:+" "0:"
             "1:n" "0:"
             "1:p" "0:"
             "1:q" "0:"
@@ -125,13 +130,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "e"_bytes;
     // clang-format on
     auto exp_push1_encrypted =
-            "877c8e0f5d33f5fffa5a4e162785a9a89918e95de1c4b925201f1f5c29d9ee4f8c36e2b278fce1e6"
-            "b9d999689dd86ff8e79e0a04004fa54d24da89bc2604cb1df8c1356da8f14710543ecec44f2d57fc"
-            "56ea8b7e73d119c69d755f4d513d5d069f02396b8ec0cbed894169836f57ca4b782ce705895c593b"
-            "4230d50c175d44a08045388d3f4160bacb617b9ae8de3ebc8d9024245cd09ce102627cab2acf1b91"
-            "26159211359606611ca5814de320d1a7099a65c99b0eebbefb92a115f5efa6b9132809300ac010c6"
-            "857cfbd62af71b0fa97eccec75cb95e67edf40b35fdb9cad125a6976693ab085c6bba96a2e51826e"
-            "81e16b9ec1232af5680f2ced55310486"_hexbytes;
+            "9693a69686da3055f1ecdfb239c3bf8e746951a36d888c2fb7c02e856a5c2091b24e39a7e1af828f"
+            "1fa09fe8bf7d274afde0a0847ba143c43ffb8722301b5ae32e2f078b9a5e19097403336e50b18c84"
+            "aade446cd2823b011f97d6ad2116a53feb814efecc086bc172d31f4214b4d7c630b63bbe575b0868"
+            "2d146da44915063a07a78556ab5eff4f67f6aa26211e8d330b53d28567a931028c393709a325425d"
+            "e7486ccde24416a7fd4a8ba5fa73899c65f4276dfaddd5b2100adcf0f793104fb235b31ce32ec656"
+            "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
+            "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
 
     CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == to_hex(exp_push1_encrypted));
 
@@ -284,6 +289,9 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     REQUIRE(pic.key);
     CHECK(to_hex(ustring_view{pic.key, 32}) ==
           "7177657274007975696f31323334353637383930313233343536373839303132");
+
+    CHECK(user_profile_get_nts_priority(conf) == 9);
+    CHECK(user_profile_get_nts_priority(conf2) == 9);
 
     config_confirm_pushed(conf, seqno);
     config_confirm_pushed(conf2, seqno2);

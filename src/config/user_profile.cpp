@@ -92,3 +92,20 @@ LIBSESSION_C_API int user_profile_set_pic(config_object* conf, user_profile_pic 
 
     return 0;
 }
+
+void UserProfile::set_nts_priority(int priority) {
+    set_positive_int(data["+"], priority);
+}
+
+int UserProfile::get_nts_priority() const {
+    return data["+"].integer_or(0);
+}
+
+LIBSESSION_C_API int user_profile_get_nts_priority(const config_object* conf) {
+    return unbox<UserProfile>(conf)->get_nts_priority();
+}
+
+// Sets the current note-to-self priority level. Should be >= 0 (negatives will be set to 0).
+LIBSESSION_C_API void user_profile_set_nts_priority(config_object* conf, int priority) {
+    unbox<UserProfile>(conf)->set_nts_priority(priority);
+}
