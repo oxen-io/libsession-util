@@ -98,14 +98,14 @@ void contact_info::load(const dict& info_dict) {
         exp_mode = expiration_mode::none;
 
     if (exp_mode == expiration_mode::none)
-        exp_timer = 0min;
+        exp_timer = 0s;
     else {
-        int mins = maybe_int(info_dict, "E").value_or(0);
-        if (mins <= 0) {
+        int secs = maybe_int(info_dict, "E").value_or(0);
+        if (secs <= 0) {
             exp_mode = expiration_mode::none;
-            exp_timer = 0min;
+            exp_timer = 0s;
         } else {
-            exp_timer = std::chrono::minutes{mins};
+            exp_timer = std::chrono::seconds{secs};
         }
     }
 }
@@ -130,8 +130,8 @@ void contact_info::into(contacts_contact& c) const {
     c.hidden = hidden;
     c.priority = std::max(0, priority);
     c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
-    c.exp_minutes = exp_timer.count();
-    if (c.exp_minutes <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
+    c.exp_seconds = exp_timer.count();
+    if (c.exp_seconds <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
         c.exp_mode = CONVO_EXPIRATION_NONE;
 }
 
@@ -151,8 +151,8 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     hidden = c.hidden;
     priority = std::max(0, c.priority);
     exp_mode = static_cast<expiration_mode>(c.exp_mode);
-    exp_timer = exp_mode == expiration_mode::none ? 0min : std::chrono::minutes{c.exp_minutes};
-    if (exp_timer <= 0min && exp_mode != expiration_mode::none)
+    exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
+    if (exp_timer <= 0s && exp_mode != expiration_mode::none)
         exp_mode = expiration_mode::none;
 }
 
@@ -221,7 +221,7 @@ void Contacts::set(const contact_info& contact) {
     set_positive_int(info["+"], contact.priority);
 
     set_pair_if(
-            contact.exp_mode != expiration_mode::none && contact.exp_timer > 0min,
+            contact.exp_mode != expiration_mode::none && contact.exp_timer > 0s,
             info["e"],
             static_cast<int8_t>(contact.exp_mode),
             info["E"],
@@ -276,10 +276,10 @@ void Contacts::set_priority(std::string_view session_id, int priority) {
 }
 
 void Contacts::set_expiry(
-        std::string_view session_id, expiration_mode mode, std::chrono::minutes timer) {
+        std::string_view session_id, expiration_mode mode, std::chrono::seconds timer) {
     auto c = get_or_construct(session_id);
     c.exp_mode = mode;
-    c.exp_timer = c.exp_mode == expiration_mode::none ? 0min : timer;
+    c.exp_timer = c.exp_mode == expiration_mode::none ? 0s : timer;
     set(c);
 }
 

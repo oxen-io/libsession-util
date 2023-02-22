@@ -88,10 +88,10 @@ void legacy_group_info::load(const dict& info_dict) {
         enc_pubkey.clear();
         enc_seckey.clear();
     }
-    if (auto minutes = maybe_int(info_dict, "E").value_or(0); minutes > 0)
-        disappearing_timer = std::chrono::minutes(minutes);
+    if (auto secs = maybe_int(info_dict, "E").value_or(0); secs > 0)
+        disappearing_timer = std::chrono::seconds{secs};
     else
-        disappearing_timer = 0min;
+        disappearing_timer = 0s;
     hidden = maybe_int(info_dict, "h").value_or(0);
     priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
 

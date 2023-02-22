@@ -27,7 +27,7 @@ namespace session::config {
 ///     K - encryption secret key (32 bytes).  Optional.
 ///     m - set of member session ids (each 33 bytes).
 ///     a - set of admin session ids (each 33 bytes).
-///     E - disappearing messages duration, in minutes, > 0.  Omitted if disappearing messages is
+///     E - disappearing messages duration, in seconds, > 0.  Omitted if disappearing messages is
 ///         disabled.  (Note that legacy groups only support expire after-read)
 ///     h - hidden: 1 if the conversation has been removed from the conversation list, omitted if
 ///         visible.
@@ -60,7 +60,7 @@ struct legacy_group_info {
                        // set to an empty string.
     ustring enc_pubkey;                          // bytes (32 or empty)
     ustring enc_seckey;                          // bytes (32 or empty)
-    std::chrono::minutes disappearing_timer{0};  // 0 == disabled.
+    std::chrono::seconds disappearing_timer{0};  // 0 == disabled.
     bool hidden = false;  // true if the conversation is hidden from the convo list
     int priority = 0;     // The priority; 0 means unpinned, larger means pinned higher (i.e.
                           // higher priority conversations come first).
