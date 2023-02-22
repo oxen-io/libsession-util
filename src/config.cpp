@@ -419,7 +419,7 @@ namespace {
 
             if (scalar_diff) {
                 if (*scalar_diff == "-")
-                    data.erase(source_it);
+                    data.erase(k);
                 else if (*scalar_diff == "")
                     data[k] = var::get<scalar>(source_val);
                 else
