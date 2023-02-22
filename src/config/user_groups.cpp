@@ -34,7 +34,9 @@ legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid
 }
 
 community_info::community_info(const ugroups_community_info& c) :
-        community_info{c.base_url, c.room, ustring_view{c.pubkey, 32}} {}
+        community_info{c.base_url, c.room, ustring_view{c.pubkey, 32}} {
+    priority = c.priority;
+}
 
 void community_info::into(ugroups_community_info& c) const {
     static_assert(sizeof(c.base_url) == URL_MAX_LENGTH + 1);
