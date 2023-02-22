@@ -5,7 +5,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
-#include <iostream>
 #include <session/config.hpp>
 
 #include "session/bt_merge.hpp"
@@ -665,9 +664,13 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
     // clang-format on
 }
 
-TEST_CASE("config message deserialization 2", "[config][deserialization]") {
+TEST_CASE("config message empty set/list deserialization", "[config][deserialization][empty]") {
+    // Test that we can properly notice data with an invalid empty set/dict in it.  We were
+    // previously not noticing this, allowing it as input, and then segfaulting because we assumed
+    // the data was valid (and thus that we would not encounter this case).
+
     // clang-format off
-    auto m = (
+    auto has_empty_set = (
         "d"
            "1:#" "i0e"
            "1:&" "d"
@@ -676,13 +679,28 @@ TEST_CASE("config message deserialization 2", "[config][deserialization]") {
            "1:<" "le"
            "1:=" "de"
         "e"_bytes);
+
+    auto has_empty_dict = (
+        "d"
+           "1:#" "i0e"
+           "1:&" "d"
+              "0:" "de"
+              "e"
+           "1:<" "le"
+           "1:=" "de"
+        "e"_bytes);
     // clang-format on
 
-    std::cerr << "Start to load." << std::endl;
-    MutableConfigMessage mut{m};
-    std::cerr << "Start to diff." << std::endl;
-    mut.diff();
-    std::cerr << "Should not crash above." << std::endl;
+    using Catch::Matchers::Message;
+
+    CHECK_THROWS_MATCHES(
+            MutableConfigMessage(has_empty_set),
+            config::config_error,
+            Message("Failed to parse config file: Data contains an unpruned, empty set"));
+    CHECK_THROWS_MATCHES(
+            MutableConfigMessage(has_empty_dict),
+            config::config_error,
+            Message("Failed to parse config file: Data contains an unpruned, empty dict"));
 }
 
 void updates_124(MutableConfigMessage& m) {

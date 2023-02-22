@@ -268,7 +268,9 @@ namespace {
     }
 
     void parse_data(set& s, oxenc::bt_list_consumer in);
-    void parse_data(dict& d, oxenc::bt_dict_consumer in) {
+    void parse_data(dict& d, oxenc::bt_dict_consumer in, bool top_level = false) {
+        if (!top_level && in.is_finished())
+            throw oxenc::bt_deserialize_invalid{"Data contains an unpruned, empty dict"};
         while (!in.is_finished()) {
             std::string key{in.key()};
             if (not d.empty() && key <= d.rbegin()->first)
@@ -290,6 +292,8 @@ namespace {
     }
 
     void parse_data(set& s, oxenc::bt_list_consumer in) {
+        if (in.is_finished())
+            throw oxenc::bt_deserialize_invalid{"Data contains an unpruned, empty set"};
         while (!in.is_finished()) {
             scalar val;
             if (in.is_integer())
@@ -540,7 +544,7 @@ ConfigMessage::ConfigMessage(
             throw config_parse_error{"Invalid config: first key must be \"#\""};
         load_unknowns(unknown_, dict, "#", "&");
         if (auto [k, data] = dict.next_dict_consumer(); k == "&")
-            parse_data(data_, std::move(data));
+            parse_data(data_, std::move(data), /*top_level=*/true);
         else
             throw config_parse_error{"Invalid config: \"&\" data dict not found"};
         load_unknowns(unknown_, dict, "&", "<");
