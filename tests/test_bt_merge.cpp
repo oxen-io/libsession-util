@@ -1,11 +1,35 @@
+#include <rapidcheck.h>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include "rc_gen_bt_value.hpp"
 #include "catch2_bt_format.hpp"
+#include "rapidcheck/catch.h"
 #include "session/bt_merge.hpp"
 
 using oxenc::bt_dict;
 using oxenc::bt_list;
 using oxenc::bt_value;
+
+TEST_CASE("bt_dict operator== properties", "[bt_dict][operator==]") {
+    rc::check(
+            "[bt_dict][operator==] order insensitive",
+            [](const std::string& x_k,
+               const std::string& y_k,
+               const bt_value& x_v,
+               const bt_value& y_v) {
+                auto x = bt_dict{{x_k, x_v}};
+                auto y = bt_dict{{y_k, y_v}};
+                auto xy = bt_dict{{x_k, x_v}, {y_k, y_v}};
+                auto yx = bt_dict{{y_k, y_v}, {x_k, x_v}};
+                if (x_k == y_k) {
+                    REQUIRE(xy == x);
+                    REQUIRE(yx == y);
+                } else {
+                    REQUIRE(xy == yx);
+                }
+            });
+}
 
 TEST_CASE("bt_dict merging", "[bt_dict][merge]") {
     bt_dict x{{"a", 1}, {"b", 2}, {"c", 3}};
