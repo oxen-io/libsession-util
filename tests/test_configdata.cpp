@@ -664,6 +664,45 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
     // clang-format on
 }
 
+TEST_CASE("config message empty set/list deserialization", "[config][deserialization][empty]") {
+    // Test that we can properly notice data with an invalid empty set/dict in it.  We were
+    // previously not noticing this, allowing it as input, and then segfaulting because we assumed
+    // the data was valid (and thus that we would not encounter this case).
+
+    // clang-format off
+    auto has_empty_set = (
+        "d"
+           "1:#" "i0e"
+           "1:&" "d"
+              "0:" "le"
+              "e"
+           "1:<" "le"
+           "1:=" "de"
+        "e"_bytes);
+
+    auto has_empty_dict = (
+        "d"
+           "1:#" "i0e"
+           "1:&" "d"
+              "0:" "de"
+              "e"
+           "1:<" "le"
+           "1:=" "de"
+        "e"_bytes);
+    // clang-format on
+
+    using Catch::Matchers::Message;
+
+    CHECK_THROWS_MATCHES(
+            MutableConfigMessage(has_empty_set),
+            config::config_error,
+            Message("Failed to parse config file: Data contains an unpruned, empty set"));
+    CHECK_THROWS_MATCHES(
+            MutableConfigMessage(has_empty_dict),
+            config::config_error,
+            Message("Failed to parse config file: Data contains an unpruned, empty dict"));
+}
+
 void updates_124(MutableConfigMessage& m) {
     m.data()["dictA"] = config::dict{
             {"hello", 123},
