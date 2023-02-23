@@ -2,9 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "rc_gen_bt_value.hpp"
+#include "bt_cmp.hpp"
 #include "catch2_bt_format.hpp"
 #include "rapidcheck/catch.h"
+#include "rc_gen_bt_value.hpp"
 #include "session/bt_merge.hpp"
 
 using oxenc::bt_dict;
@@ -122,3 +123,77 @@ TEST_CASE("bt_list sorted merge", "[bt_list][merge]") {
     CHECK(session::bt::merge_sorted(bt_list{}, bt_list{}, compare) == bt_list{});
     CHECK(session::bt::merge_sorted(bt_list{}, bt_list{}, compare, true) == bt_list{});
 }
+
+bt_list unique_sorted(const bt_list& list) {
+    std::set<bt_value> unique_values(list.begin(), list.end());
+    bt_list sorted_list(unique_values.begin(), unique_values.end());
+    sorted_list.sort(bt_cmp);
+    return sorted_list;
+}
+
+bt_list gen_unique_sorted_bt_list() {
+    return unique_sorted(*rc::gen::arbitrary<bt_list>());
+}
+
+namespace session::bt {
+TEST_CASE("bt_list sorted merge properties", "[bt_list][merge]") {
+    rc::check("[bt_list][merge] identity element", []() {
+        auto e = bt_list{};
+        auto x = gen_unique_sorted_bt_list();
+        auto duplicates = *rc::gen::arbitrary<bool>();
+        REQUIRE(merge_sorted(e, e, bt_cmp, duplicates) == e);
+        REQUIRE(merge_sorted(x, e, bt_cmp, duplicates) == x);
+        REQUIRE(merge_sorted(e, x, bt_cmp, duplicates) == x);
+    });
+
+    rc::check("[bt_list][merge] singleton list", []() {
+        auto x = gen_unique_sorted_bt_list();
+        auto v = bt_value{*rc::gen::arbitrary<int64_t>()};
+        auto y = bt_list{v};
+        auto xy = merge_sorted(x, y, bt_cmp, false);
+        if (std::find(x.begin(), x.end(), v) != x.end()) {
+            REQUIRE(xy == x);
+        } else {
+            REQUIRE(xy.size() == x.size() + 1);
+            REQUIRE(std::find(xy.begin(), xy.end(), v) != xy.end());
+        }
+    });
+
+    rc::check("[bt_list][merge] duplicates", []() {
+        auto x = gen_unique_sorted_bt_list();
+        auto y = gen_unique_sorted_bt_list();
+        auto xy = merge_sorted(x, y, bt_cmp, true);
+        REQUIRE(xy.size() == x.size() + y.size());
+    });
+
+    rc::check("[bt_list][merge] self merge", []() {
+        auto x = gen_unique_sorted_bt_list();
+        REQUIRE(merge_sorted(x, x, bt_cmp, false) == x);
+    });
+
+    rc::check("[bt_list][merge] communicative", []() {
+        auto x = gen_unique_sorted_bt_list();
+        auto y = gen_unique_sorted_bt_list();
+        auto duplicates = *rc::gen::arbitrary<bool>();
+        auto xy = merge_sorted(x, y, bt_cmp, duplicates);
+        auto yx = merge_sorted(y, x, bt_cmp, duplicates);
+        REQUIRE(xy == yx);
+    });
+
+    rc::check("[bt_list][merge] associative", []() {
+        auto x = gen_unique_sorted_bt_list();
+        auto y = gen_unique_sorted_bt_list();
+        auto z = gen_unique_sorted_bt_list();
+        auto duplicates = *rc::gen::arbitrary<bool>();
+
+        auto xy = merge_sorted(x, y, bt_cmp, duplicates);
+        auto xy_z = merge_sorted(xy, z, bt_cmp, duplicates);
+
+        auto yz = merge_sorted(y, z, bt_cmp, duplicates);
+        auto x_yz = merge_sorted(x, yz, bt_cmp, duplicates);
+
+        REQUIRE(xy_z == x_yz);
+    });
+}
+
+}  // namespace session::bt

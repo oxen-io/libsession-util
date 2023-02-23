@@ -15,6 +15,7 @@ add_executable(testAll
     test_encrypt.cpp
     test_xed25519.cpp
     rc_gen_bt_value.cpp
+    bt_cmp.cpp
     )
 
 target_link_libraries(testAll PRIVATE
