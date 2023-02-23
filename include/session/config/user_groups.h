@@ -10,12 +10,6 @@ extern "C" {
 // Maximum length of a group name, in bytes
 extern const size_t GROUP_NAME_MAX_LENGTH;
 
-// Maximum length of a community full URL
-extern const size_t COMMUNITY_URL_MAX_LENGTH;
-
-// Maximum length of a community room token
-extern const size_t COMMUNITY_ROOM_MAX_LENGTH;
-
 typedef struct ugroups_legacy_group_info {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
 

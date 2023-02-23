@@ -45,7 +45,7 @@ namespace convo {
             base{c.last_read, c.unread} {}
 
     void community::into(convo_info_volatile_community& c) const {
-        static_assert(sizeof(c.base_url) == URL_MAX_LENGTH + 1);
+        static_assert(sizeof(c.base_url) == BASE_URL_MAX_LENGTH + 1);
         static_assert(sizeof(c.room) == ROOM_MAX_LENGTH + 1);
         copy_c_str(c.base_url, base_url());
         copy_c_str(c.room, room_norm());

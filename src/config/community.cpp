@@ -12,6 +12,8 @@
 #include "internal.hpp"
 #include "oxenc/base32z.h"
 #include "oxenc/base64.h"
+#include "session/config/community.h"
+#include "session/export.h"
 #include "session/util.hpp"
 
 namespace session::config {
@@ -70,6 +72,22 @@ std::string community::pubkey_b64() const {
 void community::set_room(std::string_view room) {
     room_ = canonical_room(room);  // Also validates and throws on error
     localized_room_ = room;
+}
+
+static constexpr std::string_view qs_pubkey{"?public_key="};
+
+std::string community::full_url() const {
+    return full_url(base_url(), room(), pubkey());
+}
+
+std::string community::full_url(
+        std::string_view base_url, std::string_view room, ustring_view pubkey) {
+    std::string url{base_url};
+    url += '/';
+    url += room;
+    url += qs_pubkey;
+    url += oxenc::to_hex(pubkey);
+    return url;
 }
 
 // returns protocol, host, port.  Port can be empty; throws on unparseable values.  protocol and
@@ -160,7 +178,7 @@ std::string community::canonical_url(std::string_view url) {
         result += ':';
         result += std::to_string(port);
     }
-    if (result.size() > URL_MAX_LENGTH)
+    if (result.size() > BASE_URL_MAX_LENGTH)
         throw std::invalid_argument{"Invalid community URL: base URL is too long"};
     return result;
 }
@@ -170,8 +188,6 @@ std::string community::canonical_room(std::string_view room) {
     canonicalize_room(r);
     return r;
 }
-
-static constexpr std::string_view qs_pubkey{"?public_key="};
 
 std::tuple<std::string, std::string, ustring> community::parse_full_url(std::string_view full_url) {
     std::tuple<std::string, std::string, ustring> result;
@@ -201,3 +217,36 @@ std::tuple<std::string, std::string, ustring> community::parse_full_url(std::str
 }
 
 }  // namespace session::config
+
+LIBSESSION_C_API const size_t COMMUNITY_BASE_URL_MAX_LENGTH =
+        session::config::community::BASE_URL_MAX_LENGTH;
+LIBSESSION_C_API const size_t COMMUNITY_ROOM_MAX_LENGTH =
+        session::config::community::ROOM_MAX_LENGTH;
+LIBSESSION_C_API const size_t COMMUNITY_FULL_URL_MAX_LENGTH =
+        COMMUNITY_BASE_URL_MAX_LENGTH + 3 /* '/r/' */ + COMMUNITY_ROOM_MAX_LENGTH +
+        session::config::qs_pubkey.size() + 64 /*pubkey hex*/ + 1 /*null terminator*/;
+
+LIBSESSION_C_API bool community_parse_full_url(
+        const char* full_url, char* base_url, char* room_token, unsigned char* pubkey) {
+    try {
+        auto [base, room, pk] = session::config::community::parse_full_url(full_url);
+        assert(base.size() <= COMMUNITY_BASE_URL_MAX_LENGTH);
+        assert(room.size() <= COMMUNITY_ROOM_MAX_LENGTH);
+        assert(pk.size() == 32);
+        std::memcpy(base_url, base.data(), base.size() + 1);
+        std::memcpy(room_token, room.data(), room.size() + 1);
+        std::memcpy(pubkey, pk.data(), pk.size());
+        return true;
+    } catch (...) {
+    }
+    return false;
+}
+
+LIBSESSION_C_API void community_make_full_url(
+        const char* base_url, const char* room, const unsigned char* pubkey, char* full_url) {
+    auto full =
+            session::config::community::full_url(base_url, room, session::ustring_view{pubkey, 32});
+    assert(full.size() <= COMMUNITY_FULL_URL_MAX_LENGTH);
+    size_t pos = 0;
+    std::memcpy(full_url, full.data(), full.size() + 1);
+}

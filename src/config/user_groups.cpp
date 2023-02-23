@@ -23,9 +23,6 @@ using session::ustring_view;
 
 LIBSESSION_C_API const size_t GROUP_NAME_MAX_LENGTH =
         session::config::legacy_group_info::NAME_MAX_LENGTH;
-LIBSESSION_C_API const size_t COMMUNITY_URL_MAX_LENGTH = session::config::community::URL_MAX_LENGTH;
-LIBSESSION_C_API const size_t COMMUNITY_ROOM_MAX_LENGTH =
-        session::config::community::ROOM_MAX_LENGTH;
 
 namespace session::config {
 
@@ -39,7 +36,7 @@ community_info::community_info(const ugroups_community_info& c) :
 }
 
 void community_info::into(ugroups_community_info& c) const {
-    static_assert(sizeof(c.base_url) == URL_MAX_LENGTH + 1);
+    static_assert(sizeof(c.base_url) == BASE_URL_MAX_LENGTH + 1);
     static_assert(sizeof(c.room) == ROOM_MAX_LENGTH + 1);
     copy_c_str(c.base_url, base_url());
     copy_c_str(c.room, room());
