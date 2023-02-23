@@ -199,7 +199,7 @@ void ConvoInfoVolatile::set_base(const convo::base& c, DictFieldProxy& info) {
     set_flag(info["u"], c.unread);
 }
 
-std::pair<ustring, seqno_t> ConvoInfoVolatile::push() {
+std::tuple<seqno_t, ustring, std::vector<std::string>> ConvoInfoVolatile::push() {
     // Prune off any conversations with last_read timestamps more than PRUNE_HIGH ago (unless they
     // also have a `unread` flag set, in which case we keep them indefinitely).
     const int64_t cutoff =

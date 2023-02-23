@@ -423,7 +423,7 @@ TEST_CASE("config message signature", "[config][signing]") {
                     nullptr,
                     ConfigMessage::DEFAULT_DIFF_LAGS,
                     false,
-                    [](const auto& exc) { throw exc; }),
+                    [](size_t, const auto& exc) { throw exc; }),
             config::config_error,
             Message("Config signature failed verification"));
 
@@ -609,7 +609,6 @@ TEST_CASE("config message deserialization", "[config][deserialization]") {
         {"int1"s, ""s},
         {"int2"s, ""s}
     });
-    CHECK_FALSE(m.merged());
     CHECK_FALSE(m.verified_signature());
 
     auto expected_data = data118;

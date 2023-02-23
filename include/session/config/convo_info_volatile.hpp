@@ -136,7 +136,7 @@ class ConvoInfoVolatile : public ConfigBase {
     static constexpr auto PRUNE_HIGH = 45 * 24h;
 
     /// Overrides push() to prune stale last-read values before we do the push.
-    std::pair<ustring, seqno_t> push() override;
+    std::tuple<seqno_t, ustring, std::vector<std::string>> push() override;
 
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `convo::one_to_one`.

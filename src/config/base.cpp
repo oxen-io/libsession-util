@@ -18,6 +18,15 @@ using namespace std::literals;
 
 namespace session::config {
 
+void ConfigBase::set_state(ConfigState s) {
+    if (_state == ConfigState::Clean && !_curr_hash.empty()) {
+        _old_hashes.insert(std::move(_curr_hash));
+        _curr_hash.clear();
+    }
+    _state = s;
+    _needs_dump = true;
+}
+
 MutableConfigMessage& ConfigBase::dirty() {
     if (_state != ConfigState::Dirty) {
         set_state(ConfigState::Dirty);
@@ -29,11 +38,11 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
-int ConfigBase::merge(const std::vector<ustring>& configs) {
-    std::vector<ustring_view> config_views;
+int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& configs) {
+    std::vector<std::pair<std::string, ustring_view>> config_views;
     config_views.reserve(configs.size());
-    for (auto& c : configs)
-        config_views.emplace_back(c);
+    for (auto& [hash, data] : configs)
+        config_views.emplace_back(hash, data);
     return merge(config_views);
 }
 
@@ -44,21 +53,24 @@ std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... ar
     return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
 }
 
-int ConfigBase::merge(const std::vector<ustring_view>& configs) {
+int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
 
     if (_keys_size == 0)
         throw std::logic_error{"Cannot merge configs without any decryption keys"};
 
     const auto old_seqno = _config->seqno();
+    std::vector<std::string_view> all_hashes;
     std::vector<ustring_view> all_confs;
+    all_hashes.reserve(configs.size() + 1);
     all_confs.reserve(configs.size() + 1);
     // We serialize our current config and include it in the list of configs to be merged, as if it
     // had already been pushed to the server (so that this code will be identical whether or not the
     // value was pushed).
     auto mine = _config->serialize();
+    all_hashes.emplace_back(_curr_hash);
     all_confs.emplace_back(mine);
 
-    std::vector<ustring> plaintexts;
+    std::vector<std::pair<std::string_view, ustring>> plaintexts;
 
     // TODO:
     // - handle multipart messages.  Each part of a multipart message starts with `m` and then is
@@ -69,12 +81,12 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
     //   - element 3 is the total number of messages in the sequence.
     //   - element 4 is a chunk of the data.
     for (size_t ci = 0; ci < configs.size(); ci++) {
-        auto& conf = configs[ci];
+        auto& [hash, conf] = configs[ci];
         std::optional<ustring> plaintext;
         bool decrypted = false;
         for (size_t i = 0; !decrypted && i < _keys_size; i++) {
             try {
-                plaintexts.push_back(decrypt(conf, key(i), encryption_domain()));
+                plaintexts.emplace_back(hash, decrypt(conf, key(i), encryption_domain()));
                 decrypted = true;
             } catch (const decrypt_error&) {
                 log(LogLevel::debug,
@@ -89,7 +101,7 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
         "successfully decrypted " + std::to_string(plaintexts.size()) + " of " +
                 std::to_string(configs.size()) + " incoming messages");
 
-    for (auto& plain : plaintexts) {
+    for (auto& [hash, plain] : plaintexts) {
         // Remove prefix padding:
         if (auto p = plain.find_first_not_of('\0'); p > 0 && p != std::string::npos) {
             std::memmove(plain.data(), plain.data() + p, plain.size() - p);
@@ -144,10 +156,11 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
                                  ? "'" + std::string{from_unsigned_sv(plain.substr(0, 1))} + "'"
                                  : "0x" + oxenc::to_hex(plain.begin(), plain.begin() + 1)));
 
+        all_hashes.emplace_back(hash);
         all_confs.emplace_back(plain);
     }
 
-    int good = all_confs.size();
+    std::set<size_t> bad_confs;
 
     auto new_conf = make_config_message(
             _state == ConfigState::Dirty,
@@ -156,14 +169,25 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
             nullptr, /* FIXME for signed messages: signer */
             config_lags(),
             false, /* signature not optional (if we have a verifier) */
-            [&](const config_error& e) {
-                good--;
+            [&](size_t i, const config_error& e) {
                 log(LogLevel::warning, e.what());
+                assert(i > 0);  // i == 0 means we can't deserialize our own serialization
+                bad_confs.insert(i);
             });
+
+    // All the given config msgs are stale except for:
+    // - the message we used, if we found and used a single config that includes all configs.  (This
+    //   might be our current config, or might be one single one of the new incoming messages).
+    // - confs that failed to parse (we can't understand them, so leave them behind as they may be
+    //   some future message).
+    int superconf = new_conf->unmerged_index();  // -1 if we had to merge
+    for (int i = 0; i < all_hashes.size(); i++) {
+        if (i != superconf && !bad_confs.count(i) && !all_hashes[i].empty())
+            _old_hashes.emplace(all_hashes[i]);
+    }
 
     if (new_conf->seqno() != old_seqno) {
         if (new_conf->merged()) {
-
             if (_state != ConfigState::Dirty) {
                 // Merging resulted in a merge conflict resolution message, but won't currently be
                 // mutable (because we weren't dirty to start with).  Convert into a Mutable message
@@ -176,13 +200,18 @@ int ConfigBase::merge(const std::vector<ustring_view>& configs) {
             set_state(ConfigState::Dirty);
         } else {
             _config = std::move(new_conf);
+            assert(_config->unmerged_index() >= 1 && _config->unmerged_index() < all_hashes.size());
             set_state(ConfigState::Clean);
+            _curr_hash = all_hashes[_config->unmerged_index()];
         }
+    } else {
+        // the merging affect nothing (if it had seqno would have been incremented), so don't
+        // pointlessly replace the inner config object.
+        assert(_config->unmerged_index() == 0);
     }
-    // else: the merging affect nothing (if it had seqno would have been incremented), so don't
-    // pointlessly replace the inner config object.
 
-    return good - 1;  // -1 because we don't count the first one (reparsing ourself).
+    return all_confs.size() - bad_confs.size() -
+           1;  // -1 because we don't count the first one (reparsing ourself).
 }
 
 bool ConfigBase::needs_push() const {
@@ -208,36 +237,49 @@ void compress_message(ustring& msg, int level) {
         msg = std::move(compressed);
 }
 
-std::pair<ustring, seqno_t> ConfigBase::push() {
+std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     if (_keys_size == 0)
         throw std::logic_error{"Cannot push data without an encryption key!"};
 
     if (is_dirty())
         set_state(ConfigState::Waiting);
 
-    std::pair<ustring, seqno_t> ret{_config->serialize(), _config->seqno()};
+    std::tuple<seqno_t, ustring, std::vector<std::string>> ret{
+            _config->seqno(), _config->serialize(), {}};
 
+    auto& [seqno, msg, obs] = ret;
     if (auto lvl = compression_level())
-        compress_message(ret.first, *lvl);
-    pad_message(ret.first);  // Prefix pad with nulls
-    encrypt_inplace(ret.first, key(), encryption_domain());
+        compress_message(msg, *lvl);
+    pad_message(msg);  // Prefix pad with nulls
+    encrypt_inplace(msg, key(), encryption_domain());
+
+    for (auto& old : _old_hashes)
+        obs.push_back(std::move(old));
+    _old_hashes.clear();
 
     return ret;
 }
 
-void ConfigBase::confirm_pushed(seqno_t seqno) {
+void ConfigBase::confirm_pushed(seqno_t seqno, std::string msg_hash) {
     // Make sure seqno hasn't changed; if it has then that means we set some other data *after* the
     // caller got the last data to push, and so we don't care about this confirmation.
-    if (_state == ConfigState::Waiting && seqno == _config->seqno())
+    if (_state == ConfigState::Waiting && seqno == _config->seqno()) {
         set_state(ConfigState::Clean);
+        _curr_hash = std::move(msg_hash);
+    }
 }
 
 ustring ConfigBase::dump() {
     auto data = _config->serialize(false /* disable signing for local storage */);
     auto data_sv = from_unsigned_sv(data);
+    oxenc::bt_list old_hashes;
+    for (auto& old : _old_hashes)
+        old_hashes.emplace_back(old);
     oxenc::bt_dict d{
             {"!", static_cast<int>(_state)},
             {"$", data_sv},
+            {"(", _curr_hash},
+            {")", std::move(old_hashes)},
     };
     if (auto extra = extra_data(); !extra.empty())
         d.emplace("+", std::move(extra));
@@ -278,6 +320,14 @@ ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
     else
         _config = std::make_unique<ConfigMessage>(
                 to_unsigned_sv(d.consume_string_view()), nullptr, nullptr, config_lags(), true);
+
+    if (d.skip_until("(")) {
+        _curr_hash = d.consume_string();
+        if (!d.skip_until(")"))
+            throw std::runtime_error{"Unable to parse dumped config data: found '(' without ')'"};
+        for (auto old = d.consume_list_consumer(); !old.is_finished();)
+            _old_hashes.insert(d.consume_string());
+    }
 
     if (d.skip_until("+"))
         if (auto extra = d.consume_dict(); !extra.empty())
@@ -393,13 +443,6 @@ void set_error(config_object* conf, std::string e) {
     conf->last_error = error.c_str();
 }
 
-void copy_out(ustring_view data, unsigned char** out, size_t* outlen) {
-    assert(out && outlen);
-    *outlen = data.size();
-    *out = static_cast<unsigned char*>(std::malloc(data.size()));
-    std::memcpy(*out, data.data(), data.size());
-}
-
 }  // namespace session::config
 
 extern "C" {
@@ -416,12 +459,16 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
 }
 
 LIBSESSION_EXPORT int config_merge(
-        config_object* conf, const unsigned char** configs, const size_t* lengths, size_t count) {
+        config_object* conf,
+        const char** msg_hashes,
+        const unsigned char** configs,
+        const size_t* lengths,
+        size_t count) {
     auto& config = *unbox(conf);
-    std::vector<ustring_view> confs;
+    std::vector<std::pair<std::string, ustring_view>> confs;
     confs.reserve(count);
     for (size_t i = 0; i < count; i++)
-        confs.emplace_back(configs[i], lengths[i]);
+        confs.emplace_back(msg_hashes[i], ustring_view{configs[i], lengths[i]});
     return config.merge(confs);
 }
 
@@ -429,19 +476,53 @@ LIBSESSION_EXPORT bool config_needs_push(const config_object* conf) {
     return unbox(conf)->needs_push();
 }
 
-LIBSESSION_EXPORT seqno_t config_push(config_object* conf, unsigned char** out, size_t* outlen) {
+LIBSESSION_EXPORT config_push_data* config_push(config_object* conf) {
     auto& config = *unbox(conf);
-    auto [data, seqno] = config.push();
-    copy_out(data, out, outlen);
-    return seqno;
+    auto [seqno, data, obs] = config.push();
+
+    // We need to do one alloc here that holds everything:
+    // - the returned struct
+    // - pointers to the obsolete message hash strings
+    // - the data
+    // - the message hash strings
+    size_t buffer_size = sizeof(config_push_data) + obs.size() * sizeof(char*) + data.size();
+    for (auto& o : obs)
+        buffer_size += o.size();
+    buffer_size += obs.size();  // obs msg hash string NULL terminators
+
+    auto* ret = static_cast<config_push_data*>(std::malloc(buffer_size));
+
+    ret->seqno = seqno;
+
+    static_assert(alignof(config_push_data) >= alignof(char*));
+    ret->obsolete = reinterpret_cast<char**>(ret + 1);
+    ret->obsolete_len = obs.size();
+
+    ret->config = reinterpret_cast<unsigned char*>(ret->obsolete + ret->obsolete_len);
+    ret->config_len = data.size();
+
+    std::memcpy(ret->config, data.data(), data.size());
+    char* obsptr = reinterpret_cast<char*>(ret->config + ret->config_len);
+    for (size_t i = 0; i < obs.size(); i++) {
+        std::memcpy(obsptr, obs[i].c_str(), obs[i].size() + 1);
+        ret->obsolete[i] = obsptr;
+        obsptr += obs[i].size() + 1;
+    }
+
+    return ret;
 }
 
-LIBSESSION_EXPORT void config_confirm_pushed(config_object* conf, seqno_t seqno) {
-    unbox(conf)->confirm_pushed(seqno);
+LIBSESSION_EXPORT void config_confirm_pushed(
+        config_object* conf, seqno_t seqno, const char* msg_hash) {
+    unbox(conf)->confirm_pushed(seqno, msg_hash);
 }
 
 LIBSESSION_EXPORT void config_dump(config_object* conf, unsigned char** out, size_t* outlen) {
-    copy_out(unbox(conf)->dump(), out, outlen);
+    assert(out && outlen);
+    auto data = unbox(conf)->dump();
+    *outlen = data.size();
+    *out = static_cast<unsigned char*>(std::malloc(data.size()));
+    std::memcpy(*out, data.data(), data.size());
 }
 
 LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {

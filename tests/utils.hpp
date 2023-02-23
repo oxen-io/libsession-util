@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -62,4 +63,14 @@ inline void log_msg(config_log_level lvl, const char* msg, void*) {
           : lvl == LOG_LEVEL_INFO    ? "Info"
                                      : "debug")
          << ": " << msg);
+}
+
+template <typename Container>
+std::set<typename Container::value_type> as_set(const Container& c) {
+    return {c.begin(), c.end()};
+}
+
+template <typename... T>
+std::set<std::common_type_t<T...>> make_set(T&&... args) {
+    return {std::forward<T>(args)...};
 }

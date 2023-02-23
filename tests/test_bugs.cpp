@@ -26,8 +26,9 @@ TEST_CASE("Dirty/Mutable test case", "[config][dirty]") {
 
     session::config::Contacts c1{ustring_view{seed}, std::nullopt};
     c1.set_name("050000000000000000000000000000000000000000000000000000000000000000", "alfonso");
-    auto [data, seqno] = c1.push();
-    c1.confirm_pushed(seqno);
+    auto [seqno, data, obsolete] = c1.push();
+    CHECK(obsolete == std::vector<std::string>{});
+    c1.confirm_pushed(seqno, "fakehash1");
 
     session::config::Contacts c2{ustring_view{seed}, c1.dump()};
     session::config::Contacts c3{ustring_view{seed}, c1.dump()};
@@ -41,13 +42,16 @@ TEST_CASE("Dirty/Mutable test case", "[config][dirty]") {
     c3.set_name(
             "052222222222222222222222222222222222222222222222222222222222222222", "chalmondeley");
 
-    auto [data2, seqno2] = c2.push();
-    auto [data3, seqno3] = c3.push();
+    auto [seqno2, data2, obs2] = c2.push();
+    auto [seqno3, data3, obs3] = c3.push();
 
     REQUIRE(seqno2 == 2);
+    CHECK(obs2 == std::vector{"fakehash1"s});
     REQUIRE(seqno3 == 2);
+    CHECK(obs2 == std::vector{"fakehash1"s});
 
-    c1.merge(std::vector<ustring_view>{{data2, data3}});
+    c1.merge(std::vector<std::pair<std::string, ustring_view>>{
+            {{"fakehash2", data2}, {"fakehash3", data3}}});
     CHECK(c1.needs_dump());
     CHECK(c1.needs_push());  // because we have the merge conflict to push
     CHECK(c1.is_dirty());
@@ -57,9 +61,10 @@ TEST_CASE("Dirty/Mutable test case", "[config][dirty]") {
 
     CHECK(c1.needs_dump());
     CHECK(c1.needs_push());  // because we have the merge conflict to push
-    auto [data4, seqno4] = c1.push();
+    auto [seqno4, data4, obs4] = c1.push();
     CHECK(!c1.is_dirty());
     CHECK(!c1.is_clean());  // not clean yet because we haven't confirmed
 
     CHECK(seqno4 == 3);  // The merge *and* change should go into the same message update/seqno
+    CHECK(as_set(obs4) == make_set("fakehash1"s, "fakehash2"s, "fakehash3"s));
 }

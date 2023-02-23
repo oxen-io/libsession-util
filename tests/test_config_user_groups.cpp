@@ -115,7 +115,7 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK_FALSE(groups.needs_push());
     CHECK_FALSE(groups.needs_dump());
-    CHECK(groups.push().second == 0);
+    CHECK(std::get<seqno_t>(groups.push()) == 0);
 
     std::vector<std::string> users = {
             "050000000000000000000000000000000000000000000000000000000000000000"s,
@@ -185,25 +185,33 @@ TEST_CASE("User Groups", "[config][groups]") {
     // The new data doesn't get stored until we call this:
     groups.set(og);
 
-    auto [to_push, seqno] = groups.push();
+    auto [seqno, to_push, obs] = groups.push();
+    auto to_push1 = to_push;
 
     CHECK(seqno == 1);
+    CHECK(obs.empty());
 
     // Pretend we uploaded it
-    groups.confirm_pushed(seqno);
+    groups.confirm_pushed(seqno, "fakehash1");
     CHECK(groups.needs_dump());
     CHECK_FALSE(groups.needs_push());
 
     session::config::UserGroups g2{seed, groups.dump()};
     CHECK_FALSE(groups.needs_push());
     CHECK_FALSE(groups.needs_dump());
-    CHECK(groups.push().second == 1);
+    std::tie(seqno, to_push, obs) = groups.push();
+    CHECK(seqno == 1);
+    CHECK(obs.empty());
+    CHECK(groups.current_hash() == "fakehash1");
     CHECK_FALSE(groups.needs_dump());  // Because we just called dump() above, to load up g2
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());
-    CHECK(g2.push().second == 1);
+    std::tie(seqno, to_push, obs) = g2.push();
+    CHECK(seqno == 1);
     CHECK_FALSE(g2.needs_dump());
+    CHECK(obs.empty());
+    CHECK(g2.current_hash() == "fakehash1");
 
     CHECK(g2.size() == 2);
     CHECK(g2.size_communities() == 1);
@@ -223,7 +231,8 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());
-    CHECK(g2.push().second == 1);
+    std::tie(seqno, to_push, obs) = g2.push();
+    CHECK(seqno == 1);
     CHECK_FALSE(g2.needs_dump());
 
     for (auto* g : {&groups, &g2}) {
@@ -257,7 +266,7 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());
-    CHECK(g2.push().second == 1);
+    CHECK(std::get<seqno_t>(g2.push()) == 1);
     CHECK_FALSE(g2.needs_dump());
 
     x2->set_room("sudokuRoom");  // Change capitalization
@@ -265,17 +274,22 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK(g2.needs_push());
     CHECK(g2.needs_dump());
-    std::tie(to_push, seqno) = g2.push();
+    std::tie(seqno, to_push, obs) = g2.push();
+    auto to_push2 = to_push;
     CHECK(seqno == 2);
-    g2.confirm_pushed(seqno);
+    g2.confirm_pushed(seqno, "fakehash2");
+    CHECK(g2.current_hash() == "fakehash2");
+    CHECK(as_set(obs) == make_set("fakehash1"s));
     g2.dump();
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());
-    CHECK(g2.push().second == 2);
+    CHECK(std::get<seqno_t>(g2.push()) == 2);
     CHECK_FALSE(g2.needs_dump());
 
-    groups.merge(std::vector{to_push});
+    std::vector<std::pair<std::string, ustring>> to_merge;
+    to_merge.emplace_back("fakehash2", to_push);
+    groups.merge(to_merge);
     auto x3 = groups.get_community("http://example.org:5678", "SudokuRoom");
     REQUIRE(x3.has_value());
     CHECK(x3->room() == "sudokuRoom");  // We picked up the capitalization change
@@ -295,7 +309,8 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());
-    CHECK(g2.push().second == 2);
+    std::tie(seqno, to_push, obs) = g2.push();
+    CHECK(seqno == 2);
     CHECK_FALSE(g2.needs_dump());
 
     g2.set(c1);
@@ -305,12 +320,17 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     g2.erase_community("http://exAMple.ORG:5678/", "sudokuROOM");
 
-    std::tie(to_push, seqno) = g2.push();
-    g2.confirm_pushed(seqno);
+    std::tie(seqno, to_push, obs) = g2.push();
+    g2.confirm_pushed(seqno, "fakehash3");
+    auto to_push3 = to_push;
 
     CHECK(seqno == 3);
+    CHECK(as_set(obs) == make_set("fakehash2"s));
+    CHECK(g2.current_hash() == "fakehash3");
 
-    groups.merge(std::vector{to_push});
+    to_merge.clear();
+    to_merge.emplace_back("fakehash3", to_push);
+    groups.merge(to_merge);
     CHECK(groups.size() == 1);
     CHECK(groups.size_communities() == 0);
     CHECK(groups.size_legacy_groups() == 1);
@@ -328,11 +348,24 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(groups.size_communities() == 4);
     CHECK(groups.size_legacy_groups() == 1);
 
-    std::tie(to_push, seqno) = groups.push();
-    groups.confirm_pushed(seqno);
+    std::tie(seqno, to_push, obs) = groups.push();
+    groups.confirm_pushed(seqno, "fakehash4");
     CHECK(seqno == 4);
+    CHECK(as_set(obs) == make_set("fakehash1"s, "fakehash2", "fakehash3"));
 
-    g2.merge(std::vector{to_push});
+    to_merge.clear();
+    // Load some obsolete ones in just to check that they get immediately obsoleted
+    to_merge.emplace_back("fakehash10", to_push3);
+    to_merge.emplace_back("fakehash11", to_push1);
+    to_merge.emplace_back("fakehash12", to_push2);
+    to_merge.emplace_back("fakehash4", to_push);
+    g2.merge(to_merge);
+    CHECK(g2.needs_dump());
+    CHECK_FALSE(g2.needs_push());
+    CHECK(g2.current_hash() == "fakehash4");
+    std::tie(seqno, to_push, obs) = g2.push();
+    CHECK(seqno == 4);
+    CHECK(as_set(obs) == make_set("fakehash10"s, "fakehash11", "fakehash12", "fakehash3"));
 
     for (auto* g : {&groups, &g2}) {
         std::vector<std::string> seen;

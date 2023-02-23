@@ -47,7 +47,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
 
     CHECK_FALSE(convos.needs_push());
     CHECK_FALSE(convos.needs_dump());
-    CHECK(convos.push().second == 0);
+    CHECK(std::get<seqno_t>(convos.push()) == 0);
 
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
@@ -79,12 +79,12 @@ TEST_CASE("Conversations", "[config][conversations]") {
     // The new data doesn't get stored until we call this:
     convos.set(og);
 
-    auto [to_push, seqno] = convos.push();
+    auto [seqno, to_push, obs] = convos.push();
 
     CHECK(seqno == 1);
 
     // Pretend we uploaded it
-    convos.confirm_pushed(seqno);
+    convos.confirm_pushed(seqno, "hash1");
     CHECK(convos.needs_dump());
     CHECK_FALSE(convos.needs_push());
 
@@ -94,7 +94,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
     session::config::ConvoInfoVolatile convos2{seed, convos.dump()};
     CHECK_FALSE(convos.needs_push());
     CHECK_FALSE(convos.needs_dump());
-    CHECK(convos.push().second == 1);
+    CHECK(std::get<seqno_t>(convos.push()) == 1);
     CHECK_FALSE(convos.needs_dump());  // Because we just called dump() above, to load up
                                        // convos2.
 
@@ -123,17 +123,17 @@ TEST_CASE("Conversations", "[config][conversations]") {
 
     CHECK(convos2.needs_push());
 
-    std::tie(to_push, seqno) = convos2.push();
+    std::tie(seqno, to_push, obs) = convos2.push();
 
     CHECK(seqno == 2);
 
-    std::vector<ustring_view> merge_configs;
-    merge_configs.push_back(to_push);
+    std::vector<std::pair<std::string, ustring_view>> merge_configs;
+    merge_configs.emplace_back("hash2", to_push);
     convos.merge(merge_configs);
-    convos2.confirm_pushed(seqno);
+    convos2.confirm_pushed(seqno, "hash2");
 
     CHECK_FALSE(convos.needs_push());
-    CHECK(convos.push().second == seqno);
+    CHECK(std::get<seqno_t>(convos.push()) == seqno);
 
     using session::config::convo::community;
     using session::config::convo::legacy_group;
@@ -268,14 +268,13 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     // The new data doesn't get stored until we call this:
     convo_info_volatile_set_community(conf, &og);
 
-    unsigned char* to_push;
-    size_t to_push_len;
-    seqno_t seqno = config_push(conf, &to_push, &to_push_len);
+    config_push_data* to_push = config_push(conf);
+    auto seqno = to_push->seqno;
     free(to_push);
     CHECK(seqno == 1);
 
     // Pretend we uploaded it
-    config_confirm_pushed(conf, seqno);
+    config_confirm_pushed(conf, seqno, "hash1");
     CHECK(config_needs_dump(conf));
     CHECK_FALSE(config_needs_push(conf));
 
@@ -312,16 +311,18 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     convo_info_volatile_set_legacy_group(conf2, &cg);
     CHECK(config_needs_push(conf2));
 
-    seqno = config_push(conf2, &to_push, &to_push_len);
-    CHECK(seqno == 2);
+    to_push = config_push(conf2);
+    CHECK(to_push->seqno == 2);
 
+    const char* hash_data[1];
     const unsigned char* merge_data[1];
     size_t merge_size[1];
-    merge_data[0] = to_push;
-    merge_size[0] = to_push_len;
-    int accepted = config_merge(conf, merge_data, merge_size, 1);
+    hash_data[0] = "hash123";
+    merge_data[0] = to_push->config;
+    merge_size[0] = to_push->config_len;
+    int accepted = config_merge(conf, hash_data, merge_data, merge_size, 1);
     REQUIRE(accepted == 1);
-    config_confirm_pushed(conf2, seqno);
+    config_confirm_pushed(conf2, seqno, "hash123");
     free(to_push);
 
     CHECK_FALSE(config_needs_push(conf));
@@ -507,7 +508,7 @@ TEST_CASE("Conversation pruning", "[config][conversations][pruning]") {
     CHECK(count == 19);
 
     CHECK(convos.size() == 44);
-    auto [push_data, seqno] = convos.push();
+    auto [seqno, push_data, obs] = convos.push();
     CHECK(convos.size() == 41);
 }
 
@@ -540,12 +541,11 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     convo_info_volatile_set_1to1(conf, &c);
 
     // Fake push:
-    unsigned char* to_push;
-    size_t to_push_len;
-    seqno_t seqno = config_push(conf, &to_push, &to_push_len);
+    config_push_data* to_push = config_push(conf);
+    seqno_t seqno = to_push->seqno;
     free(to_push);
     CHECK(seqno == 1);
-    config_confirm_pushed(conf, seqno);
+    config_confirm_pushed(conf, seqno, "somehash");
     CHECK(config_needs_dump(conf));
 
     // Dump:
@@ -567,9 +567,9 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
                           .count();
     convo_info_volatile_set_1to1(conf, &c);
 
-    seqno = config_push(conf, &to_push, &to_push_len);
-    CHECK(seqno == 2);
-    config_confirm_pushed(conf, seqno);
+    to_push = config_push(conf);
+    CHECK(to_push->seqno == 2);
+    config_confirm_pushed(conf, to_push->seqno, "hash5235");
 
     // But *before* we load the push make a dirtying change to conf2 that we *don't* push (so that
     // we'll be merging into a dirty-state config):
@@ -581,12 +581,14 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     convo_info_volatile_set_1to1(conf2, &c);
 
     // And now, *before* we push the dirty config, also merge the incoming push from `conf`:
+    const char* merge_hash[1];
     const unsigned char* merge_data[1];
     size_t merge_size[1];
-    merge_data[0] = to_push;
-    merge_size[0] = to_push_len;
+    merge_hash[0] = "hash5235";
+    merge_data[0] = to_push->config;
+    merge_size[0] = to_push->config_len;
 
-    config_merge(conf2, merge_data, merge_size, 1);
+    config_merge(conf2, merge_hash, merge_data, merge_size, 1);
     free(to_push);
 
     CHECK(config_needs_push(conf2));
@@ -601,9 +603,9 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     REQUIRE_NOTHROW(convo_info_volatile_set_1to1(conf2, &c1));
 
     CHECK(config_needs_push(conf2));
-    seqno = config_push(conf2, &to_push, &to_push_len);
-    CHECK(seqno == 3);
-    config_confirm_pushed(conf2, seqno);
+    to_push = config_push(conf2);
+    CHECK(to_push->seqno == 3);
+    config_confirm_pushed(conf2, to_push->seqno, "hashz");
     CHECK_FALSE(config_needs_push(conf2));
 
     config_dump(conf2, &dump, &dumplen);

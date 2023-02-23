@@ -45,19 +45,17 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     const char* name = user_profile_get_name(conf);
     CHECK(name == nullptr);  // (should be NULL instead of nullptr in C)
 
-    unsigned char* to_push;
-    size_t to_push_len;
     // We don't need to push since we haven't changed anything, so this call is mainly just for
     // testing:
-    seqno_t seqno = config_push(conf, &to_push, &to_push_len);
+    config_push_data* to_push = config_push(conf);
     REQUIRE(to_push);
-    CHECK(seqno == 0);
-    CHECK(to_push_len == 256);
+    CHECK(to_push->seqno == 0);
+    CHECK(to_push->config_len == 256);
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
     size_t to_push_decr_size;
-    unsigned char* to_push_decrypted =
-            config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
+    unsigned char* to_push_decrypted = config_decrypt(
+            to_push->config, to_push->config_len, ed_sk.data(), enc_domain, &to_push_decr_size);
     REQUIRE(to_push_decrypted);
     CHECK(to_push_decr_size == 216);  // 256 - 40 overhead
     CHECK(printable(to_push_decrypted, to_push_decr_size) ==
@@ -100,9 +98,9 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     CHECK(config_needs_push(conf));
     CHECK(config_needs_dump(conf));
-    seqno = config_push(conf, &to_push, &to_push_len);
-    CHECK(seqno == 1);  // incremented since we made changes (this only increments once between
-                        // dumps; even though we changed two fields here).
+    to_push = config_push(conf);
+    CHECK(to_push->seqno == 1);  // incremented since we made changes (this only increments once
+                                 // between dumps; even though we changed two fields here).
 
     // The hash of a completely empty, initial seqno=0 message:
     auto exp_hash0 = "ea173b57beca8af18c3519a7bbf69c3e7a05d1c049fa9558341d8ebb48b0c965"_hexbytes;
@@ -138,14 +136,18 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
             "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
 
-    CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == to_hex(exp_push1_encrypted));
+    CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
+          to_hex(exp_push1_encrypted));
 
     // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
-    to_push_decrypted =
-            config_decrypt(to_push, to_push_len, ed_sk.data(), enc_domain, &to_push_decr_size);
+    to_push_decrypted = config_decrypt(
+            to_push->config, to_push->config_len, ed_sk.data(), enc_domain, &to_push_decr_size);
     CHECK(to_push_decr_size == 256 - 40);
     CHECK(printable(to_push_decrypted, to_push_decr_size) ==
           printable(ustring(256 - 40 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
+
+    // Copy this out; we need to hold onto it to do the confirmation later on
+    seqno_t seqno = to_push->seqno;
 
     // config_push gives us back a buffer that we are required to free when done.  (Without this
     // we'd leak memory!)
@@ -168,19 +170,31 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "d"
           "1:!" "i2e"
           "1:$" + std::to_string(exp_push1_decrypted.size()) + ":" + std::string{to_sv(exp_push1_decrypted)} + ""
+          "1:(" "0:"
+          "1:)" "le"
         "e"));
     // clang-format on
     free(dump1);  // done with the dump; don't leak!
 
     // So now imagine we got back confirmation from the swarm that the push has been stored:
-    config_confirm_pushed(conf, seqno);
+    config_confirm_pushed(conf, seqno, "fakehash1");
 
     CHECK_FALSE(config_needs_push(conf));
     CHECK(config_needs_dump(conf));  // The confirmation changes state, so this makes us need a dump
                                      // again.
     config_dump(conf, &dump1, &dump1len);
-    free(dump1);  // just ignore it for the test (but always have to free it).
-                  //
+
+    // clang-format off
+    CHECK(printable(dump1, dump1len) == printable(
+        "d"
+          "1:!" "i0e"
+          "1:$" + std::to_string(exp_push1_decrypted.size()) + ":" + std::string{to_sv(exp_push1_decrypted)} + ""
+          "1:(" "9:fakehash1"
+          "1:)" "le"
+        "e"));
+    // clang-format on
+    free(dump1);
+
     CHECK_FALSE(config_needs_dump(conf));
 
     // Now we're going to set up a second, competing config object (in the real world this would be
@@ -194,10 +208,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Now imagine we just pulled down the encrypted string from the swarm; we merge it into conf2:
     const unsigned char* merge_data[1];
+    const char* merge_hash[1];
     size_t merge_size[1];
+    merge_hash[0] = "fakehash1";
     merge_data[0] = exp_push1_encrypted.data();
     merge_size[0] = exp_push1_encrypted.size();
-    int accepted = config_merge(conf2, merge_data, merge_size, 1);
+    int accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
     REQUIRE(accepted == 1);
 
     // Our state has changed, so we need to dump:
@@ -211,7 +227,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // We *don't* need to push: even though we updated, all we did is update to the merged data (and
     // didn't have any sort of merge conflict needed):
-    CHECK_FALSE(config_needs_push(conf2));
+    REQUIRE_FALSE(config_needs_push(conf2));
 
     // Now let's create a conflicting update:
 
@@ -227,13 +243,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // Both have changes, so push need a push
     CHECK(config_needs_push(conf));
     CHECK(config_needs_push(conf2));
-    seqno = config_push(conf, &to_push, &to_push_len);
-    CHECK(seqno == 2);  // incremented, since we made a field change
+    to_push = config_push(conf);
+    CHECK(to_push->seqno == 2);  // incremented, since we made a field change
+    config_confirm_pushed(conf2, to_push->seqno, "fakehash2");
 
-    unsigned char* to_push2;
-    size_t to_push2_len;
-    auto seqno2 = config_push(conf2, &to_push2, &to_push2_len);
-    CHECK(seqno == 2);  // incremented, since we made a field change
+    config_push_data* to_push2 = config_push(conf2);
+    CHECK(to_push2->seqno == 2);  // incremented, since we made a field change
+    config_confirm_pushed(conf2, to_push2->seqno, "fakehash3");
 
     config_dump(conf, &dump1, &dump1len);
     config_dump(conf2, &dump2, &dump2len);
@@ -243,29 +259,32 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // Since we set different things, we're going to get back different serialized data to be
     // pushed:
-    CHECK(printable(to_push, to_push_len) != printable(to_push2, to_push2_len));
+    CHECK(printable(to_push->config, to_push->config_len) !=
+          printable(to_push2->config, to_push2->config_len));
 
     // Now imagine that each client pushed its `seqno=2` config to the swarm, but then each client
     // also fetches new messages and pulls down the other client's `seqno=2` value.
 
     // Feed the new config into each other.  (This array could hold multiple configs if we pulled
     // down more than one).
-    merge_data[0] = to_push;
-    merge_size[0] = to_push_len;
-    config_merge(conf2, merge_data, merge_size, 1);
+    merge_hash[0] = "fakehash2";
+    merge_data[0] = to_push->config;
+    merge_size[0] = to_push->config_len;
+    config_merge(conf2, merge_hash, merge_data, merge_size, 1);
     free(to_push);
-    merge_data[0] = to_push2;
-    merge_size[0] = to_push2_len;
-    config_merge(conf, merge_data, merge_size, 1);
+    merge_hash[0] = "fakehash3";
+    merge_data[0] = to_push2->config;
+    merge_size[0] = to_push2->config_len;
+    config_merge(conf, merge_hash, merge_data, merge_size, 1);
     free(to_push2);
 
     // Now after the merge we *will* want to push from both client, since both will have generated a
     // merge conflict update (with seqno = 3).
-    seqno = config_push(conf, &to_push, &to_push_len);
-    seqno2 = config_push(conf2, &to_push2, &to_push2_len);
+    to_push = config_push(conf);
+    to_push2 = config_push(conf2);
 
-    REQUIRE(seqno == 3);
-    REQUIRE(seqno2 == 3);
+    REQUIRE(to_push->seqno == 3);
+    REQUIRE(to_push2->seqno == 3);
     REQUIRE(config_needs_push(conf));
     REQUIRE(config_needs_push(conf2));
 
@@ -293,8 +312,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(user_profile_get_nts_priority(conf) == 9);
     CHECK(user_profile_get_nts_priority(conf2) == 9);
 
-    config_confirm_pushed(conf, seqno);
-    config_confirm_pushed(conf2, seqno2);
+    config_confirm_pushed(conf, to_push->seqno, "fakehash4");
+    config_confirm_pushed(conf2, to_push2->seqno, "fakehash4");
 
     config_dump(conf, &dump1, &dump1len);
     config_dump(conf2, &dump2, &dump2len);
