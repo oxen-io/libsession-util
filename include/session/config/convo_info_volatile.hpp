@@ -148,6 +148,11 @@ class ConvoInfoVolatile : public ConfigBase {
     std::optional<convo::community> get_community(
             std::string_view base_url, std::string_view room) const;
 
+    /// Shortcut for calling community::parse_full_url then calling the above with the base url and
+    /// room.  Note that pubkey must be present to successfully parse, but is ignored (and so the
+    /// pubkey in the returned result *could* be different in unusual cases).
+    std::optional<convo::community> get_community(std::string_view full_url) const;
+
     /// Looks up and returns a legacy group conversation by ID.  The ID looks like a hex Session ID,
     /// but isn't really a Session ID.  Returns nullopt if there is no record of the group
     /// conversation.
@@ -171,6 +176,9 @@ class ConvoInfoVolatile : public ConfigBase {
             std::string_view base_url, std::string_view room, std::string_view pubkey_hex) const;
     convo::community get_or_construct_community(
             std::string_view base_url, std::string_view room, ustring_view pubkey) const;
+
+    // Shortcut for calling community::parse_full_url then calling the above
+    convo::community get_or_construct_community(std::string_view full_url) const;
 
     /// Inserts or replaces existing conversation info.  For example, to update a 1-to-1
     /// conversation last read time you would do:

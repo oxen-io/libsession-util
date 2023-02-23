@@ -127,6 +127,11 @@ std::optional<convo::community> ConvoInfoVolatile::get_community(
     return std::nullopt;
 }
 
+std::optional<convo::community> ConvoInfoVolatile::get_community(std::string_view full_url) const {
+    auto [base, room, pubkey] = community::parse_full_url(full_url);
+    return get_community(base, room);
+}
+
 convo::community ConvoInfoVolatile::get_or_construct_community(
         std::string_view base_url, std::string_view room, ustring_view pubkey) const {
     convo::community result{base_url, community::canonical_room(room), pubkey};
@@ -135,6 +140,11 @@ convo::community ConvoInfoVolatile::get_or_construct_community(
         result.load(*info_dict);
 
     return result;
+}
+
+convo::community ConvoInfoVolatile::get_or_construct_community(std::string_view full_url) const {
+    auto [base, room, pubkey] = community::parse_full_url(full_url);
+    return get_or_construct_community(base, room, pubkey);
 }
 
 convo::community ConvoInfoVolatile::get_or_construct_community(

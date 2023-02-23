@@ -172,6 +172,11 @@ std::optional<community_info> UserGroups::get_community(
     return std::nullopt;
 }
 
+std::optional<community_info> UserGroups::get_community(std::string_view full_url) const {
+    auto [base, room, pubkey] = community::parse_full_url(full_url);
+    return get_community(base, room);
+}
+
 community_info UserGroups::get_or_construct_community(
         std::string_view base_url, std::string_view room, ustring_view pubkey) const {
     community_info result{base_url, room, pubkey};
@@ -190,6 +195,11 @@ community_info UserGroups::get_or_construct_community(
         result.load(*info_dict);
 
     return result;
+}
+
+community_info UserGroups::get_or_construct_community(std::string_view full_url) const {
+    auto [base, room, pubkey] = community::parse_full_url(full_url);
+    return get_or_construct_community(base, room, pubkey);
 }
 
 std::optional<legacy_group_info> UserGroups::get_legacy_group(std::string_view pubkey_hex) const {
