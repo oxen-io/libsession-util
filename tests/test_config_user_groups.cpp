@@ -508,7 +508,9 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
 
     session::config::UserGroups c2{ustring_view{seed}, std::nullopt};
 
-    CHECK(c2.merge({{"fakehash1", ustring_view{to_push->config, to_push->config_len}}}) == 1);
+    std::vector<std::pair<std::string, ustring_view>> to_merge;
+    to_merge.emplace_back("fakehash1", ustring_view{to_push->config, to_push->config_len});
+    CHECK(c2.merge(to_merge) == 1);
 
     auto grp = c2.get_legacy_group(definitely_real_id);
     REQUIRE(grp);
