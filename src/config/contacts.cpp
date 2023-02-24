@@ -16,6 +16,8 @@ using namespace std::literals;
 using namespace session::config;
 using session::ustring_view;
 
+LIBSESSION_C_API const size_t CONTACT_MAX_NAME_LENGTH = contact_info::MAX_NAME_LENGTH;
+
 namespace {
 
 void check_session_id(std::string_view session_id) {
@@ -41,13 +43,15 @@ contact_info::contact_info(std::string sid) : session_id{std::move(sid)} {
 }
 
 void contact_info::set_name(std::string n) {
-    name_ = std::move(n);
-    name = name_;
+    if (n.size() > MAX_NAME_LENGTH)
+        throw std::invalid_argument{"Invalid contact name: exceeds maximum length"};
+    name = std::move(n);
 }
 
 void contact_info::set_nickname(std::string n) {
-    nickname_ = std::move(n);
-    nickname = nickname_;
+    if (n.size() > MAX_NAME_LENGTH)
+        throw std::invalid_argument{"Invalid contact nickname: exceeds maximum length"};
+    nickname = std::move(n);
 }
 
 Contacts::Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
@@ -64,70 +68,92 @@ LIBSESSION_C_API int contacts_init(
     return c_wrapper_init<Contacts>(conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
 }
 
-// Digs into a dict to get out a std::string_view, if it's there with a non-empty string; otherwise
-// returns nullopt.
-static std::optional<std::string_view> maybe_sv(const dict& d, const char* key) {
-    if (auto it = d.find(key); it != d.end())
-        if (auto* sc = std::get_if<scalar>(&it->second))
-            if (auto* s = std::get_if<std::string>(sc); s && !s->empty())
-                return *s;
-    return std::nullopt;
-}
-// Digs into a dict to get out an int64_t; nullopt if not there (or not int)
-static std::optional<int64_t> maybe_int(const dict& d, const char* key) {
-    if (auto it = d.find(key); it != d.end())
-        if (auto* sc = std::get_if<scalar>(&it->second))
-            if (auto* i = std::get_if<int64_t>(sc))
-                return *i;
-    return std::nullopt;
-}
-
 void contact_info::load(const dict& info_dict) {
-    name = maybe_sv(info_dict, "n");
-    nickname = maybe_sv(info_dict, "N");
+    name = maybe_string(info_dict, "n").value_or("");
+    nickname = maybe_string(info_dict, "N").value_or("");
 
-    auto url = maybe_sv(info_dict, "p");
-    auto key = maybe_sv(info_dict, "q");
-    if (url && key && !url->empty() && !key->empty())
-        profile_picture.emplace(*url, to_unsigned_sv(*key));
-    else
-        profile_picture.reset();
+    auto url = maybe_string(info_dict, "p");
+    auto key = maybe_ustring(info_dict, "q");
+    if (url && key && !url->empty() && key->size() == 32) {
+        profile_picture.url = std::move(*url);
+        profile_picture.key = std::move(*key);
+    } else {
+        profile_picture.clear();
+    }
 
     approved = maybe_int(info_dict, "a").value_or(0);
     approved_me = maybe_int(info_dict, "A").value_or(0);
     blocked = maybe_int(info_dict, "b").value_or(0);
+    hidden = maybe_int(info_dict, "h").value_or(0);
+
+    priority = maybe_int(info_dict, "+").value_or(0);
+    if (priority < 0)
+        priority = 0;
+
+    int exp_mode_ = maybe_int(info_dict, "e").value_or(0);
+    if (exp_mode_ >= static_cast<int>(expiration_mode::none) &&
+        exp_mode_ <= static_cast<int>(expiration_mode::after_read))
+        exp_mode = static_cast<expiration_mode>(exp_mode_);
+    else
+        exp_mode = expiration_mode::none;
+
+    if (exp_mode == expiration_mode::none)
+        exp_timer = 0s;
+    else {
+        int secs = maybe_int(info_dict, "E").value_or(0);
+        if (secs <= 0) {
+            exp_mode = expiration_mode::none;
+            exp_timer = 0s;
+        } else {
+            exp_timer = std::chrono::seconds{secs};
+        }
+    }
 }
+
+static_assert(sizeof(contacts_contact::name) == contact_info::MAX_NAME_LENGTH + 1);
+static_assert(sizeof(contacts_contact::nickname) == contact_info::MAX_NAME_LENGTH + 1);
+static_assert(sizeof(user_profile_pic::url) == profile_pic::MAX_URL_LENGTH + 1);
 
 void contact_info::into(contacts_contact& c) const {
     std::memcpy(c.session_id, session_id.data(), 67);
-    c.name = name && !name->empty() ? name->data() : nullptr;
-    c.nickname = nickname && !nickname->empty() ? nickname->data() : nullptr;
-    if (profile_picture && !profile_picture->empty()) {
-        c.profile_pic.url = profile_picture->url.data();
-        c.profile_pic.key = profile_picture->key.data();
-        c.profile_pic.keylen = profile_picture->key.size();
+    copy_c_str(c.name, name);
+    copy_c_str(c.nickname, nickname);
+    if (profile_picture) {
+        copy_c_str(c.profile_pic.url, profile_picture.url);
+        std::memcpy(c.profile_pic.key, profile_picture.key.data(), 32);
     } else {
-        c.profile_pic.url = nullptr;
-        c.profile_pic.key = nullptr;
-        c.profile_pic.keylen = 0;
+        copy_c_str(c.profile_pic.url, "");
     }
     c.approved = approved;
     c.approved_me = approved_me;
     c.blocked = blocked;
+    c.hidden = hidden;
+    c.priority = std::max(0, priority);
+    c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
+    c.exp_seconds = exp_timer.count();
+    if (c.exp_seconds <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
+        c.exp_mode = CONVO_EXPIRATION_NONE;
 }
 
 contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id, 66} {
-    if (c.name && std::strlen(c.name))
-        name = c.name;
-    if (c.nickname && std::strlen(c.nickname))
-        nickname = c.nickname;
-    if (c.profile_pic.url && std::strlen(c.profile_pic.url) && c.profile_pic.key &&
-        c.profile_pic.keylen > 0)
-        profile_picture.emplace(
-                c.profile_pic.url, ustring{c.profile_pic.key, c.profile_pic.keylen});
+    assert(std::strlen(c.name) <= MAX_NAME_LENGTH);
+    name = c.name;
+    assert(std::strlen(c.nickname) <= MAX_NAME_LENGTH);
+    nickname = c.nickname;
+    assert(std::strlen(c.profile_pic.url) <= profile_pic::MAX_URL_LENGTH);
+    if (std::strlen(c.profile_pic.url)) {
+        profile_picture.url = c.profile_pic.url;
+        profile_picture.key = {c.profile_pic.key, 32};
+    }
     approved = c.approved;
     approved_me = c.approved_me;
     blocked = c.blocked;
+    hidden = c.hidden;
+    priority = std::max(0, c.priority);
+    exp_mode = static_cast<expiration_mode>(c.exp_mode);
+    exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
+    if (exp_timer <= 0s && exp_mode != expiration_mode::none)
+        exp_mode = expiration_mode::none;
 }
 
 std::optional<contact_info> Contacts::get(std::string_view pubkey_hex) const {
@@ -175,43 +201,31 @@ void Contacts::set(const contact_info& contact) {
     std::string pk = session_id_to_bytes(contact.session_id);
     auto info = data["c"][pk];
 
-    // This key is here to keep the session_id entry alive even when we have no other keys.  It has
-    // no other purpose.
-    info["!"] = ""sv;
+    // Always set the name, even if empty, to keep the dict from getting pruned if there are no
+    // other entries.
+    info["n"] = contact.name.substr(0, contact_info::MAX_NAME_LENGTH);
+    set_nonempty_str(info["N"], contact.nickname.substr(0, contact_info::MAX_NAME_LENGTH));
 
-    if (contact.name && !contact.name->empty())
-        info["n"] = *contact.name;
-    else
-        info["n"].erase();
+    set_pair_if(
+            contact.profile_picture,
+            info["p"],
+            contact.profile_picture.url,
+            info["q"],
+            contact.profile_picture.key);
 
-    if (contact.nickname && !contact.nickname->empty())
-        info["N"] = *contact.nickname;
-    else
-        info["N"].erase();
+    set_flag(info["a"], contact.approved);
+    set_flag(info["A"], contact.approved_me);
+    set_flag(info["b"], contact.blocked);
+    set_flag(info["h"], contact.hidden);
 
-    if (contact.profile_picture && !contact.profile_picture->url.empty() &&
-        !contact.profile_picture->key.empty()) {
-        info["p"] = contact.profile_picture->url;
-        info["q"] = contact.profile_picture->key;
-    } else {
-        info["p"].erase();
-        info["q"].erase();
-    }
+    set_positive_int(info["+"], contact.priority);
 
-    if (contact.approved)
-        info["a"] = 1;
-    else
-        info["a"].erase();
-
-    if (contact.approved_me)
-        info["A"] = 1;
-    else
-        info["A"].erase();
-
-    if (contact.blocked)
-        info["b"] = 1;
-    else
-        info["b"].erase();
+    set_pair_if(
+            contact.exp_mode != expiration_mode::none && contact.exp_timer > 0s,
+            info["e"],
+            static_cast<int8_t>(contact.exp_mode),
+            info["E"],
+            contact.exp_timer.count());
 }
 
 LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* contact) {
@@ -246,6 +260,26 @@ void Contacts::set_approved_me(std::string_view session_id, bool approved_me) {
 void Contacts::set_blocked(std::string_view session_id, bool blocked) {
     auto c = get_or_construct(session_id);
     c.blocked = blocked;
+    set(c);
+}
+
+void Contacts::set_hidden(std::string_view session_id, bool hidden) {
+    auto c = get_or_construct(session_id);
+    c.hidden = hidden;
+    set(c);
+}
+
+void Contacts::set_priority(std::string_view session_id, int priority) {
+    auto c = get_or_construct(session_id);
+    c.priority = priority;
+    set(c);
+}
+
+void Contacts::set_expiry(
+        std::string_view session_id, expiration_mode mode, std::chrono::seconds timer) {
+    auto c = get_or_construct(session_id);
+    c.exp_mode = mode;
+    c.exp_timer = c.exp_mode == expiration_mode::none ? 0s : timer;
     set(c);
 }
 

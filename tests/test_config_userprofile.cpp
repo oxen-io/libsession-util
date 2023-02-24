@@ -4,6 +4,7 @@
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <cstring>
 #include <string_view>
 
 #include "utils.hpp"
@@ -71,17 +72,15 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     // This should also be unset:
     auto pic = user_profile_get_pic(conf);
-    CHECK(pic.url == nullptr);  // (should be NULL instead of nullptr in C)
-    CHECK(pic.key == nullptr);  // (should be NULL instead of nullptr in C)
-    CHECK(pic.keylen == 0);
+    CHECK(strlen(pic.url) == 0);
 
     // Now let's go set a profile name and picture:
     CHECK(0 == user_profile_set_name(conf, "Kallie"));
     user_profile_pic p;
-    p.url = "http://example.org/omg-pic-123.bmp";
-    p.key = reinterpret_cast<const unsigned char*>("secretNOTSECRET");
-    p.keylen = 6;
+    strcpy(p.url, "http://example.org/omg-pic-123.bmp");  // NB: length must be < sizeof(p.url)!
+    memcpy(p.key, "secret78901234567890123456789012", 32);
     CHECK(0 == user_profile_set_pic(conf, p));
+    user_profile_set_nts_priority(conf, 9);
 
     // Retrieve them just to make sure they set properly:
     name = user_profile_get_name(conf);
@@ -91,9 +90,10 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     pic = user_profile_get_pic(conf);
     REQUIRE(pic.url);
     REQUIRE(pic.key);
-    CHECK(pic.keylen == 6);
     CHECK(pic.url == "http://example.org/omg-pic-123.bmp"sv);
-    CHECK(ustring_view{pic.key, pic.keylen} == "secret"_bytes);
+    CHECK(ustring_view{pic.key, 32} == "secret78901234567890123456789012"_bytes);
+
+    CHECK(user_profile_get_nts_priority(conf) == 9);
 
     // Since we've made changes, we should need to push new config to the swarm, *and* should need
     // to dump the updated state:
@@ -113,14 +113,16 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "d"
           "1:#" "i1e"
           "1:&" "d"
+            "1:+" "i9e"
             "1:n" "6:Kallie"
             "1:p" "34:http://example.org/omg-pic-123.bmp"
-            "1:q" "6:secret"
+            "1:q" "32:secret78901234567890123456789012"
           "e"
           "1:<" "l"
             "l" "i0e" "32:"_bytes + exp_hash0 + "de" "e"
           "e"
           "1:=" "d"
+            "1:+" "0:"
             "1:n" "0:"
             "1:p" "0:"
             "1:q" "0:"
@@ -128,13 +130,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
         "e"_bytes;
     // clang-format on
     auto exp_push1_encrypted =
-            "a2952190dcb9797bc48e48f6dc7b3254d004bde9091cfc9ec3433cbc5939a3726deb04f58a546d7d79e6f8"
-            "0ea185d43bf93278398556304998ae882304075c77f15c67f9914c4d10005a661f29ff7a79e0a9de7f2172"
-            "5ba3b5a6c19eaa3797671b8fa4008d62e9af2744629cbb46664c4d8048e2867f66ed9254120371bdb24e95"
-            "b2d92341fa3b1f695046113a768ceb7522269f937ead5591bfa8a5eeee3010474002f2db9de043f0f0d1cf"
-            "b1066a03e7b5d6cfb70a8f84a20cd2df5a510cd3d175708015a52dd4a105886d916db0005dbea5706e5a5d"
-            "c37ffd0a0ca2824b524da2e2ad181a48bb38e21ed9abe136014a4ee1e472cb2f53102db2a46afa9d68"
-            ""_hexbytes;
+            "9693a69686da3055f1ecdfb239c3bf8e746951a36d888c2fb7c02e856a5c2091b24e39a7e1af828f"
+            "1fa09fe8bf7d274afde0a0847ba143c43ffb8722301b5ae32e2f078b9a5e19097403336e50b18c84"
+            "aade446cd2823b011f97d6ad2116a53feb814efecc086bc172d31f4214b4d7c630b63bbe575b0868"
+            "2d146da44915063a07a78556ab5eff4f67f6aa26211e8d330b53d28567a931028c393709a325425d"
+            "e7486ccde24416a7fd4a8ba5fa73899c65f4276dfaddd5b2100adcf0f793104fb235b31ce32ec656"
+            "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
+            "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
 
     CHECK(oxenc::to_hex(to_push, to_push + to_push_len) == to_hex(exp_push1_encrypted));
 
@@ -218,9 +220,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     user_profile_set_name(conf2, "Raz");
 
     // And, on conf2, we're also going to change the profile pic:
-    p.url = "http://new.example.com/pic";
-    p.key = reinterpret_cast<const unsigned char*>("qwert\0yuio");
-    p.keylen = 10;
+    strcpy(p.url, "http://new.example.com/pic");
+    memcpy(p.key, "qwert\0yuio1234567890123456789012", 32);
     user_profile_set_pic(conf2, p);
 
     // Both have changes, so push need a push
@@ -280,12 +281,17 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     REQUIRE(pic.url);
     CHECK(pic.url == "http://new.example.com/pic"sv);
     REQUIRE(pic.key);
-    CHECK(ustring_view{pic.key, pic.keylen} == "qwert\0yuio"_bytes);
+    CHECK(to_hex(ustring_view{pic.key, 32}) ==
+          "7177657274007975696f31323334353637383930313233343536373839303132");
     pic = user_profile_get_pic(conf2);
     REQUIRE(pic.url);
     CHECK(pic.url == "http://new.example.com/pic"sv);
     REQUIRE(pic.key);
-    CHECK(ustring_view{pic.key, pic.keylen} == "qwert\0yuio"_bytes);
+    CHECK(to_hex(ustring_view{pic.key, 32}) ==
+          "7177657274007975696f31323334353637383930313233343536373839303132");
+
+    CHECK(user_profile_get_nts_priority(conf) == 9);
+    CHECK(user_profile_get_nts_priority(conf2) == 9);
 
     config_confirm_pushed(conf, seqno);
     config_confirm_pushed(conf2, seqno2);

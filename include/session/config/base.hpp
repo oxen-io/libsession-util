@@ -90,6 +90,7 @@ class ConfigBase {
     // already dirty (i.e. Clean or Waiting) then calling this increments the seqno counter.
     MutableConfigMessage& dirty();
 
+  public:
     // class for proxying subfield access; this class should never be stored but only used
     // ephemerally (most of its methods are rvalue-qualified).  This lets constructs such as
     // foo["abc"]["def"]["ghi"] = 12;
@@ -271,7 +272,7 @@ class ConfigBase {
         std::string string_or(std::string fallback) const {
             if (auto* s = string())
                 return *s;
-            return std::move(fallback);
+            return fallback;
         }
 
         /// Returns a const pointer to the integer if one exists at the given location, nullptr
@@ -297,7 +298,7 @@ class ConfigBase {
         /// Replaces the current value with the given string.  This also auto-vivifies any
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path.
-        void operator=(std::string value) { assign_if_changed(std::move(value)); }
+        void operator=(std::string&& value) { assign_if_changed(std::move(value)); }
         /// Same as above, but takes a string_view for convenience (this makes a copy).
         void operator=(std::string_view value) { *this = std::string{value}; }
         /// Same as above, but takes a ustring_view
@@ -391,6 +392,7 @@ class ConfigBase {
         }
     };
 
+  protected:
     // Called when dumping to obtain any extra data that a subclass needs to store to reconstitute
     // the object.  The base implementation does nothing.  The counterpart to this,
     // `load_extra_data()`, is called when loading from a dump that has extra data; a subclass

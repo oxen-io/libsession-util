@@ -50,4 +50,67 @@ void copy_c_str(char (&dest)[N], std::string_view src) {
     dest[src.size()] = 0;
 }
 
+// Throws std::invalid_argument if session_id doesn't look valid
+void check_session_id(std::string_view session_id);
+
+// Checks the session_id (throwing if invalid) then returns it as bytes
+std::string session_id_to_bytes(std::string_view session_id);
+
+// Validates an open group pubkey; we accept it in hex, base32z, or base64 (padded or unpadded).
+// Throws std::invalid_argument if invalid.
+void check_encoded_pubkey(std::string_view pk);
+
+// Takes a 32-byte pubkey value encoded as hex, base32z, or base64 and returns the decoded 32 bytes.
+// Throws if invalid.
+ustring decode_pubkey(std::string_view pk);
+
+// Modifies a string to be (ascii) lowercase.
+void make_lc(std::string& s);
+
+// Digs into a config `dict` to get out a config::set; nullptr if not there (or not set)
+const config::set* maybe_set(const session::config::dict& d, const char* key);
+
+// Digs into a config `dict` to get out an int64_t; nullopt if not there (or not int)
+std::optional<int64_t> maybe_int(const session::config::dict& d, const char* key);
+
+// Digs into a config `dict` to get out a string; nullopt if not there (or not string)
+std::optional<std::string> maybe_string(const session::config::dict& d, const char* key);
+
+// Digs into a config `dict` to get out a ustring; nullopt if not there (or not string)
+std::optional<ustring> maybe_ustring(const session::config::dict& d, const char* key);
+
+// Digs into a config `dict` to get out a string view; nullopt if not there (or not string).  The
+// string view is only valid as long as the dict stays unchanged.
+std::optional<std::string_view> maybe_sv(const session::config::dict& d, const char* key);
+
+/// Sets a value to 1 if true, removes it if false.
+void set_flag(ConfigBase::DictFieldProxy&& field, bool val);
+
+/// Sets a string value if non-empty, clears it if empty.
+void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string val);
+void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string_view val);
+
+/// Sets an integer value, if non-zero; removes it if 0.
+void set_nonzero_int(ConfigBase::DictFieldProxy&& field, int64_t val);
+
+/// Sets an integer value, if positive; removes it if <= 0.
+void set_positive_int(ConfigBase::DictFieldProxy&& field, int64_t val);
+
+/// Sets a pair of values if the given condition is satisfied, clears both values otherwise.
+template <typename Condition, typename T1, typename T2>
+void set_pair_if(
+        Condition&& condition,
+        ConfigBase::DictFieldProxy&& f1,
+        T1&& v1,
+        ConfigBase::DictFieldProxy&& f2,
+        T2&& v2) {
+    if (condition) {
+        f1 = std::forward<T1>(v1);
+        f2 = std::forward<T2>(v2);
+    } else {
+        f1.erase();
+        f2.erase();
+    }
+}
+
 }  // namespace session::config

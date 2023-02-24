@@ -2,8 +2,10 @@ add_subdirectory(Catch2)
 
 add_executable(testAll
     test_bt_merge.cpp
+    test_bugs.cpp
     test_compression.cpp
     test_config_userprofile.cpp
+    test_config_user_groups.cpp
     test_configdata.cpp
     test_config_contacts.cpp
     test_config_convo_info_volatile.cpp

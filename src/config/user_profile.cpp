@@ -11,6 +11,8 @@
 using namespace session::config;
 using session::ustring_view;
 
+LIBSESSION_C_API const size_t PROFILE_PIC_MAX_URL_LENGTH = profile_pic::MAX_URL_LENGTH;
+
 UserProfile::UserProfile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
         ConfigBase{dumped} {
     load_key(ed25519_secretkey);
@@ -37,10 +39,7 @@ LIBSESSION_C_API const char* user_profile_get_name(const config_object* conf) {
 }
 
 void UserProfile::set_name(std::string_view new_name) {
-    if (new_name.empty())
-        data["n"].erase();
-    else
-        data["n"] = new_name;
+    set_nonempty_str(data["n"], new_name);
 }
 LIBSESSION_C_API int user_profile_set_name(config_object* conf, const char* name) {
     try {
@@ -51,30 +50,28 @@ LIBSESSION_C_API int user_profile_set_name(config_object* conf, const char* name
     return 0;
 }
 
-std::optional<profile_pic> UserProfile::get_profile_pic() const {
-    auto* url = data["p"].string();
-    auto* key = data["q"].string();
-    if (url && key && !url->empty() && !key->empty())
-        return profile_pic{
-                *url, {reinterpret_cast<const unsigned char*>(key->data()), key->size()}};
-    return std::nullopt;
+profile_pic UserProfile::get_profile_pic() const {
+    profile_pic pic{};
+    if (auto* url = data["p"].string(); url && !url->empty())
+        pic.url = *url;
+    if (auto* key = data["q"].string(); key && key->size() == 32)
+        pic.key = {reinterpret_cast<const unsigned char*>(key->data()), 32};
+    return pic;
 }
 
 LIBSESSION_C_API user_profile_pic user_profile_get_pic(const config_object* conf) {
-    if (auto pic = unbox<UserProfile>(conf)->get_profile_pic())
-        return {pic->url.data(), pic->key.data(), pic->key.size()};
-
-    return {nullptr, nullptr, 0};
+    user_profile_pic p;
+    if (auto pic = unbox<UserProfile>(conf)->get_profile_pic(); pic) {
+        copy_c_str(p.url, pic.url);
+        std::memcpy(p.key, pic.key.data(), 32);
+    } else {
+        p.url[0] = 0;
+    }
+    return p;
 }
 
 void UserProfile::set_profile_pic(std::string_view url, ustring_view key) {
-    if (key.empty() || url.empty()) {
-        data["p"].erase();
-        data["q"].erase();
-    } else {
-        data["p"] = std::string{url};
-        data["q"] = std::string{reinterpret_cast<const char*>(key.data()), key.size()};
-    }
+    set_pair_if(!url.empty() && key.size() == 32, data["p"], url, data["q"], key);
 }
 
 void UserProfile::set_profile_pic(profile_pic pic) {
@@ -82,12 +79,10 @@ void UserProfile::set_profile_pic(profile_pic pic) {
 }
 
 LIBSESSION_C_API int user_profile_set_pic(config_object* conf, user_profile_pic pic) {
-    std::string_view url;
+    std::string_view url{pic.url};
     ustring_view key;
-    if (pic.url)
-        url = pic.url;
-    if (pic.key && pic.keylen)
-        key = {pic.key, pic.keylen};
+    if (!url.empty())
+        key = {pic.key, 32};
 
     try {
         unbox<UserProfile>(conf)->set_profile_pic(url, key);
@@ -96,4 +91,21 @@ LIBSESSION_C_API int user_profile_set_pic(config_object* conf, user_profile_pic 
     }
 
     return 0;
+}
+
+void UserProfile::set_nts_priority(int priority) {
+    set_positive_int(data["+"], priority);
+}
+
+int UserProfile::get_nts_priority() const {
+    return data["+"].integer_or(0);
+}
+
+LIBSESSION_C_API int user_profile_get_nts_priority(const config_object* conf) {
+    return unbox<UserProfile>(conf)->get_nts_priority();
+}
+
+// Sets the current note-to-self priority level. Should be >= 0 (negatives will be set to 0).
+LIBSESSION_C_API void user_profile_set_nts_priority(config_object* conf, int priority) {
+    unbox<UserProfile>(conf)->set_nts_priority(priority);
 }

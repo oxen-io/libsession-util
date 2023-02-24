@@ -14,6 +14,8 @@ namespace session::config {
 /// n - user profile name
 /// p - user profile url
 /// q - user profile decryption key (binary)
+/// + - the priority value for the "Note to Self" pseudo-conversation (higher = higher in the
+///     conversation list).  Omitted when 0.
 
 class UserProfile final : public ConfigBase {
 
@@ -44,14 +46,20 @@ class UserProfile final : public ConfigBase {
     /// Sets the user profile name; if given an empty string then the name is removed.
     void set_name(std::string_view new_name);
 
-    /// Gets the user's current profile pic URL and decryption key.  Returns nullptr for *both*
-    /// values if *either* value is unset or empty in the config data.
-    std::optional<profile_pic> get_profile_pic() const;
+    /// Gets the user's current profile pic URL and decryption key.  The returned object will
+    /// evaluate as false if the URL and/or key are not set.
+    profile_pic get_profile_pic() const;
 
     /// Sets the user's current profile pic to a new URL and decryption key.  Clears both if either
     /// one is empty.
     void set_profile_pic(std::string_view url, ustring_view key);
     void set_profile_pic(profile_pic pic);
+
+    /// Gets/sets the Note-to-self conversation priority.  Will always be >= 0.
+    int get_nts_priority() const;
+
+    /// Sets the Note-to-self conversation priority. Should be >= 0 (negatives will be set to 0).
+    void set_nts_priority(int priority);
 };
 
 }  // namespace session::config
