@@ -24,6 +24,12 @@ using session::ustring_view;
 LIBSESSION_C_API const size_t GROUP_NAME_MAX_LENGTH =
         session::config::legacy_group_info::NAME_MAX_LENGTH;
 
+namespace {
+struct ugroups_internals {
+    std::map<std::string, bool> members;
+};
+}  // namespace
+
 namespace session::config {
 
 legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid)} {
@@ -46,7 +52,7 @@ void community_info::into(ugroups_community_info& c) const {
 
 static_assert(sizeof(ugroups_legacy_group_info::name) == legacy_group_info::NAME_MAX_LENGTH + 1);
 
-legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c) :
+legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c, impl_t) :
         session_id{c.session_id, 66},
         name{c.name},
         disappearing_timer{c.disappearing_timer},
@@ -59,7 +65,22 @@ legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c) :
     }
 }
 
-void legacy_group_info::into(ugroups_legacy_group_info& c) const {
+legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c) :
+        legacy_group_info{c, impl} {
+    if (c._internal)
+        members_ = static_cast<const ugroups_internals*>(c._internal)->members;
+}
+
+legacy_group_info::legacy_group_info(ugroups_legacy_group_info&& c) : legacy_group_info{c, impl} {
+    if (c._internal) {
+        auto* internals = static_cast<ugroups_internals*>(c._internal);
+        members_ = std::move(internals->members);
+        delete internals;
+        c._internal = nullptr;
+    }
+}
+
+void legacy_group_info::into(ugroups_legacy_group_info& c, impl_t) const {
     assert(session_id.size() == 66);
     copy_c_str(c.session_id, session_id);
     copy_c_str(c.name, name);
@@ -71,6 +92,18 @@ void legacy_group_info::into(ugroups_legacy_group_info& c) const {
     c.disappearing_timer = disappearing_timer.count();
     c.hidden = hidden;
     c.priority = priority;
+    if (c._internal)
+        static_cast<ugroups_internals*>(c._internal)->members.clear();
+    else
+        c._internal = new ugroups_internals{};
+}
+void legacy_group_info::into(ugroups_legacy_group_info& c) const& {
+    into(c, impl);
+    static_cast<ugroups_internals*>(c._internal)->members = members_;
+}
+void legacy_group_info::into(ugroups_legacy_group_info& c) && {
+    into(c, impl);
+    static_cast<ugroups_internals*>(c._internal)->members = std::move(members_);
 }
 
 void legacy_group_info::load(const dict& info_dict) {
@@ -389,7 +422,7 @@ using namespace session::config;
 
 extern "C" {
 struct user_groups_iterator {
-    void* _internals;
+    UserGroups::iterator it;
 };
 }
 
@@ -433,25 +466,36 @@ LIBSESSION_C_API bool user_groups_get_or_construct_community(
     }
 }
 
-LIBSESSION_C_API bool user_groups_get_legacy_group(
-        const config_object* conf, ugroups_legacy_group_info* group, const char* id) {
+LIBSESSION_C_API void ugroups_legacy_group_free(ugroups_legacy_group_info* group) {
+    if (group && group->_internal) {
+        delete static_cast<ugroups_internals*>(group->_internal);
+        group->_internal = nullptr;
+    }
+}
+
+LIBSESSION_C_API ugroups_legacy_group_info* user_groups_get_legacy_group(
+        const config_object* conf, const char* id) {
     try {
+        auto group = std::make_unique<ugroups_legacy_group_info>();
+        group->_internal = nullptr;
         if (auto c = unbox<UserGroups>(conf)->get_legacy_group(id)) {
-            c->into(*group);
-            return true;
+            std::move(c)->into(*group);
+            return group.release();
         }
     } catch (...) {
     }
-    return false;
+    return nullptr;
 }
 
-LIBSESSION_C_API bool user_groups_get_or_construct_legacy_group(
-        const config_object* conf, ugroups_legacy_group_info* group, const char* id) {
+LIBSESSION_C_API ugroups_legacy_group_info* user_groups_get_or_construct_legacy_group(
+        const config_object* conf, const char* id) {
     try {
+        auto group = std::make_unique<ugroups_legacy_group_info>();
+        group->_internal = nullptr;
         unbox<UserGroups>(conf)->get_or_construct_legacy_group(id).into(*group);
-        return true;
+        return group.release();
     } catch (...) {
-        return false;
+        return nullptr;
     }
 }
 
@@ -462,6 +506,10 @@ LIBSESSION_C_API void user_groups_set_community(
 LIBSESSION_C_API void user_groups_set_legacy_group(
         config_object* conf, const ugroups_legacy_group_info* group) {
     unbox<UserGroups>(conf)->set(legacy_group_info{*group});
+}
+LIBSESSION_C_API void user_groups_set_free_legacy_group(
+        config_object* conf, ugroups_legacy_group_info* group) {
+    unbox<UserGroups>(conf)->set(legacy_group_info{std::move(*group)});
 }
 
 LIBSESSION_C_API bool user_groups_erase_community(
@@ -480,6 +528,90 @@ LIBSESSION_C_API bool user_groups_erase_legacy_group(config_object* conf, const 
     }
 }
 
+struct ugroups_legacy_members_iterator {
+    using map_t = std::map<std::string, bool>;
+    map_t& members;
+    map_t::iterator it{members.begin()};
+    bool need_advance = false;
+};
+
+LIBSESSION_C_API ugroups_legacy_members_iterator* ugroups_legacy_members_begin(
+        ugroups_legacy_group_info* group) {
+    return new ugroups_legacy_members_iterator{
+            static_cast<ugroups_internals*>(group->_internal)->members};
+}
+
+LIBSESSION_C_API bool ugroups_legacy_members_next(
+        ugroups_legacy_members_iterator* it, const char** session_id, bool* admin) {
+    if (it->need_advance)
+        ++it->it;
+    else
+        it->need_advance = true;
+
+    if (it->it != it->members.end()) {
+        *session_id = it->it->first.data();
+        *admin = it->it->second;
+        return true;
+    }
+    return false;
+}
+
+LIBSESSION_C_API
+void ugroups_legacy_members_erase(ugroups_legacy_members_iterator* it) {
+    it->it = it->members.erase(it->it);
+    it->need_advance = false;
+}
+
+LIBSESSION_C_API
+void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it) {
+    delete it;
+}
+
+LIBSESSION_C_API
+bool ugroups_legacy_member_add(
+        ugroups_legacy_group_info* group, const char* session_id, bool admin) {
+    try {
+        check_session_id(session_id);
+    } catch (...) {
+        return false;
+    }
+    auto [it, ins] =
+            static_cast<ugroups_internals*>(group->_internal)->members.emplace(session_id, admin);
+    if (ins)
+        return true;
+    if (it->second == admin)
+        return false;
+
+    it->second = admin;
+    return true;
+}
+
+LIBSESSION_C_API
+bool ugroups_legacy_member_remove(ugroups_legacy_group_info* group, const char* session_id) {
+    return static_cast<ugroups_internals*>(group->_internal)->members.erase(session_id);
+}
+
+LIBSESSION_C_API size_t ugroups_legacy_members_count(
+        const ugroups_legacy_group_info* group, size_t* members, size_t* admins) {
+    const auto& mems = static_cast<const ugroups_internals*>(group->_internal)->members;
+    if (members || admins) {
+        if (members)
+            *members = 0;
+        if (admins)
+            *admins = 0;
+        for (const auto& [sid, admin] : mems) {
+            if (admin) {
+                if (admins)
+                    ++*admins;
+            } else {
+                if (members)
+                    ++*members;
+            }
+        }
+    }
+    return mems.size();
+}
+
 LIBSESSION_C_API size_t user_groups_size(const config_object* conf) {
     return unbox<UserGroups>(conf)->size();
 }
@@ -491,42 +623,34 @@ LIBSESSION_C_API size_t user_groups_size_legacy_groups(const config_object* conf
 }
 
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new(const config_object* conf) {
-    auto* it = new user_groups_iterator{};
-    it->_internals = new UserGroups::iterator{unbox<UserGroups>(conf)->begin()};
-    return it;
+    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin()}};
 }
 
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_communities(
         const config_object* conf) {
-    auto* it = new user_groups_iterator{};
-    it->_internals = new UserGroups::iterator{unbox<UserGroups>(conf)->begin_communities()};
-    return it;
+    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_communities()}};
 }
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_legacy_groups(
         const config_object* conf) {
-    auto* it = new user_groups_iterator{};
-    it->_internals = new UserGroups::iterator{unbox<UserGroups>(conf)->begin_legacy_groups()};
-    return it;
+    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_legacy_groups()}};
 }
 
 LIBSESSION_C_API void user_groups_iterator_free(user_groups_iterator* it) {
-    delete static_cast<UserGroups::iterator*>(it->_internals);
     delete it;
 }
 
 LIBSESSION_C_API bool user_groups_iterator_done(user_groups_iterator* it) {
-    auto& real = *static_cast<UserGroups::iterator*>(it->_internals);
-    return real.done();
+    return it->it.done();
 }
 
 LIBSESSION_C_API void user_groups_iterator_advance(user_groups_iterator* it) {
-    ++*static_cast<UserGroups::iterator*>(it->_internals);
+    ++it->it;
 }
 
 namespace {
 template <typename Cpp, typename C>
 bool user_groups_it_is_impl(user_groups_iterator* it, C* c) {
-    auto& convo = **static_cast<UserGroups::iterator*>(it->_internals);
+    auto& convo = *it->it;
     if (auto* d = std::get_if<Cpp>(&convo)) {
         d->into(*c);
         return true;
@@ -546,6 +670,5 @@ LIBSESSION_C_API bool user_groups_it_is_legacy_group(
 }
 
 LIBSESSION_C_API void user_groups_iterator_erase(config_object* conf, user_groups_iterator* it) {
-    auto& real = *static_cast<UserGroups::iterator*>(it->_internals);
-    real = unbox<UserGroups>(conf)->erase(real);
+    it->it = unbox<UserGroups>(conf)->erase(it->it);
 }

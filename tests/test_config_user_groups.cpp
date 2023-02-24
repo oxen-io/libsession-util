@@ -1,4 +1,5 @@
 #include <oxenc/hex.h>
+#include <session/config/user_groups.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -390,6 +391,128 @@ TEST_CASE("User Groups", "[config][groups]") {
                               "legacy: Englishmen, 3 admins, 2 members",
                       });
     }
+}
+
+TEST_CASE("User Groups members C API", "[config][groups][c]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
+    REQUIRE(oxenc::to_hex(curve_pk.begin(), curve_pk.end()) ==
+            "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    char err[256];
+    config_object* conf;
+    rc = user_groups_init(&conf, ed_sk.data(), NULL, 0, err);
+    REQUIRE(rc == 0);
+
+    constexpr auto definitely_real_id =
+            "055000000000000000000000000000000000000000000000000000000000000000";
+
+    ugroups_legacy_group_info* group =
+            user_groups_get_or_construct_legacy_group(conf, definitely_real_id);
+
+    std::vector<std::string> users = {
+            "050000000000000000000000000000000000000000000000000000000000000000"s,
+            "051111111111111111111111111111111111111111111111111111111111111111"s,
+            "052222222222222222222222222222222222222222222222222222222222222222"s,
+            "053333333333333333333333333333333333333333333333333333333333333333"s,
+            "054444444444444444444444444444444444444444444444444444444444444444"s,
+            "055555555555555555555555555555555555555555555555555555555555555555"s,
+            "056666666666666666666666666666666666666666666666666666666666666666"s};
+
+    CHECK(ugroups_legacy_member_add(group, users[0].c_str(), false));
+    CHECK(ugroups_legacy_member_add(group, users[1].c_str(), true));
+    CHECK(ugroups_legacy_member_add(group, users[2].c_str(), false));
+    CHECK(ugroups_legacy_member_add(group, users[4].c_str(), true));
+    CHECK(ugroups_legacy_member_add(group, users[5].c_str(), false));
+    CHECK_FALSE(ugroups_legacy_member_add(group, users[2].c_str(), false));
+    CHECK(ugroups_legacy_member_add(group, users[2].c_str(), true));     // Flip to admin
+    CHECK(ugroups_legacy_member_add(group, users[1].c_str(), false));    // Flip to non-admin
+    CHECK_FALSE(ugroups_legacy_member_add(group, "0505050505", false));  // bad id
+    CHECK_FALSE(ugroups_legacy_member_add(
+            group,
+            "020000000000000000000000000000000000000000000000000000000000000000",
+            false));  // bad id
+    CHECK(ugroups_legacy_member_remove(group, users[5].c_str()));
+    CHECK(ugroups_legacy_member_remove(group, users[4].c_str()));
+
+    std::map<std::string, bool> expected_members{
+            {users[0], false}, {users[1], false}, {users[2], true}};
+    std::map<std::string, bool> found_members;
+
+    const char* session_id;
+    bool admin;
+    ugroups_legacy_members_iterator* it = ugroups_legacy_members_begin(group);
+    while (ugroups_legacy_members_next(it, &session_id, &admin)) {
+        found_members[session_id] = admin;
+    }
+    ugroups_legacy_members_free(it);
+    CHECK(found_members == expected_members);
+    CHECK(ugroups_legacy_members_count(group, NULL, NULL) == 3);
+    size_t members, admins;
+    CHECK(ugroups_legacy_members_count(group, &members, &admins) == 3);
+    CHECK(members == 2);
+    CHECK(admins == 1);
+    members = 0;
+    admins = 0;
+    CHECK(ugroups_legacy_members_count(group, &members, NULL) == 3);
+    CHECK(members == 2);
+    CHECK(ugroups_legacy_members_count(group, NULL, &admins) == 3);
+    CHECK(admins == 1);
+
+    it = ugroups_legacy_members_begin(group);
+    members = 0;
+    admins = 0;
+    while (ugroups_legacy_members_next(it, &session_id, &admin)) {
+        if (session_id == users[1]) {
+            ugroups_legacy_members_erase(it);
+            // Adding while iterating is allowed (if you add ones that come after the current point,
+            // you'll iterate into them; if they come before you won't).
+            ugroups_legacy_member_add(group, users[3].c_str(), true);
+            ugroups_legacy_member_add(group, users[4].c_str(), true);
+            ugroups_legacy_member_add(group, users[5].c_str(), true);
+        } else if (admin)
+            admins++;
+        else
+            members++;
+    }
+    CHECK(admins == 4);
+    CHECK(members == 1);
+    ugroups_legacy_members_free(it);
+    CHECK(ugroups_legacy_members_count(group, NULL, NULL) == 5);
+
+    expected_members.erase(users[1]);
+    for (auto i : {3, 4, 5})
+        expected_members.emplace(users[i], true);
+
+    // Non-freeing, so we can keep using `group`; this is less common:
+    user_groups_set_legacy_group(conf, group);
+
+    group->session_id[2] = 'e';
+    // The "normal" way to set a group when you're done with it (also properly frees `group`).
+    user_groups_set_free_legacy_group(conf, group);
+
+    config_push_data* to_push = config_push(conf);
+    CHECK(to_push->seqno == 1);
+    config_confirm_pushed(conf, to_push->seqno, "fakehash1");
+
+    session::config::UserGroups c2{ustring_view{seed}, std::nullopt};
+
+    CHECK(c2.merge({{"fakehash1", ustring_view{to_push->config, to_push->config_len}}}) == 1);
+
+    auto grp = c2.get_legacy_group(definitely_real_id);
+    REQUIRE(grp);
+    CHECK(grp->members() == expected_members);
 }
 
 namespace Catch {

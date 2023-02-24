@@ -88,13 +88,21 @@ struct legacy_group_info {
 
     // Internal ctor/method for C API implementations:
     legacy_group_info(const struct ugroups_legacy_group_info& c);  // From c struct
-    void into(struct ugroups_legacy_group_info& c) const;          // Into c struct
+    legacy_group_info(struct ugroups_legacy_group_info&& c);       // From c struct
+    void into(struct ugroups_legacy_group_info& c) const&;         // Copy into c struct
+    void into(struct ugroups_legacy_group_info& c) &&;             // Move into c struct
 
   private:
     // session_id => (is admin)
     std::map<std::string, bool> members_;
 
     friend class UserGroups;
+
+    // Private implementations of the to/from C struct methods
+    struct impl_t {};
+    static constexpr inline impl_t impl{};
+    legacy_group_info(const struct ugroups_legacy_group_info& c, impl_t);
+    void into(struct ugroups_legacy_group_info& c, impl_t) const;
 
     void load(const dict& info_dict);
 };
