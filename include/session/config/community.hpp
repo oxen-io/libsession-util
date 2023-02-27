@@ -125,6 +125,11 @@ struct community {
     // Throw std::invalid_argument if anything in the URL is unparseable or invalid.
     static std::tuple<std::string, std::string, ustring> parse_full_url(std::string_view full_url);
 
+    // Takes a full or partial room URL (partial here meaning missing the ?public_key=...) and
+    // splits it up into canonical url, room, and (if present) pubkey.
+    static std::tuple<std::string, std::string, std::optional<ustring>> parse_partial_url(
+            std::string_view url);
+
   protected:
     // The canonical base url and room (i.e. lower-cased, URL cleaned up):
     std::string base_url_, room_;

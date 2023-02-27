@@ -127,8 +127,8 @@ std::optional<convo::community> ConvoInfoVolatile::get_community(
     return std::nullopt;
 }
 
-std::optional<convo::community> ConvoInfoVolatile::get_community(std::string_view full_url) const {
-    auto [base, room, pubkey] = community::parse_full_url(full_url);
+std::optional<convo::community> ConvoInfoVolatile::get_community(std::string_view partial_url) const {
+    auto [base, room, pubkey] = community::parse_partial_url(partial_url);
     return get_community(base, room);
 }
 
