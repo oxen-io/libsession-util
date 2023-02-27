@@ -115,6 +115,20 @@ void config_dump(config_object* conf, unsigned char** out, size_t* outlen);
 /// and saving the `config_dump()` data again.
 bool config_needs_dump(const config_object* conf);
 
+/// Struct containing a list of C strings.  Typically where this is returned by this API it must be
+/// freed (via `free()`) when done with it.
+typedef struct config_string_list {
+    char** value; // array of null-terminated C strings
+    size_t len; // length of `value`
+} config_string_list;
+
+/// Obtains the current active hashes.  Note that this will be empty if the current hash is unknown
+/// or not yet determined (for example, because the current state is dirty or because the most
+/// recent push is still pending and we don't know the hash yet).
+///
+/// The returned pointer belongs to the caller and must be freed via `free()` when done with it.
+config_string_list* config_current_hashes(const config_object* conf);
+
 /// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
 /// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).
 void config_add_key(config_object* conf, const unsigned char* key);

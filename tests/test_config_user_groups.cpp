@@ -203,7 +203,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     std::tie(seqno, to_push, obs) = groups.push();
     CHECK(seqno == 1);
     CHECK(obs.empty());
-    CHECK(groups.current_hash() == "fakehash1");
+    CHECK(groups.current_hashes() == std::vector{{"fakehash1"s}});
     CHECK_FALSE(groups.needs_dump());  // Because we just called dump() above, to load up g2
 
     CHECK_FALSE(g2.needs_push());
@@ -212,7 +212,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(seqno == 1);
     CHECK_FALSE(g2.needs_dump());
     CHECK(obs.empty());
-    CHECK(g2.current_hash() == "fakehash1");
+    CHECK(g2.current_hashes() == std::vector{{"fakehash1"s}});
 
     CHECK(g2.size() == 2);
     CHECK(g2.size_communities() == 1);
@@ -275,11 +275,13 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK(g2.needs_push());
     CHECK(g2.needs_dump());
+    CHECK(g2.current_hashes().empty());
     std::tie(seqno, to_push, obs) = g2.push();
+    CHECK(g2.current_hashes().empty());
     auto to_push2 = to_push;
     CHECK(seqno == 2);
     g2.confirm_pushed(seqno, "fakehash2");
-    CHECK(g2.current_hash() == "fakehash2");
+    CHECK(g2.current_hashes() == std::vector{{"fakehash2"s}});
     CHECK(as_set(obs) == make_set("fakehash1"s));
     g2.dump();
 
@@ -327,7 +329,7 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     CHECK(seqno == 3);
     CHECK(as_set(obs) == make_set("fakehash2"s));
-    CHECK(g2.current_hash() == "fakehash3");
+    CHECK(g2.current_hashes() == std::vector{{"fakehash3"s}});
 
     to_merge.clear();
     to_merge.emplace_back("fakehash3", to_push);
@@ -363,7 +365,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     g2.merge(to_merge);
     CHECK(g2.needs_dump());
     CHECK_FALSE(g2.needs_push());
-    CHECK(g2.current_hash() == "fakehash4");
+    CHECK(g2.current_hashes() == std::vector{{"fakehash4"s}});
     std::tie(seqno, to_push, obs) = g2.push();
     CHECK(seqno == 4);
     CHECK(as_set(obs) == make_set("fakehash10"s, "fakehash11", "fakehash12", "fakehash3"));
@@ -502,9 +504,26 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     // The "normal" way to set a group when you're done with it (also properly frees `group`).
     user_groups_set_free_legacy_group(conf, group);
 
+    config_string_list* hashes = config_current_hashes(conf);
+    REQUIRE(hashes);
+    CHECK(hashes->len == 0);
+    free(hashes);
+
     config_push_data* to_push = config_push(conf);
     CHECK(to_push->seqno == 1);
+
+    hashes = config_current_hashes(conf);
+    REQUIRE(hashes);
+    CHECK(hashes->len == 0);
+    free(hashes);
+
     config_confirm_pushed(conf, to_push->seqno, "fakehash1");
+
+    hashes = config_current_hashes(conf);
+    REQUIRE(hashes);
+    REQUIRE(hashes->len == 1);
+    CHECK(hashes->value[0] == "fakehash1"sv);
+    free(hashes);
 
     session::config::UserGroups c2{ustring_view{seed}, std::nullopt};
 

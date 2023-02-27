@@ -214,6 +214,13 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
            1;  // -1 because we don't count the first one (reparsing ourself).
 }
 
+std::vector<std::string> ConfigBase::current_hashes() const {
+    std::vector<std::string> hashes;
+    if (!_curr_hash.empty())
+        hashes.push_back(_curr_hash);
+    return hashes;
+}
+
 bool ConfigBase::needs_push() const {
     return !is_clean();
 }
@@ -527,6 +534,29 @@ LIBSESSION_EXPORT void config_dump(config_object* conf, unsigned char** out, siz
 
 LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {
     return unbox(conf)->needs_dump();
+}
+
+LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf) {
+    auto hashes = unbox(conf)->current_hashes();
+    size_t sz = sizeof(config_string_list) + hashes.size() * sizeof(char*);
+    for (auto&h : hashes)
+        sz += h.size() + 1;
+    void* buf = std::malloc(sz);
+    auto* ret = static_cast<config_string_list*>(buf);
+    ret->len = hashes.size();
+
+    static_assert(alignof(config_string_list) >= alignof(char*));
+    ret->value = reinterpret_cast<char**>(ret + 1);
+    char** next_ptr = ret->value;
+    char* next_str = reinterpret_cast<char*>(next_ptr + ret->len);
+
+    for (size_t i = 0; i < ret->len; i++) {
+        *(next_ptr++) = next_str;
+        std::memcpy(next_str, hashes[i].c_str(), hashes[i].size() + 1);
+        next_str += hashes[i].size() + 1;
+    }
+
+    return ret;
 }
 
 LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key) {

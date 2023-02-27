@@ -488,9 +488,9 @@ class ConfigBase {
     // unmodified).
     bool is_clean() const { return _state == ConfigState::Clean; }
 
-    // The current config hash; this will be empty if the current hash is unknown or the current
-    // state is not clean.
-    const std::string& current_hash() const { return _curr_hash; }
+    // The current config hash(es); this can be empty if the current hash is unknown or the current
+    // state is not clean (i.e. a push is needed or pending).
+    std::vector<std::string> current_hashes() const;
 
     // Returns true if this object contains updated data that has not yet been confirmed stored on
     // the server.  This will be true whenever `is_clean()` is false: that is, if we are currently
