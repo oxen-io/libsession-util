@@ -1144,3 +1144,65 @@ TEST_CASE("config message example 4 - complex conflict resolution", "[config][ex
     CHECK(m_alt1.seqno() == 127);
     CHECK(m_alt1.hash() == m127.hash());
 }
+
+template <typename T, size_t N>
+const std::string_view array_to_sv(const std::array<T, N>& data) {
+    return to_sv(ustring_view{data.data(), data.size()});
+}
+
+inline bt_list lagged_from(MutableConfigMessage m) {
+    return {m.seqno(), array_to_sv(m.hash()), m.diff()};
+}
+
+TEST_CASE("merge test variant 1", "[config][merge]") {
+    MutableConfigMessage m0_x;
+    m0_x.data()[""] = "";
+    REQUIRE(m0_x.seqno() == 0);
+
+    MutableConfigMessage m1_xa{m0_x.serialize()};
+    REQUIRE(m1_xa.seqno() == 1);
+    m1_xa.data().erase("");
+
+    MutableConfigMessage m1_xb{m0_x.serialize()};
+    // The actual value matters because it affects the order of hashes.
+    m1_xb.data()[""] = 10;
+    m1_xb.data()["a"] = "y";
+
+    MutableConfigMessage m2_xab{{m1_xa.serialize(), m1_xb.serialize()}};
+    // There is a competition for the empty key "" between m1_xa and m1_xb, m1_xb wins.
+    // One way of verifing the winner is by checking the message data.
+    REQUIRE(m2_xab.seqno() == 2);
+    REQUIRE(printable(oxenc::bt_serialize(m2_xab.data())) ==
+            printable(oxenc::bt_serialize(m1_xb.data())));
+
+    // The other way of verifing the winner is by checking the order of lagged_diffs in m2_xab
+    bt_dict d2_xab;
+    bt_deserialize(to_sv(m2_xab.serialize()), d2_xab);
+    std::list<bt_list> lagged_2_xab{lagged_from(m0_x), lagged_from(m1_xa), lagged_from(m1_xb)};
+    REQUIRE(printable(oxenc::bt_serialize(lagged_2_xab)) ==
+            printable(oxenc::bt_serialize(d2_xab["<"])));
+
+    // another branch start from scratch
+    MutableConfigMessage m0_y;
+    // Occasionally equal to m1_xb.data();
+    m0_y.data()[""] = 10;
+    m0_y.data()["a"] = "y";
+
+    MutableConfigMessage m3{{m0_y.serialize(), m2_xab.serialize()}};
+    REQUIRE(m3.merged());
+    REQUIRE(m3.seqno() == 3);
+
+    bt_dict d3;
+    bt_deserialize(to_sv(m3.serialize()), d3);
+    std::list<bt_list> lagged3{
+            lagged_from(m0_x),
+            lagged_from(m0_y),
+            lagged_from(m1_xa),
+            lagged_from(m1_xb),
+            lagged_from(m2_xab)};
+    REQUIRE(printable(oxenc::bt_serialize(lagged3)) == printable(oxenc::bt_serialize(d3["<"])));
+
+    // This should not fail?
+    REQUIRE(printable(oxenc::bt_serialize(m3.data())) ==
+            printable(oxenc::bt_serialize(m2_xab.data())));
+}
