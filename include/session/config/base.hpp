@@ -465,20 +465,10 @@ class ConfigBase {
     // Will throw on serious error (i.e. if neither the current nor any of the given configs are
     // parseable).  This should not happen (the current config, at least, should always be
     // re-parseable).
-    //
-    // Immediately after calling this you can get `obsolete_messages()` to obtain message hashes
-    // that are now stale and can be deleted from the server.  (The returned list may include the
-    // provided hashes, or the hash of the message prior to the merge).  Any configs that could not
-    // be properly consumed will *not* be included in the obsolete message list as we assume they
-    // are from the future and so we should leave them alone.
     virtual int merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     // Same as above but takes the values as ustring's as sometimes that is more convenient.
     int merge(const std::vector<std::pair<std::string, ustring>>& configs);
-
-    // Call this to report that the given message hash has been deleted from the server; this
-    // removes the hash from the list returned by `obsolete_messages()`.
-    void confirm_removed(const std::string& msg_hash);
 
     // Returns true if we are currently dirty (i.e. have made changes that haven't been serialized
     // yet).
