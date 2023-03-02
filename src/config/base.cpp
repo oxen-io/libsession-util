@@ -539,7 +539,7 @@ LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {
 LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf) {
     auto hashes = unbox(conf)->current_hashes();
     size_t sz = sizeof(config_string_list) + hashes.size() * sizeof(char*);
-    for (auto&h : hashes)
+    for (auto& h : hashes)
         sz += h.size() + 1;
     void* buf = std::malloc(sz);
     auto* ret = static_cast<config_string_list*>(buf);

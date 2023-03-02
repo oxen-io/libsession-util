@@ -189,7 +189,8 @@ std::string community::canonical_room(std::string_view room) {
     return r;
 }
 
-std::tuple<std::string, std::string, std::optional<ustring>> community::parse_partial_url(std::string_view url) {
+std::tuple<std::string, std::string, std::optional<ustring>> community::parse_partial_url(
+        std::string_view url) {
     std::tuple<std::string, std::string, std::optional<ustring>> result;
     auto& [base_url, room_token, maybe_pubkey] = result;
 
@@ -249,7 +250,11 @@ LIBSESSION_C_API bool community_parse_full_url(
 }
 
 LIBSESSION_C_API bool community_parse_partial_url(
-        const char* full_url, char* base_url, char* room_token, unsigned char* pubkey, bool* has_pubkey) {
+        const char* full_url,
+        char* base_url,
+        char* room_token,
+        unsigned char* pubkey,
+        bool* has_pubkey) {
     try {
         auto [base, room, maybe_pk] = session::config::community::parse_partial_url(full_url);
         assert(base.size() <= COMMUNITY_BASE_URL_MAX_LENGTH);
