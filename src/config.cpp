@@ -608,17 +608,18 @@ ConfigMessage::ConfigMessage(
         sign_callable signer_,
         int lag,
         bool signature_optional,
-        std::function<void(const config_error&)> error_handler) :
+        std::function<void(size_t, const config_error&)> error_handler) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     std::vector<std::pair<ConfigMessage, bool>> configs;  // [[config, redundant], ...]
-    for (const auto& data : serialized_confs) {
+    for (size_t i = 0; i < serialized_confs.size(); i++) {
+        const auto& data = serialized_confs[i];
         try {
             ConfigMessage m{data, verifier, signer, lag, signature_optional};
             configs.emplace_back(std::move(m), false);
         } catch (const config_error& e) {
             if (error_handler)
-                error_handler(e);
+                error_handler(i, e);
             // If we survive the error handler then we just skip it
             continue;
         }
@@ -651,20 +652,28 @@ ConfigMessage::ConfigMessage(
         if (conf.seqno() + lag <= max_seqno)
             redundant = true;
 
+    size_t curr_confs =
+            std::count_if(configs.begin(), configs.end(), [](const auto& c) { return !c.second; });
+    assert(curr_confs >= 1);
+
+    if (curr_confs == 1) {
+        // We have just one config left after all that, so we become it directly as-is
+        for (int i = 0; i < configs.size(); i++) {
+            if (!configs[i].second) {
+                *this = std::move(configs[i].first);
+                unmerged_ = i;
+                return;
+            }
+        }
+        assert(false);
+    }
+
+    unmerged_ = -1;
+
     // Clear any redundant messages
     configs.erase(
             std::remove_if(configs.begin(), configs.end(), [](const auto& c) { return c.second; }),
             configs.end());
-
-    assert(!configs.empty());
-
-    if (configs.size() == 1) {
-        // We have just one config left after all that, so we become it directly as-is
-        *this = std::move(configs[0].first);
-        return;
-    }
-
-    merged_ = true;
 
     // Sort whatever is left by seqno/hash in *descending* order for diff processing (descending
     // order so that higher seqno/hash configs get precedence if multiple merged configs have the
@@ -710,7 +719,7 @@ MutableConfigMessage::MutableConfigMessage(
         sign_callable signer,
         int lag,
         bool signature_optional,
-        std::function<void(const config_error&)> error_handler) :
+        std::function<void(size_t, const config_error&)> error_handler) :
         ConfigMessage{
                 serialized_confs,
                 std::move(verifier),
@@ -734,7 +743,7 @@ MutableConfigMessage::MutableConfigMessage(
                 std::move(signer),
                 lag,
                 signature_optional,
-                [](const config_error& e) { throw e; }} {}
+                [](size_t, const config_error& e) { throw e; }} {}
 
 const oxenc::bt_dict& ConfigMessage::diff() {
     return diff_;

@@ -88,13 +88,21 @@ struct legacy_group_info {
 
     // Internal ctor/method for C API implementations:
     legacy_group_info(const struct ugroups_legacy_group_info& c);  // From c struct
-    void into(struct ugroups_legacy_group_info& c) const;          // Into c struct
+    legacy_group_info(struct ugroups_legacy_group_info&& c);       // From c struct
+    void into(struct ugroups_legacy_group_info& c) const&;         // Copy into c struct
+    void into(struct ugroups_legacy_group_info& c) &&;             // Move into c struct
 
   private:
     // session_id => (is admin)
     std::map<std::string, bool> members_;
 
     friend class UserGroups;
+
+    // Private implementations of the to/from C struct methods
+    struct impl_t {};
+    static constexpr inline impl_t impl{};
+    legacy_group_info(const struct ugroups_legacy_group_info& c, impl_t);
+    void into(struct ugroups_legacy_group_info& c, impl_t) const;
 
     void load(const dict& info_dict);
 };
@@ -154,10 +162,9 @@ class UserGroups : public ConfigBase {
     std::optional<community_info> get_community(
             std::string_view base_url, std::string_view room) const;
 
-    /// Looks up a community from a full URL.  Note that the pubkey in the full URL must be present
-    /// (to properly parse), but is not used (i.e. you get back whatever pubkey is stored for that
-    /// room even if it doesn't match what you provided).
-    std::optional<community_info> get_community(std::string_view full_url) const;
+    /// Looks up a community from a full URL.  It is permitted for the URL to omit the pubkey (it
+    /// is not used or needed by this call).
+    std::optional<community_info> get_community(std::string_view partial_url) const;
 
     /// Looks up and returns a legacy group by group ID (hex, looks like a Session ID).  Returns
     /// nullopt if the group was not found, otherwise returns a filled out `legacy_group_info`.

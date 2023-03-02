@@ -127,8 +127,9 @@ std::optional<convo::community> ConvoInfoVolatile::get_community(
     return std::nullopt;
 }
 
-std::optional<convo::community> ConvoInfoVolatile::get_community(std::string_view full_url) const {
-    auto [base, room, pubkey] = community::parse_full_url(full_url);
+std::optional<convo::community> ConvoInfoVolatile::get_community(
+        std::string_view partial_url) const {
+    auto [base, room, pubkey] = community::parse_partial_url(partial_url);
     return get_community(base, room);
 }
 
@@ -199,7 +200,7 @@ void ConvoInfoVolatile::set_base(const convo::base& c, DictFieldProxy& info) {
     set_flag(info["u"], c.unread);
 }
 
-std::pair<ustring, seqno_t> ConvoInfoVolatile::push() {
+std::tuple<seqno_t, ustring, std::vector<std::string>> ConvoInfoVolatile::push() {
     // Prune off any conversations with last_read timestamps more than PRUNE_HIGH ago (unless they
     // also have a `unread` flag set, in which case we keep them indefinitely).
     const int64_t cutoff =

@@ -49,7 +49,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
 
     CHECK_FALSE(contacts.needs_push());
     CHECK_FALSE(contacts.needs_dump());
-    CHECK(contacts.push().second == 0);
+    CHECK(std::get<seqno_t>(contacts.push()) == 0);
 
     c.set_name("Joe");
     c.set_nickname("Joey");
@@ -71,12 +71,12 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK(contacts.needs_push());
     CHECK(contacts.needs_dump());
 
-    auto [to_push, seqno] = contacts.push();
+    auto [seqno, to_push, obs] = contacts.push();
 
     CHECK(seqno == 1);
 
     // Pretend we uploaded it
-    contacts.confirm_pushed(seqno);
+    contacts.confirm_pushed(seqno, "fakehash1");
     CHECK(contacts.needs_dump());
     CHECK_FALSE(contacts.needs_push());
 
@@ -86,7 +86,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     session::config::Contacts contacts2{seed, contacts.dump()};
     CHECK_FALSE(contacts2.needs_push());
     CHECK_FALSE(contacts2.needs_dump());
-    CHECK(contacts2.push().second == 1);
+    CHECK(std::get<seqno_t>(contacts2.push()) == 1);
     CHECK_FALSE(contacts.needs_dump());  // Because we just called dump() above, to load up
                                          // contacts2.
 
@@ -106,17 +106,17 @@ TEST_CASE("Contacts", "[config][contacts]") {
 
     CHECK(contacts2.needs_push());
 
-    std::tie(to_push, seqno) = contacts2.push();
+    std::tie(seqno, to_push, obs) = contacts2.push();
 
     CHECK(seqno == 2);
 
-    std::vector<ustring_view> merge_configs;
-    merge_configs.push_back(to_push);
+    std::vector<std::pair<std::string, ustring_view>> merge_configs;
+    merge_configs.emplace_back("fakehash2", to_push);
     contacts.merge(merge_configs);
-    contacts2.confirm_pushed(seqno);
+    contacts2.confirm_pushed(seqno, "fakehash2");
 
     CHECK_FALSE(contacts.needs_push());
-    CHECK(contacts.push().second == seqno);
+    CHECK(std::get<seqno_t>(contacts.push()) == seqno);
 
     // Iterate through and make sure we got everything we expected
     std::vector<std::string> session_ids;
@@ -158,33 +158,37 @@ TEST_CASE("Contacts", "[config][contacts]") {
 
     CHECK(contacts.needs_push());
     CHECK(contacts2.needs_push());
-    std::tie(to_push, seqno) = contacts.push();
-    auto [to_push2, seqno2] = contacts2.push();
+    std::tie(seqno, to_push, obs) = contacts.push();
+    auto [seqno2, to_push2, obs2] = contacts2.push();
 
     CHECK(seqno == seqno2);
     CHECK(to_push != to_push2);
+    CHECK(as_set(obs) == make_set("fakehash2"s));
+    CHECK(as_set(obs2) == make_set("fakehash2"s));
 
-    contacts.confirm_pushed(seqno);
-    contacts2.confirm_pushed(seqno2);
+    contacts.confirm_pushed(seqno, "fakehash3a");
+    contacts2.confirm_pushed(seqno2, "fakehash3b");
 
     merge_configs.clear();
-    merge_configs.push_back(to_push2);
+    merge_configs.emplace_back("fakehash3b", to_push2);
     contacts.merge(merge_configs);
     CHECK(contacts.needs_push());
 
     merge_configs.clear();
-    merge_configs.push_back(to_push);
+    merge_configs.emplace_back("fakehash3a", to_push);
     contacts2.merge(merge_configs);
     CHECK(contacts2.needs_push());
 
-    std::tie(to_push, seqno) = contacts.push();
+    std::tie(seqno, to_push, obs) = contacts.push();
     CHECK(seqno == seqno2 + 1);
-    std::tie(to_push2, seqno2) = contacts2.push();
+    std::tie(seqno2, to_push2, obs2) = contacts2.push();
     CHECK(seqno == seqno2);
     CHECK(to_push == to_push2);
+    CHECK(as_set(obs) == make_set("fakehash3a"s, "fakehash3b"));
+    CHECK(as_set(obs2) == make_set("fakehash3a"s, "fakehash3b"));
 
-    contacts.confirm_pushed(seqno);
-    contacts2.confirm_pushed(seqno2);
+    contacts.confirm_pushed(seqno, "fakehash4");
+    contacts2.confirm_pushed(seqno2, "fakehash4");
 
     CHECK_FALSE(contacts.needs_push());
     CHECK_FALSE(contacts2.needs_push());
@@ -257,22 +261,22 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(config_needs_push(conf));
     CHECK(config_needs_dump(conf));
 
-    unsigned char* to_push;
-    size_t to_push_len;
-    seqno_t seqno = config_push(conf, &to_push, &to_push_len);
-    CHECK(seqno == 1);
+    config_push_data* to_push = config_push(conf);
+    CHECK(to_push->seqno == 1);
 
     config_object* conf2;
     REQUIRE(contacts_init(&conf2, ed_sk.data(), NULL, 0, NULL) == 0);
 
+    const char* merge_hash[1];
     const unsigned char* merge_data[1];
     size_t merge_size[1];
-    merge_data[0] = to_push;
-    merge_size[0] = to_push_len;
-    int accepted = config_merge(conf2, merge_data, merge_size, 1);
+    merge_hash[0] = "fakehash1";
+    merge_data[0] = to_push->config;
+    merge_size[0] = to_push->config_len;
+    int accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
     REQUIRE(accepted == 1);
 
-    config_confirm_pushed(conf, seqno);
+    config_confirm_pushed(conf, to_push->seqno, "fakehash1");
     free(to_push);
 
     contacts_contact c3;
@@ -295,14 +299,19 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
 
     contacts_set(conf2, &c3);
 
-    seqno = config_push(conf2, &to_push, &to_push_len);
+    to_push = config_push(conf2);
 
-    merge_data[0] = to_push;
-    merge_size[0] = to_push_len;
-    accepted = config_merge(conf, merge_data, merge_size, 1);
+    merge_hash[0] = "fakehash2";
+    merge_data[0] = to_push->config;
+    merge_size[0] = to_push->config_len;
+    accepted = config_merge(conf, merge_hash, merge_data, merge_size, 1);
     REQUIRE(accepted == 1);
 
-    config_confirm_pushed(conf2, seqno);
+    config_confirm_pushed(conf2, to_push->seqno, "fakehash2");
+
+    REQUIRE(to_push->obsolete_len > 0);
+    CHECK(to_push->obsolete_len == 1);
+    CHECK(to_push->obsolete[0] == "fakehash1"sv);
     free(to_push);
 
     // Iterate through and make sure we got everything we expected

@@ -189,31 +189,38 @@ std::string community::canonical_room(std::string_view room) {
     return r;
 }
 
-std::tuple<std::string, std::string, ustring> community::parse_full_url(std::string_view full_url) {
-    std::tuple<std::string, std::string, ustring> result;
-    auto& [base_url, room_token, pubkey] = result;
+std::tuple<std::string, std::string, std::optional<ustring>> community::parse_partial_url(
+        std::string_view url) {
+    std::tuple<std::string, std::string, std::optional<ustring>> result;
+    auto& [base_url, room_token, maybe_pubkey] = result;
 
     // Consume the URL from back to front; first the public key:
-    if (auto pos = full_url.rfind(qs_pubkey); pos != std::string_view::npos) {
-        auto pk = full_url.substr(pos + qs_pubkey.size());
-        pubkey = decode_pubkey(pk);
-        full_url = full_url.substr(0, pos);
-    } else {
-        throw std::invalid_argument{"Invalid community URL: no valid server pubkey"};
+    if (auto pos = url.rfind(qs_pubkey); pos != std::string_view::npos) {
+        auto pk = url.substr(pos + qs_pubkey.size());
+        maybe_pubkey = decode_pubkey(pk);
+        url = url.substr(0, pos);
     }
 
     // Now look for /r/TOKEN or /TOKEN:
-    if (auto pos = full_url.rfind("/r/"); pos != std::string_view::npos) {
-        room_token = full_url.substr(pos + 3);
-        full_url = full_url.substr(0, pos);
-    } else if (pos = full_url.rfind("/"); pos != std::string_view::npos) {
-        room_token = full_url.substr(pos + 1);
-        full_url = full_url.substr(0, pos);
+    if (auto pos = url.rfind("/r/"); pos != std::string_view::npos) {
+        room_token = url.substr(pos + 3);
+        url = url.substr(0, pos);
+    } else if (pos = url.rfind("/"); pos != std::string_view::npos) {
+        room_token = url.substr(pos + 1);
+        url = url.substr(0, pos);
     }
 
-    base_url = canonical_url(full_url);
+    base_url = canonical_url(url);
 
     return result;
+}
+
+std::tuple<std::string, std::string, ustring> community::parse_full_url(std::string_view full_url) {
+    auto [base, rm, maybe_pk] = parse_partial_url(full_url);
+    if (!maybe_pk)
+        throw std::invalid_argument{"Invalid community URL: no valid server pubkey"};
+
+    return {std::move(base), std::move(rm), std::move(*maybe_pk)};
 }
 
 }  // namespace session::config
@@ -236,6 +243,29 @@ LIBSESSION_C_API bool community_parse_full_url(
         std::memcpy(base_url, base.data(), base.size() + 1);
         std::memcpy(room_token, room.data(), room.size() + 1);
         std::memcpy(pubkey, pk.data(), pk.size());
+        return true;
+    } catch (...) {
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool community_parse_partial_url(
+        const char* full_url,
+        char* base_url,
+        char* room_token,
+        unsigned char* pubkey,
+        bool* has_pubkey) {
+    try {
+        auto [base, room, maybe_pk] = session::config::community::parse_partial_url(full_url);
+        assert(base.size() <= COMMUNITY_BASE_URL_MAX_LENGTH);
+        assert(room.size() <= COMMUNITY_ROOM_MAX_LENGTH);
+        assert(!maybe_pk || maybe_pk->size() == 32);
+        std::memcpy(base_url, base.data(), base.size() + 1);
+        std::memcpy(room_token, room.data(), room.size() + 1);
+        if (maybe_pk && pubkey)
+            std::memcpy(pubkey, maybe_pk->data(), maybe_pk->size());
+        if (has_pubkey)
+            *has_pubkey = maybe_pk.has_value();
         return true;
     } catch (...) {
     }

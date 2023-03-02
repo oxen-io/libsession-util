@@ -136,7 +136,7 @@ class ConvoInfoVolatile : public ConfigBase {
     static constexpr auto PRUNE_HIGH = 45 * 24h;
 
     /// Overrides push() to prune stale last-read values before we do the push.
-    std::pair<ustring, seqno_t> push() override;
+    std::tuple<seqno_t, ustring, std::vector<std::string>> push() override;
 
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `convo::one_to_one`.
@@ -148,10 +148,9 @@ class ConvoInfoVolatile : public ConfigBase {
     std::optional<convo::community> get_community(
             std::string_view base_url, std::string_view room) const;
 
-    /// Shortcut for calling community::parse_full_url then calling the above with the base url and
-    /// room.  Note that pubkey must be present to successfully parse, but is ignored (and so the
-    /// pubkey in the returned result *could* be different in unusual cases).
-    std::optional<convo::community> get_community(std::string_view full_url) const;
+    /// Shortcut for calling community::parse_partial_url then calling the above with the base url
+    /// and room.  The URL is not required to contain the pubkey (if present it will be ignored).
+    std::optional<convo::community> get_community(std::string_view partial_url) const;
 
     /// Looks up and returns a legacy group conversation by ID.  The ID looks like a hex Session ID,
     /// but isn't really a Session ID.  Returns nullopt if there is no record of the group
