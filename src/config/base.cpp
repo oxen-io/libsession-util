@@ -207,7 +207,7 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
     } else {
         // the merging affect nothing (if it had seqno would have been incremented), so don't
         // pointlessly replace the inner config object.
-        assert(_config->unmerged_index() == 0);
+        assert(new_conf->unmerged_index() == 0);
     }
 
     return all_confs.size() - bad_confs.size() -
