@@ -333,7 +333,7 @@ ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
         if (!d.skip_until(")"))
             throw std::runtime_error{"Unable to parse dumped config data: found '(' without ')'"};
         for (auto old = d.consume_list_consumer(); !old.is_finished();)
-            _old_hashes.insert(d.consume_string());
+            _old_hashes.insert(old.consume_string());
     }
 
     if (d.skip_until("+"))
