@@ -207,7 +207,7 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
     } else {
         // the merging affect nothing (if it had seqno would have been incremented), so don't
         // pointlessly replace the inner config object.
-        assert(_config->unmerged_index() == 0);
+        assert(new_conf->unmerged_index() == 0);
     }
 
     return all_confs.size() - bad_confs.size() -
@@ -333,7 +333,7 @@ ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
         if (!d.skip_until(")"))
             throw std::runtime_error{"Unable to parse dumped config data: found '(' without ')'"};
         for (auto old = d.consume_list_consumer(); !old.is_finished();)
-            _old_hashes.insert(d.consume_string());
+            _old_hashes.insert(old.consume_string());
     }
 
     if (d.skip_until("+"))
