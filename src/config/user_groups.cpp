@@ -36,12 +36,14 @@ template <typename T>
 static void base_into(const base_group_info& self, T& c) {
     c.priority = self.priority;
     c.joined_at = self.joined_at;
+    c.notifications = static_cast<CONVO_NOTIFY_MODE>(self.notifications);
 }
 
 template <typename T>
 static void base_from(base_group_info& self, const T& c) {
     self.priority = c.priority;
     self.joined_at = c.joined_at;
+    self.notifications = static_cast<notify_mode>(c.notifications);
 }
 
 legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid)} {
@@ -121,6 +123,12 @@ void legacy_group_info::into(ugroups_legacy_group_info& c) && {
 void base_group_info::load(const dict& info_dict) {
     priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
     joined_at = std::max<int64_t>(0, maybe_int(info_dict, "j").value_or(0));
+
+    int notify = maybe_int(info_dict, "@").value_or(0);
+    if (notify >= 0 && notify <= 3)
+        notifications = static_cast<notify_mode>(notify);
+    else
+        notifications = notify_mode::defaulted;
 }
 
 void legacy_group_info::load(const dict& info_dict) {
@@ -280,6 +288,7 @@ void UserGroups::set(const community_info& c) {
 void UserGroups::set_base(const base_group_info& bg, DictFieldProxy& info) const {
     set_positive_int(info["+"], bg.priority);
     set_positive_int(info["j"], bg.joined_at);
+    set_positive_int(info["@"], static_cast<int>(bg.notifications));
 }
 
 void UserGroups::set(const legacy_group_info& g) {

@@ -6,6 +6,7 @@ extern "C" {
 
 #include "base.h"
 #include "expiring.h"
+#include "notify.h"
 #include "profile_pic.h"
 #include "util.h"
 
@@ -26,6 +27,7 @@ typedef struct contacts_contact {
     bool hidden;
 
     int priority;
+    CONVO_NOTIFY_MODE notifications;
 
     CONVO_EXPIRATION_MODE exp_mode;
     int exp_seconds;

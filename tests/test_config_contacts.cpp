@@ -49,6 +49,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(c.blocked);
     CHECK_FALSE(c.profile_picture);
     CHECK(c.created == 0);
+    CHECK(c.notifications == session::config::notify_mode::defaulted);
 
     CHECK_FALSE(contacts.needs_push());
     CHECK_FALSE(contacts.needs_dump());
@@ -59,6 +60,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     c.approved = true;
     c.approved_me = true;
     c.created = created_ts;
+    c.notifications = session::config::notify_mode::all;
 
     contacts.set(c);
 
@@ -103,6 +105,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(x->profile_picture);
     CHECK_FALSE(x->blocked);
     CHECK(x->created == created_ts);
+    CHECK(x->notifications == session::config::notify_mode::all);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111"sv;
     auto c2 = contacts2.get_or_construct(another_id);

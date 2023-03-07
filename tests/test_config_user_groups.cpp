@@ -116,6 +116,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(c.name == "");
     CHECK(c.members().empty());
     CHECK(c.joined_at == 0);
+    CHECK(c.notifications == session::config::notify_mode::defaulted);
 
     CHECK_FALSE(groups.needs_push());
     CHECK_FALSE(groups.needs_dump());
@@ -133,6 +134,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     c.name = "Englishmen";
     c.disappearing_timer = 60min;
     c.joined_at = created_ts;
+    c.notifications = session::config::notify_mode::mentions_only;
     CHECK(c.insert(users[0], false));
     CHECK(c.insert(users[1], true));
     CHECK(c.insert(users[2], false));
@@ -234,6 +236,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(c1.members() == expected_members);
     CHECK(c1.name == "Englishmen");
     CHECK(c1.joined_at == created_ts);
+    CHECK(c1.notifications == session::config::notify_mode::mentions_only);
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());

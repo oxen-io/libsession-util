@@ -9,6 +9,7 @@
 #include "base.hpp"
 #include "expiring.hpp"
 #include "namespaces.hpp"
+#include "notify.hpp"
 #include "profile_pic.hpp"
 
 extern "C" struct contacts_contact;
@@ -32,6 +33,7 @@ namespace session::config {
 ///     A - 1 if remote has approved me, omitted otherwise (int)
 ///     b - 1 if contact is blocked, omitted otherwise
 ///     h - 1 if the conversation with this contact is hidden, omitted if visible.
+///     @ - notification setting (int).  Omitted = use default setting; 1 = all; 2 = disabled.
 ///     + - the conversation priority, for pinned messages.  Omitted means not pinned; otherwise an
 ///         integer value >0, where a higher priority means the conversation is meant to appear
 ///         earlier in the pinned conversation list.
@@ -57,6 +59,7 @@ struct contact_info {
                           // list (typically because it has been deleted).
     int priority = 0;     // If >0 then this message is pinned; higher values mean higher priority
                           // (i.e. pinned earlier in the pinned list).
+    notify_mode notifications = notify_mode::defaulted;
     expiration_mode exp_mode = expiration_mode::none;  // The expiry time; none if not expiring.
     std::chrono::seconds exp_timer{0};                 // The expiration timer (in seconds)
     int64_t created = 0;                               // Unix timestamp when this contact was added
@@ -132,6 +135,7 @@ class Contacts : public ConfigBase {
     void set_blocked(std::string_view session_id, bool blocked);
     void set_hidden(std::string_view session_id, bool hidden);
     void set_priority(std::string_view session_id, int priority);
+    void set_notifications(std::string_view session_id, notify_mode notifications);
     void set_expiry(
             std::string_view session_id,
             expiration_mode exp_mode,
