@@ -198,7 +198,9 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
                 _config = std::move(new_conf);
             }
             set_state(ConfigState::Dirty);
-        } else if (_state == ConfigState::Dirty && _config->unmerged_index() == 0 && new_conf->seqno() == old_seqno + 1) {
+        } else if (
+                _state == ConfigState::Dirty && new_conf->unmerged_index() == 0 &&
+                new_conf->seqno() == old_seqno + 1) {
             // Constructing a new MutableConfigMessage always increments the seqno (by design) but
             // in this case nothing changed: every other config got ignored and we didn't change
             // anything, so we can ignore the new config and just keep our current one, despite the
