@@ -100,6 +100,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     constexpr auto definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000"sv;
 
+    int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
     CHECK_FALSE(groups.get_legacy_group(definitely_real_id));
 
     CHECK(groups.empty());
@@ -117,6 +121,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(c.members().empty());
     CHECK(c.joined_at == 0);
     CHECK(c.notifications == session::config::notify_mode::defaulted);
+    CHECK(c.mute_until == 0);
 
     CHECK_FALSE(groups.needs_push());
     CHECK_FALSE(groups.needs_dump());
@@ -135,6 +140,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     c.disappearing_timer = 60min;
     c.joined_at = created_ts;
     c.notifications = session::config::notify_mode::mentions_only;
+    c.mute_until = now + 3600;
     CHECK(c.insert(users[0], false));
     CHECK(c.insert(users[1], true));
     CHECK(c.insert(users[2], false));
@@ -237,6 +243,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(c1.name == "Englishmen");
     CHECK(c1.joined_at == created_ts);
     CHECK(c1.notifications == session::config::notify_mode::mentions_only);
+    CHECK(c1.mute_until == now + 3600);
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());

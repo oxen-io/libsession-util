@@ -110,6 +110,7 @@ void contact_info::load(const dict& info_dict) {
     } else {
         notifications = notify_mode::defaulted;
     }
+    mute_until = maybe_int(info_dict, "!").value_or(0);
 
     int exp_mode_ = maybe_int(info_dict, "e").value_or(0);
     if (exp_mode_ >= static_cast<int>(expiration_mode::none) &&
@@ -246,6 +247,7 @@ void Contacts::set(const contact_info& contact) {
     if (notify == notify_mode::mentions_only)
         notify = notify_mode::all;
     set_positive_int(info["@"], static_cast<int>(notify));
+    set_positive_int(info["!"], contact.mute_until);
 
     set_pair_if(
             contact.exp_mode != expiration_mode::none && contact.exp_timer > 0s,

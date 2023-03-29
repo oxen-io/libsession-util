@@ -34,6 +34,8 @@ namespace session::config {
 ///     b - 1 if contact is blocked, omitted otherwise
 ///     h - 1 if the conversation with this contact is hidden, omitted if visible.
 ///     @ - notification setting (int).  Omitted = use default setting; 1 = all; 2 = disabled.
+///     ! - mute timestamp: if this is set then notifications are to be muted until the given unix
+///         timestamp (seconds, not milliseconds).
 ///     + - the conversation priority, for pinned messages.  Omitted means not pinned; otherwise an
 ///         integer value >0, where a higher priority means the conversation is meant to appear
 ///         earlier in the pinned conversation list.
@@ -60,6 +62,9 @@ struct contact_info {
     int priority = 0;     // If >0 then this message is pinned; higher values mean higher priority
                           // (i.e. pinned earlier in the pinned list).
     notify_mode notifications = notify_mode::defaulted;
+    int64_t mute_until = 0;  // If non-zero, disable notifications until the given unix timestamp
+                             // (overriding whatever the current `notifications` value is until the
+                             // timestamp expires).
     expiration_mode exp_mode = expiration_mode::none;  // The expiry time; none if not expiring.
     std::chrono::seconds exp_timer{0};                 // The expiration timer (in seconds)
     int64_t created = 0;                               // Unix timestamp when this contact was added
