@@ -29,6 +29,7 @@ typedef struct ugroups_legacy_group_info {
     bool hidden;                 // true if hidden from the convo list
     int priority;  // pinned message priority; 0 = unpinned, larger means pinned higher (i.e. higher
                    // priority conversations come first).
+    int64_t joined_at;  // unix timestamp when joined (or re-joined)
 
     // For members use the ugroups_legacy_group_members and associated calls.
 
@@ -45,6 +46,7 @@ typedef struct ugroups_community_info {
 
     int priority;  // pinned message priority; 0 = unpinned, larger means pinned higher (i.e. higher
                    // priority conversations come first).
+    int64_t joined_at;  // unix timestamp when joined (or re-joined)
 } ugroups_community_info;
 
 int user_groups_init(

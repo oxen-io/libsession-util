@@ -32,22 +32,34 @@ struct ugroups_internals {
 
 namespace session::config {
 
+template <typename T>
+static void base_into(const base_group_info& self, T& c) {
+    c.priority = self.priority;
+    c.joined_at = self.joined_at;
+}
+
+template <typename T>
+static void base_from(base_group_info& self, const T& c) {
+    self.priority = c.priority;
+    self.joined_at = c.joined_at;
+}
+
 legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid)} {
     check_session_id(session_id);
 }
 
 community_info::community_info(const ugroups_community_info& c) :
         community_info{c.base_url, c.room, ustring_view{c.pubkey, 32}} {
-    priority = c.priority;
+    base_from(*this, c);
 }
 
 void community_info::into(ugroups_community_info& c) const {
     static_assert(sizeof(c.base_url) == BASE_URL_MAX_LENGTH + 1);
     static_assert(sizeof(c.room) == ROOM_MAX_LENGTH + 1);
+    base_into(*this, c);
     copy_c_str(c.base_url, base_url());
     copy_c_str(c.room, room());
     std::memcpy(c.pubkey, pubkey().data(), 32);
-    c.priority = priority;
 }
 
 static_assert(sizeof(ugroups_legacy_group_info::name) == legacy_group_info::NAME_MAX_LENGTH + 1);
@@ -56,9 +68,9 @@ legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c, impl_t)
         session_id{c.session_id, 66},
         name{c.name},
         disappearing_timer{c.disappearing_timer},
-        hidden{c.hidden},
-        priority{c.priority} {
+        hidden{c.hidden} {
     assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
+    base_from(*this, c);
     if (c.have_enc_keys) {
         enc_pubkey.assign(c.enc_pubkey, 32);
         enc_seckey.assign(c.enc_seckey, 32);
@@ -82,6 +94,7 @@ legacy_group_info::legacy_group_info(ugroups_legacy_group_info&& c) : legacy_gro
 
 void legacy_group_info::into(ugroups_legacy_group_info& c, impl_t) const {
     assert(session_id.size() == 66);
+    base_into(*this, c);
     copy_c_str(c.session_id, session_id);
     copy_c_str(c.name, name);
     c.have_enc_keys = enc_pubkey.size() == 32 && enc_seckey.size() == 32;
@@ -91,7 +104,6 @@ void legacy_group_info::into(ugroups_legacy_group_info& c, impl_t) const {
     }
     c.disappearing_timer = disappearing_timer.count();
     c.hidden = hidden;
-    c.priority = priority;
     if (c._internal)
         static_cast<ugroups_internals*>(c._internal)->members.clear();
     else
@@ -106,7 +118,14 @@ void legacy_group_info::into(ugroups_legacy_group_info& c) && {
     static_cast<ugroups_internals*>(c._internal)->members = std::move(members_);
 }
 
+void base_group_info::load(const dict& info_dict) {
+    priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
+    joined_at = std::max<int64_t>(0, maybe_int(info_dict, "j").value_or(0));
+}
+
 void legacy_group_info::load(const dict& info_dict) {
+    base_group_info::load(info_dict);
+
     if (auto n = maybe_string(info_dict, "n"))
         name = *n;
     // otherwise leave the current `name` alone at whatever the object was constructed with
@@ -125,7 +144,6 @@ void legacy_group_info::load(const dict& info_dict) {
     else
         disappearing_timer = 0s;
     hidden = maybe_int(info_dict, "h").value_or(0);
-    priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
 
     members_.clear();
     if (auto* members = maybe_set(info_dict, "m"))
@@ -166,9 +184,10 @@ bool legacy_group_info::erase(const std::string& session_id) {
 }
 
 void community_info::load(const dict& info_dict) {
+    base_group_info::load(info_dict);
+
     if (auto n = maybe_string(info_dict, "n"))
         set_room(*n);
-    priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
 }
 
 UserGroups::UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
@@ -254,12 +273,18 @@ legacy_group_info UserGroups::get_or_construct_legacy_group(std::string_view pub
 void UserGroups::set(const community_info& c) {
     data["o"][c.base_url()]["#"] = c.pubkey();
     auto info = community_field(c);  // data["o"][base]["R"][lc_room]
+    set_base(c, info);
     info["n"] = c.room();
-    set_positive_int(info["+"], c.priority);
+}
+
+void UserGroups::set_base(const base_group_info& bg, DictFieldProxy& info) const {
+    set_positive_int(info["+"], bg.priority);
+    set_positive_int(info["j"], bg.joined_at);
 }
 
 void UserGroups::set(const legacy_group_info& g) {
     auto info = data["C"][session_id_to_bytes(g.session_id)];
+    set_base(g, info);
     if (g.name.size() > legacy_group_info::NAME_MAX_LENGTH)
         info["n"] = g.name.substr(0, legacy_group_info::NAME_MAX_LENGTH);
     else
@@ -280,7 +305,6 @@ void UserGroups::set(const legacy_group_info& g) {
     info["m"] = std::move(members);
     info["a"] = std::move(admins);
     set_positive_int(info["E"], g.disappearing_timer.count());
-    set_positive_int(info["+"], g.priority);
     set_flag(info["h"], g.hidden);
 }
 

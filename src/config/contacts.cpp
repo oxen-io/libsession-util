@@ -108,6 +108,8 @@ void contact_info::load(const dict& info_dict) {
             exp_timer = std::chrono::seconds{secs};
         }
     }
+
+    created = maybe_int(info_dict, "j").value_or(0);
 }
 
 static_assert(sizeof(contacts_contact::name) == contact_info::MAX_NAME_LENGTH + 1);
@@ -133,6 +135,7 @@ void contact_info::into(contacts_contact& c) const {
     c.exp_seconds = exp_timer.count();
     if (c.exp_seconds <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
         c.exp_mode = CONVO_EXPIRATION_NONE;
+    c.created = created;
 }
 
 contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id, 66} {
@@ -154,6 +157,7 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
     if (exp_timer <= 0s && exp_mode != expiration_mode::none)
         exp_mode = expiration_mode::none;
+    created = c.created;
 }
 
 std::optional<contact_info> Contacts::get(std::string_view pubkey_hex) const {
@@ -226,6 +230,8 @@ void Contacts::set(const contact_info& contact) {
             static_cast<int8_t>(contact.exp_mode),
             info["E"],
             contact.exp_timer.count());
+
+    set_positive_int(info["j"], contact.created);
 }
 
 LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* contact) {
@@ -280,6 +286,12 @@ void Contacts::set_expiry(
     auto c = get_or_construct(session_id);
     c.exp_mode = mode;
     c.exp_timer = c.exp_mode == expiration_mode::none ? 0s : timer;
+    set(c);
+}
+
+void Contacts::set_created(std::string_view session_id, int64_t timestamp) {
+    auto c = get_or_construct(session_id);
+    c.created = timestamp;
     set(c);
 }
 

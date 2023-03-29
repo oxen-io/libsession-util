@@ -30,6 +30,8 @@ typedef struct contacts_contact {
     CONVO_EXPIRATION_MODE exp_mode;
     int exp_seconds;
 
+    int64_t created;  // unix timestamp (seconds)
+
 } contacts_contact;
 
 /// Constructs a contacts config object and sets a pointer to it in `conf`.
