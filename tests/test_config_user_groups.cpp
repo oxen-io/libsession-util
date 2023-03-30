@@ -112,7 +112,6 @@ TEST_CASE("User Groups", "[config][groups]") {
     auto c = groups.get_or_construct_legacy_group(definitely_real_id);
 
     CHECK(c.session_id == definitely_real_id);
-    CHECK_FALSE(c.hidden);
     CHECK(c.disappearing_timer == 0min);
     CHECK(c.enc_pubkey.empty());
     CHECK(c.enc_seckey.empty());
@@ -237,7 +236,6 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(to_hex(c1.enc_seckey) == oxenc::to_hex(lg_sk.begin(), lg_sk.begin() + 32));
     CHECK(c1.disappearing_timer == 60min);
     CHECK(c1.session_id == definitely_real_id);
-    CHECK_FALSE(c1.hidden);
     CHECK(c1.priority == 3);
     CHECK(c1.members() == expected_members);
     CHECK(c1.name == "Englishmen");

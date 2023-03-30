@@ -24,7 +24,6 @@ typedef struct contacts_contact {
     bool approved;
     bool approved_me;
     bool blocked;
-    bool hidden;
 
     int priority;
     CONVO_NOTIFY_MODE notifications;

@@ -27,9 +27,8 @@ typedef struct ugroups_legacy_group_info {
                                    // terminator).
 
     int64_t disappearing_timer;  // Minutes. 0 == disabled.
-    bool hidden;                 // true if hidden from the convo list
-    int priority;  // pinned message priority; 0 = unpinned, larger means pinned higher (i.e. higher
-                   // priority conversations come first).
+    int priority;  // pinned message priority; 0 = unpinned, negative = hidden, positive = pinned
+                   // (with higher meaning pinned higher).
     int64_t joined_at;                // unix timestamp when joined (or re-joined)
     CONVO_NOTIFY_MODE notifications;  // When the user wants notifications
     int64_t mute_until;  // Mute notifications until this timestamp (overrides `notifications`
@@ -48,8 +47,8 @@ typedef struct ugroups_community_info {
                          // info (that one is always forced lower-cased).
     unsigned char pubkey[32];  // 32 bytes (not terminated, can contain nulls)
 
-    int priority;  // pinned message priority; 0 = unpinned, larger means pinned higher (i.e. higher
-                   // priority conversations come first).
+    int priority;  // pinned message priority; 0 = unpinned, negative = hidden, positive = pinned
+                   // (with higher meaning pinned higher).
     int64_t joined_at;                // unix timestamp when joined (or re-joined)
     CONVO_NOTIFY_MODE notifications;  // When the user wants notifications
     int64_t mute_until;  // Mute notifications until this timestamp (overrides `notifications`

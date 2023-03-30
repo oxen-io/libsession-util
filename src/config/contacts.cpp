@@ -96,11 +96,8 @@ void contact_info::load(const dict& info_dict) {
     approved = maybe_int(info_dict, "a").value_or(0);
     approved_me = maybe_int(info_dict, "A").value_or(0);
     blocked = maybe_int(info_dict, "b").value_or(0);
-    hidden = maybe_int(info_dict, "h").value_or(0);
 
     priority = maybe_int(info_dict, "+").value_or(0);
-    if (priority < 0)
-        priority = 0;
 
     int notify = maybe_int(info_dict, "@").value_or(0);
     if (notify >= 0 && notify <= 3) {
@@ -147,8 +144,7 @@ void contact_info::into(contacts_contact& c) const {
     c.approved = approved;
     c.approved_me = approved_me;
     c.blocked = blocked;
-    c.hidden = hidden;
-    c.priority = std::max(0, priority);
+    c.priority = priority;
     c.notifications = static_cast<CONVO_NOTIFY_MODE>(notifications);
     c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
     c.exp_seconds = exp_timer.count();
@@ -170,8 +166,7 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     approved = c.approved;
     approved_me = c.approved_me;
     blocked = c.blocked;
-    hidden = c.hidden;
-    priority = std::max(0, c.priority);
+    priority = c.priority;
     notifications = static_cast<notify_mode>(c.notifications);
     exp_mode = static_cast<expiration_mode>(c.exp_mode);
     exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
@@ -240,9 +235,9 @@ void Contacts::set(const contact_info& contact) {
     set_flag(info["a"], contact.approved);
     set_flag(info["A"], contact.approved_me);
     set_flag(info["b"], contact.blocked);
-    set_flag(info["h"], contact.hidden);
 
-    set_positive_int(info["+"], contact.priority);
+    set_nonzero_int(info["+"], contact.priority);
+
     auto notify = contact.notifications;
     if (notify == notify_mode::mentions_only)
         notify = notify_mode::all;
@@ -291,12 +286,6 @@ void Contacts::set_approved_me(std::string_view session_id, bool approved_me) {
 void Contacts::set_blocked(std::string_view session_id, bool blocked) {
     auto c = get_or_construct(session_id);
     c.blocked = blocked;
-    set(c);
-}
-
-void Contacts::set_hidden(std::string_view session_id, bool hidden) {
-    auto c = get_or_construct(session_id);
-    c.hidden = hidden;
     set(c);
 }
 
