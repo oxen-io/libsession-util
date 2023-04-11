@@ -13,6 +13,8 @@
 using namespace std::literals;
 using namespace oxenc::literals;
 
+static constexpr int64_t created_ts = 1680064059;
+
 TEST_CASE("Open Group URLs", "[config][community_urls]") {
 
     using namespace session::config;
@@ -113,6 +115,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(c.priority == 0);
     CHECK(c.name == "");
     CHECK(c.members().empty());
+    CHECK(c.joined_at == 0);
 
     CHECK_FALSE(groups.needs_push());
     CHECK_FALSE(groups.needs_dump());
@@ -129,6 +132,7 @@ TEST_CASE("User Groups", "[config][groups]") {
 
     c.name = "Englishmen";
     c.disappearing_timer = 60min;
+    c.joined_at = created_ts;
     CHECK(c.insert(users[0], false));
     CHECK(c.insert(users[1], true));
     CHECK(c.insert(users[2], false));
@@ -229,6 +233,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(c1.priority == 3);
     CHECK(c1.members() == expected_members);
     CHECK(c1.name == "Englishmen");
+    CHECK(c1.joined_at == created_ts);
 
     CHECK_FALSE(g2.needs_push());
     CHECK_FALSE(g2.needs_dump());
@@ -422,6 +427,8 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
 
     ugroups_legacy_group_info* group =
             user_groups_get_or_construct_legacy_group(conf, definitely_real_id);
+    CHECK(group->joined_at == 0);
+    group->joined_at = created_ts;
 
     std::vector<std::string> users = {
             "050000000000000000000000000000000000000000000000000000000000000000"s,
@@ -534,6 +541,7 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     auto grp = c2.get_legacy_group(definitely_real_id);
     REQUIRE(grp);
     CHECK(grp->members() == expected_members);
+    CHECK(grp->joined_at == created_ts);
 }
 
 namespace Catch {

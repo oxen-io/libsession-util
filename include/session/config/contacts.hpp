@@ -39,6 +39,8 @@ namespace session::config {
 ///         for the conversation with this contact; 1 for delete-after-send, and 2 for
 ///         delete-after-read.
 ///     E - Disappearing message timer, in seconds.  Omitted when `e` is omitted.
+///     j - Unix timestamp (seconds) when the contact was created ("j" to match user_groups
+///         equivalent "j"oined field). Omitted if 0.
 
 /// Struct containing contact info.
 struct contact_info {
@@ -57,6 +59,7 @@ struct contact_info {
                           // (i.e. pinned earlier in the pinned list).
     expiration_mode exp_mode = expiration_mode::none;  // The expiry time; none if not expiring.
     std::chrono::seconds exp_timer{0};                 // The expiration timer (in seconds)
+    int64_t created = 0;                               // Unix timestamp when this contact was added
 
     explicit contact_info(std::string sid);
 
@@ -133,6 +136,7 @@ class Contacts : public ConfigBase {
             std::string_view session_id,
             expiration_mode exp_mode,
             std::chrono::seconds expiration_timer = 0min);
+    void set_created(std::string_view session_id, int64_t timestamp);
 
     /// Removes a contact, if present.  Returns true if it was found and removed, false otherwise.
     /// Note that this removes all fields related to a contact, even fields we do not know about.

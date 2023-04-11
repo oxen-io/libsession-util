@@ -11,6 +11,8 @@
 using namespace std::literals;
 using namespace oxenc::literals;
 
+static constexpr int64_t created_ts = 1680064059;
+
 TEST_CASE("Contacts", "[config][contacts]") {
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
@@ -46,6 +48,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK_FALSE(c.approved_me);
     CHECK_FALSE(c.blocked);
     CHECK_FALSE(c.profile_picture);
+    CHECK(c.created == 0);
 
     CHECK_FALSE(contacts.needs_push());
     CHECK_FALSE(contacts.needs_dump());
@@ -55,6 +58,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     c.set_nickname("Joey");
     c.approved = true;
     c.approved_me = true;
+    c.created = created_ts;
 
     contacts.set(c);
 
@@ -98,6 +102,7 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK(x->approved_me);
     CHECK_FALSE(x->profile_picture);
     CHECK_FALSE(x->blocked);
+    CHECK(x->created == created_ts);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111"sv;
     auto c2 = contacts2.get_or_construct(another_id);
@@ -240,11 +245,13 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK_FALSE(c.approved_me);
     CHECK_FALSE(c.blocked);
     CHECK(strlen(c.profile_pic.url) == 0);
+    CHECK(c.created == 0);
 
     strcpy(c.name, "Joe");
     strcpy(c.nickname, "Joey");
     c.approved = true;
     c.approved_me = true;
+    c.created = created_ts;
 
     contacts_set(conf, &c);
 
@@ -287,6 +294,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK(c3.approved_me);
     CHECK_FALSE(c3.blocked);
     CHECK(strlen(c3.profile_pic.url) == 0);
+    CHECK(c3.created == created_ts);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
     REQUIRE(contacts_get_or_construct(conf, &c3, another_id));
@@ -296,6 +304,7 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     CHECK_FALSE(c3.approved_me);
     CHECK_FALSE(c3.blocked);
     CHECK(strlen(c3.profile_pic.url) == 0);
+    CHECK(c3.created == 0);
 
     contacts_set(conf2, &c3);
 
