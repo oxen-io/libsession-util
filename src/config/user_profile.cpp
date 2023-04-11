@@ -94,7 +94,7 @@ LIBSESSION_C_API int user_profile_set_pic(config_object* conf, user_profile_pic 
 }
 
 void UserProfile::set_nts_priority(int priority) {
-    set_positive_int(data["+"], priority);
+    set_nonzero_int(data["+"], priority);
 }
 
 int UserProfile::get_nts_priority() const {
@@ -107,20 +107,4 @@ LIBSESSION_C_API int user_profile_get_nts_priority(const config_object* conf) {
 
 LIBSESSION_C_API void user_profile_set_nts_priority(config_object* conf, int priority) {
     unbox<UserProfile>(conf)->set_nts_priority(priority);
-}
-
-void UserProfile::set_nts_hidden(bool hidden) {
-    set_flag(data["h"], hidden);
-}
-
-bool UserProfile::get_nts_hidden() const {
-    return (bool)data["h"].integer_or(0);
-}
-
-LIBSESSION_C_API bool user_profile_get_nts_hidden(const config_object* conf) {
-    return unbox<UserProfile>(conf)->get_nts_hidden();
-}
-
-LIBSESSION_C_API void user_profile_set_nts_hidden(config_object* conf, bool hidden) {
-    unbox<UserProfile>(conf)->set_nts_hidden(hidden);
 }

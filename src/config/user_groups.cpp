@@ -69,10 +69,7 @@ void community_info::into(ugroups_community_info& c) const {
 static_assert(sizeof(ugroups_legacy_group_info::name) == legacy_group_info::NAME_MAX_LENGTH + 1);
 
 legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c, impl_t) :
-        session_id{c.session_id, 66},
-        name{c.name},
-        disappearing_timer{c.disappearing_timer},
-        hidden{c.hidden} {
+        session_id{c.session_id, 66}, name{c.name}, disappearing_timer{c.disappearing_timer} {
     assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
     base_from(*this, c);
     if (c.have_enc_keys) {
@@ -107,7 +104,6 @@ void legacy_group_info::into(ugroups_legacy_group_info& c, impl_t) const {
         std::memcpy(c.enc_seckey, enc_seckey.data(), 32);
     }
     c.disappearing_timer = disappearing_timer.count();
-    c.hidden = hidden;
     if (c._internal)
         static_cast<ugroups_internals*>(c._internal)->members.clear();
     else
@@ -123,7 +119,7 @@ void legacy_group_info::into(ugroups_legacy_group_info& c) && {
 }
 
 void base_group_info::load(const dict& info_dict) {
-    priority = std::max<int>(0, maybe_int(info_dict, "+").value_or(0));
+    priority = maybe_int(info_dict, "+").value_or(0);
     joined_at = std::max<int64_t>(0, maybe_int(info_dict, "j").value_or(0));
 
     int notify = maybe_int(info_dict, "@").value_or(0);
@@ -155,7 +151,6 @@ void legacy_group_info::load(const dict& info_dict) {
         disappearing_timer = std::chrono::seconds{secs};
     else
         disappearing_timer = 0s;
-    hidden = maybe_int(info_dict, "h").value_or(0);
 
     members_.clear();
     if (auto* members = maybe_set(info_dict, "m"))
@@ -290,7 +285,7 @@ void UserGroups::set(const community_info& c) {
 }
 
 void UserGroups::set_base(const base_group_info& bg, DictFieldProxy& info) const {
-    set_positive_int(info["+"], bg.priority);
+    set_nonzero_int(info["+"], bg.priority);
     set_positive_int(info["j"], bg.joined_at);
     set_positive_int(info["@"], static_cast<int>(bg.notifications));
     set_positive_int(info["!"], bg.mute_until);
@@ -319,7 +314,6 @@ void UserGroups::set(const legacy_group_info& g) {
     info["m"] = std::move(members);
     info["a"] = std::move(admins);
     set_positive_int(info["E"], g.disappearing_timer.count());
-    set_flag(info["h"], g.hidden);
 }
 
 template <typename Field>
