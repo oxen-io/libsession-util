@@ -18,6 +18,18 @@ using session::ustring_view;
 
 LIBSESSION_C_API const size_t CONTACT_MAX_NAME_LENGTH = contact_info::MAX_NAME_LENGTH;
 
+// Check for agreement between various C/C++ types
+static_assert(sizeof(contacts_contact::name) == contact_info::MAX_NAME_LENGTH + 1);
+static_assert(sizeof(contacts_contact::nickname) == contact_info::MAX_NAME_LENGTH + 1);
+static_assert(sizeof(user_profile_pic::url) == profile_pic::MAX_URL_LENGTH + 1);
+static_assert(CONVO_EXPIRATION_NONE == static_cast<int>(expiration_mode::none));
+static_assert(CONVO_EXPIRATION_AFTER_SEND == static_cast<int>(expiration_mode::after_send));
+static_assert(CONVO_EXPIRATION_AFTER_READ == static_cast<int>(expiration_mode::after_read));
+static_assert(CONVO_NOTIFY_DEFAULT == static_cast<int>(notify_mode::defaulted));
+static_assert(CONVO_NOTIFY_ALL == static_cast<int>(notify_mode::all));
+static_assert(CONVO_NOTIFY_DISABLED == static_cast<int>(notify_mode::disabled));
+static_assert(CONVO_NOTIFY_MENTIONS_ONLY == static_cast<int>(notify_mode::mentions_only));
+
 namespace {
 
 void check_session_id(std::string_view session_id) {
@@ -90,6 +102,16 @@ void contact_info::load(const dict& info_dict) {
     if (priority < 0)
         priority = 0;
 
+    int notify = maybe_int(info_dict, "@").value_or(0);
+    if (notify >= 0 && notify <= 3) {
+        notifications = static_cast<notify_mode>(notify);
+        if (notifications == notify_mode::mentions_only)
+            notifications = notify_mode::all;
+    } else {
+        notifications = notify_mode::defaulted;
+    }
+    mute_until = maybe_int(info_dict, "!").value_or(0);
+
     int exp_mode_ = maybe_int(info_dict, "e").value_or(0);
     if (exp_mode_ >= static_cast<int>(expiration_mode::none) &&
         exp_mode_ <= static_cast<int>(expiration_mode::after_read))
@@ -112,10 +134,6 @@ void contact_info::load(const dict& info_dict) {
     created = maybe_int(info_dict, "j").value_or(0);
 }
 
-static_assert(sizeof(contacts_contact::name) == contact_info::MAX_NAME_LENGTH + 1);
-static_assert(sizeof(contacts_contact::nickname) == contact_info::MAX_NAME_LENGTH + 1);
-static_assert(sizeof(user_profile_pic::url) == profile_pic::MAX_URL_LENGTH + 1);
-
 void contact_info::into(contacts_contact& c) const {
     std::memcpy(c.session_id, session_id.data(), 67);
     copy_c_str(c.name, name);
@@ -131,6 +149,7 @@ void contact_info::into(contacts_contact& c) const {
     c.blocked = blocked;
     c.hidden = hidden;
     c.priority = std::max(0, priority);
+    c.notifications = static_cast<CONVO_NOTIFY_MODE>(notifications);
     c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
     c.exp_seconds = exp_timer.count();
     if (c.exp_seconds <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
@@ -153,6 +172,7 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     blocked = c.blocked;
     hidden = c.hidden;
     priority = std::max(0, c.priority);
+    notifications = static_cast<notify_mode>(c.notifications);
     exp_mode = static_cast<expiration_mode>(c.exp_mode);
     exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
     if (exp_timer <= 0s && exp_mode != expiration_mode::none)
@@ -223,6 +243,11 @@ void Contacts::set(const contact_info& contact) {
     set_flag(info["h"], contact.hidden);
 
     set_positive_int(info["+"], contact.priority);
+    auto notify = contact.notifications;
+    if (notify == notify_mode::mentions_only)
+        notify = notify_mode::all;
+    set_positive_int(info["@"], static_cast<int>(notify));
+    set_positive_int(info["!"], contact.mute_until);
 
     set_pair_if(
             contact.exp_mode != expiration_mode::none && contact.exp_timer > 0s,
@@ -278,6 +303,12 @@ void Contacts::set_hidden(std::string_view session_id, bool hidden) {
 void Contacts::set_priority(std::string_view session_id, int priority) {
     auto c = get_or_construct(session_id);
     c.priority = priority;
+    set(c);
+}
+
+void Contacts::set_notifications(std::string_view session_id, notify_mode notifications) {
+    auto c = get_or_construct(session_id);
+    c.notifications = notifications;
     set(c);
 }
 

@@ -9,6 +9,7 @@
 #include "base.hpp"
 #include "community.hpp"
 #include "namespaces.hpp"
+#include "notify.hpp"
 
 extern "C" {
 struct ugroups_legacy_group_info;
@@ -31,6 +32,11 @@ namespace session::config {
 ///         disabled.  (Note that legacy groups only support expire after-read)
 ///     h - hidden: 1 if the conversation has been removed from the conversation list, omitted if
 ///         visible.
+///     @ - notification setting (int).  Omitted = use default setting; 1 = all, 2 = disabled, 3 =
+///         mentions-only.
+///     ! - mute timestamp: if set then don't show notifications for this contact's messages until
+///         this unix timestamp (i.e.  overriding the current notification setting until the given
+///         time).
 ///     + - the conversation priority, for pinned messages.  Omitted means not pinned; otherwise an
 ///         integer value >0, where a higher priority means the conversation is meant to appear
 ///         earlier in the pinned conversation list.
@@ -46,6 +52,8 @@ namespace session::config {
 ///             appropriate).  For instance, a room name SudokuSolvers would be "sudokusolvers" in
 ///             the outer key, with the capitalization variation in use ("SudokuSolvers") in this
 ///             key.  This key is *always* present (to keep the room dict non-empty).
+///         @ - notification setting (see above).
+///         ! - mute timestamp (see above).
 ///         + - the conversation priority, for pinned messages.  Omitted means not pinned; otherwise
 ///             an integer value >0, where a higher priority means the conversation is meant to
 ///             appear earlier in the pinned conversation list.
@@ -58,6 +66,8 @@ struct base_group_info {
     int priority = 0;       // The priority; 0 means unpinned, larger means pinned higher (i.e.
                             // higher priority conversations come first).
     int64_t joined_at = 0;  // unix timestamp (seconds) when the group was joined (or re-joined)
+    notify_mode notifications = notify_mode::defaulted;  // When the user wants notifications
+    int64_t mute_until = 0;  // unix timestamp (seconds) until which notifications are disabled
 
   protected:
     void load(const dict& info_dict);
