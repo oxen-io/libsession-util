@@ -66,7 +66,7 @@ int contacts_init(
 /// Fills `contact` with the contact info given a session ID (specified as a null-terminated hex
 /// string), if the contact exists, and returns true.  If the contact does not exist then `contact`
 /// is left unchanged and false is returned.
-bool contacts_get(const config_object* conf, contacts_contact* contact, const char* session_id)
+bool contacts_get(config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
 /// Same as the above except that when the contact does not exist, this sets all the contact fields
@@ -78,7 +78,7 @@ bool contacts_get(const config_object* conf, contacts_contact* contact, const ch
 /// This is the method that should usually be used to create or update a contact, followed by
 /// setting fields in the contact, and then giving it to contacts_set().
 bool contacts_get_or_construct(
-        const config_object* conf, contacts_contact* contact, const char* session_id)
+        config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
 /// Adds or updates a contact from the given contact info struct.

@@ -224,6 +224,11 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     convo_info_volatile_1to1 c;
     CHECK_FALSE(convo_info_volatile_get_1to1(conf, &c, definitely_real_id));
+    CHECK(conf->last_error == nullptr);
+
+    CHECK_FALSE(convo_info_volatile_get_1to1(conf, &c, "05123456"));
+    CHECK(conf->last_error ==
+          "Invalid session ID: expected 66 hex digits starting with 05; got 05123456"sv);
 
     CHECK(convo_info_volatile_size(conf) == 0);
 
@@ -257,8 +262,25 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"_hexbytes;
 
     convo_info_volatile_community og;
+
+    CHECK_FALSE(convo_info_volatile_get_or_construct_community(
+            conf,
+            &og,
+            "bad-url",
+            "room",
+            "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes.data()));
+    CHECK(conf->last_error == "Invalid community URL: invalid/missing protocol://"sv);
+    CHECK_FALSE(convo_info_volatile_get_or_construct_community(
+            conf,
+            &og,
+            "https://example.com",
+            "bad room name",
+            "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes.data()));
+    CHECK(conf->last_error == "Invalid community URL: room token contains invalid characters"sv);
+
     CHECK(convo_info_volatile_get_or_construct_community(
             conf, &og, "http://Example.ORG:5678", "SudokuRoom", open_group_pubkey.data()));
+    CHECK(conf->last_error == nullptr);
     CHECK(og.base_url == "http://example.org:5678"sv);  // Note: lower-case
     CHECK(og.room == "sudokuroom"sv);                   // Note: lower-case
     CHECK(oxenc::to_hex(og.pubkey, og.pubkey + 32) ==

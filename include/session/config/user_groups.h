@@ -67,12 +67,12 @@ int user_groups_init(
 /// normalized/lower-cased; room is case-insensitive for the lookup: note that this may well return
 /// a community info with a different room capitalization than the one provided to the call.
 ///
-/// Returns true if the community was found and `comm` populated; false otherwise.
+/// Returns true if the community was found and `comm` populated; false otherwise.  A false return
+/// can either be because it didn't exist (`conf->last_error` will be NULL) or because of some error
+/// (`last_error` will be set to an error string).
 bool user_groups_get_community(
-        const config_object* conf,
-        ugroups_community_info* comm,
-        const char* base_url,
-        const char* room) __attribute__((warn_unused_result));
+        config_object* conf, ugroups_community_info* comm, const char* base_url, const char* room)
+        __attribute__((warn_unused_result));
 
 /// Like the above, but if the community was not found, this constructs one that can be inserted.
 /// `base_url` will be normalized in the returned object.  `room` is a case-insensitive lookup key
@@ -84,8 +84,10 @@ bool user_groups_get_community(
 ///
 /// Note that this is all different from convo_info_volatile, which always forces the room token to
 /// lower-case (because it does not preserve the case).
+///
+/// Returns false (and sets `conf->last_error`) on error.
 bool user_groups_get_or_construct_community(
-        const config_object* conf,
+        config_object* conf,
         ugroups_community_info* comm,
         const char* base_url,
         const char* room,
@@ -93,11 +95,11 @@ bool user_groups_get_or_construct_community(
 
 /// Returns a ugroups_legacy_group_info pointer containing the conversation info for a given legacy
 /// group ID (specified as a null-terminated hex string), if the conversation exists.  If the
-/// conversation does not exist, returns NULL.
+/// conversation does not exist, returns NULL.  Sets conf->last_error on error.
 ///
 /// The returned pointer *must* be freed either by calling `ugroups_legacy_group_free()` when done
 /// with it, or by passing it to `user_groups_set_free_legacy_group()`.
-ugroups_legacy_group_info* user_groups_get_legacy_group(const config_object* conf, const char* id)
+ugroups_legacy_group_info* user_groups_get_legacy_group(config_object* conf, const char* id)
         __attribute__((warn_unused_result));
 
 /// Same as the above except that when the conversation does not exist, this sets all the group
@@ -112,8 +114,10 @@ ugroups_legacy_group_info* user_groups_get_legacy_group(const config_object* con
 ///
 /// This is the method that should usually be used to create or update a conversation, followed by
 /// setting fields in the group, and then giving it to user_groups_set().
+///
+/// On error, this returns NULL and sets `conf->last_error`.
 ugroups_legacy_group_info* user_groups_get_or_construct_legacy_group(
-        const config_object* conf, const char* id) __attribute__((warn_unused_result));
+        config_object* conf, const char* id) __attribute__((warn_unused_result));
 
 /// Properly frees memory associated with a ugroups_legacy_group_info pointer (as returned by
 /// get_legacy_group/get_or_construct_legacy_group).

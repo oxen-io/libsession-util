@@ -188,13 +188,16 @@ std::optional<contact_info> Contacts::get(std::string_view pubkey_hex) const {
 }
 
 LIBSESSION_C_API bool contacts_get(
-        const config_object* conf, contacts_contact* contact, const char* session_id) {
+        config_object* conf, contacts_contact* contact, const char* session_id) {
     try {
+        conf->last_error = nullptr;
         if (auto c = unbox<Contacts>(conf)->get(session_id)) {
             c->into(*contact);
             return true;
         }
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
     }
     return false;
 }
@@ -207,11 +210,14 @@ contact_info Contacts::get_or_construct(std::string_view pubkey_hex) const {
 }
 
 LIBSESSION_C_API bool contacts_get_or_construct(
-        const config_object* conf, contacts_contact* contact, const char* session_id) {
+        config_object* conf, contacts_contact* contact, const char* session_id) {
     try {
+        conf->last_error = nullptr;
         unbox<Contacts>(conf)->get_or_construct(session_id).into(*contact);
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
         return false;
     }
 }
