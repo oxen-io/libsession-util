@@ -427,75 +427,93 @@ int convo_info_volatile_init(
 }
 
 LIBSESSION_C_API bool convo_info_volatile_get_1to1(
-        const config_object* conf, convo_info_volatile_1to1* convo, const char* session_id) {
+        config_object* conf, convo_info_volatile_1to1* convo, const char* session_id) {
     try {
+        conf->last_error = nullptr;
         if (auto c = unbox<ConvoInfoVolatile>(conf)->get_1to1(session_id)) {
             c->into(*convo);
             return true;
         }
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
     }
     return false;
 }
 
 LIBSESSION_C_API bool convo_info_volatile_get_or_construct_1to1(
-        const config_object* conf, convo_info_volatile_1to1* convo, const char* session_id) {
+        config_object* conf, convo_info_volatile_1to1* convo, const char* session_id) {
     try {
+        conf->last_error = nullptr;
         unbox<ConvoInfoVolatile>(conf)->get_or_construct_1to1(session_id).into(*convo);
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
         return false;
     }
 }
 
 LIBSESSION_C_API bool convo_info_volatile_get_community(
-        const config_object* conf,
+        config_object* conf,
         convo_info_volatile_community* og,
         const char* base_url,
         const char* room) {
     try {
+        conf->last_error = nullptr;
         if (auto c = unbox<ConvoInfoVolatile>(conf)->get_community(base_url, room)) {
             c->into(*og);
             return true;
         }
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
     }
     return false;
 }
 LIBSESSION_C_API bool convo_info_volatile_get_or_construct_community(
-        const config_object* conf,
+        config_object* conf,
         convo_info_volatile_community* convo,
         const char* base_url,
         const char* room,
         unsigned const char* pubkey) {
     try {
+        conf->last_error = nullptr;
         unbox<ConvoInfoVolatile>(conf)
                 ->get_or_construct_community(base_url, room, ustring_view{pubkey, 32})
                 .into(*convo);
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
         return false;
     }
 }
 
 LIBSESSION_C_API bool convo_info_volatile_get_legacy_group(
-        const config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
+        config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
     try {
+        conf->last_error = nullptr;
         if (auto c = unbox<ConvoInfoVolatile>(conf)->get_legacy_group(id)) {
             c->into(*convo);
             return true;
         }
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
     }
     return false;
 }
 
 LIBSESSION_C_API bool convo_info_volatile_get_or_construct_legacy_group(
-        const config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
+        config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
     try {
+        conf->last_error = nullptr;
         unbox<ConvoInfoVolatile>(conf)->get_or_construct_legacy_group(id).into(*convo);
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
         return false;
     }
 }
