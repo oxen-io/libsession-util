@@ -1,7 +1,6 @@
 set(deps_cc "${CMAKE_C_COMPILER}")
 set(cross_host "")
 set(cross_rc "")
-set(default_force_submodule OFF)
 if(CMAKE_CROSSCOMPILING)
     if(APPLE_TARGET_TRIPLE)
         if(PLATFORM MATCHES "OS64" OR PLATFORM MATCHES "SIMULATORARM64")
@@ -39,9 +38,6 @@ if(CMAKE_CROSSCOMPILING)
             set(cross_rc "WINDRES=${CMAKE_RC_COMPILER}")
         endif()
     endif()
-    set(default_force_submodule ON)
-else()
-    find_package(PkgConfig REQUIRED)
 endif()
 
 
