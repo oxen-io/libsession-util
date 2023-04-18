@@ -33,7 +33,7 @@ set_target_properties(
 
 target_link_libraries(crypto
     PUBLIC
-    libsodium-internal
+    libsodium::sodium-internal
     common)
 target_link_libraries(config
     PUBLIC
