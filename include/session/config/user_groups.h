@@ -9,7 +9,7 @@ extern "C" {
 #include "util.h"
 
 // Maximum length of a group name, in bytes
-extern const size_t GROUP_NAME_MAX_LENGTH;
+LIBSESSION_EXPORT extern const size_t GROUP_NAME_MAX_LENGTH;
 
 /// Struct holding legacy group info; this struct owns allocated memory and *must* be freed via
 /// either `ugroups_legacy_group_free()` or `user_groups_set_free_legacy_group()` when finished with
@@ -55,7 +55,7 @@ typedef struct ugroups_community_info {
                          // setting until the timestamp)
 } ugroups_community_info;
 
-int user_groups_init(
+LIBSESSION_EXPORT int user_groups_init(
         config_object** conf,
         const unsigned char* ed25519_secretkey,
         const unsigned char* dump,
@@ -70,7 +70,7 @@ int user_groups_init(
 /// Returns true if the community was found and `comm` populated; false otherwise.  A false return
 /// can either be because it didn't exist (`conf->last_error` will be NULL) or because of some error
 /// (`last_error` will be set to an error string).
-bool user_groups_get_community(
+LIBSESSION_EXPORT bool user_groups_get_community(
         config_object* conf, ugroups_community_info* comm, const char* base_url, const char* room)
         __attribute__((warn_unused_result));
 
@@ -86,7 +86,7 @@ bool user_groups_get_community(
 /// lower-case (because it does not preserve the case).
 ///
 /// Returns false (and sets `conf->last_error`) on error.
-bool user_groups_get_or_construct_community(
+LIBSESSION_EXPORT bool user_groups_get_or_construct_community(
         config_object* conf,
         ugroups_community_info* comm,
         const char* base_url,
@@ -99,8 +99,8 @@ bool user_groups_get_or_construct_community(
 ///
 /// The returned pointer *must* be freed either by calling `ugroups_legacy_group_free()` when done
 /// with it, or by passing it to `user_groups_set_free_legacy_group()`.
-ugroups_legacy_group_info* user_groups_get_legacy_group(config_object* conf, const char* id)
-        __attribute__((warn_unused_result));
+LIBSESSION_EXPORT ugroups_legacy_group_info* user_groups_get_legacy_group(
+        config_object* conf, const char* id) __attribute__((warn_unused_result));
 
 /// Same as the above except that when the conversation does not exist, this sets all the group
 /// fields to defaults and loads it with the given id.
@@ -116,31 +116,35 @@ ugroups_legacy_group_info* user_groups_get_legacy_group(config_object* conf, con
 /// setting fields in the group, and then giving it to user_groups_set().
 ///
 /// On error, this returns NULL and sets `conf->last_error`.
-ugroups_legacy_group_info* user_groups_get_or_construct_legacy_group(
+LIBSESSION_EXPORT ugroups_legacy_group_info* user_groups_get_or_construct_legacy_group(
         config_object* conf, const char* id) __attribute__((warn_unused_result));
 
 /// Properly frees memory associated with a ugroups_legacy_group_info pointer (as returned by
 /// get_legacy_group/get_or_construct_legacy_group).
-void ugroups_legacy_group_free(ugroups_legacy_group_info* group);
+LIBSESSION_EXPORT void ugroups_legacy_group_free(ugroups_legacy_group_info* group);
 
 /// Adds or updates a community conversation from the given group info
-void user_groups_set_community(config_object* conf, const ugroups_community_info* group);
+LIBSESSION_EXPORT void user_groups_set_community(
+        config_object* conf, const ugroups_community_info* group);
 
 /// Adds or updates a legacy group conversation from the into.  This version of the method should
 /// only be used when you explicitly want the `group` to remain valid; if the set is the last thing
 /// you need to do with it (which is common) it is more efficient to call the freeing version,
 /// below.
-void user_groups_set_legacy_group(config_object* conf, const ugroups_legacy_group_info* group);
+LIBSESSION_EXPORT void user_groups_set_legacy_group(
+        config_object* conf, const ugroups_legacy_group_info* group);
 
 /// Same as above, except that this also frees the pointer for you, which is commonly what is wanted
 /// when updating fields.  This is equivalent to, but more efficient than, setting and then freeing.
-void user_groups_set_free_legacy_group(config_object* conf, ugroups_legacy_group_info* group);
+LIBSESSION_EXPORT void user_groups_set_free_legacy_group(
+        config_object* conf, ugroups_legacy_group_info* group);
 
 /// Erases a conversation from the conversation list.  Returns true if the conversation was found
 /// and removed, false if the conversation was not present.  You must not call this during
 /// iteration; see details below.
-bool user_groups_erase_community(config_object* conf, const char* base_url, const char* room);
-bool user_groups_erase_legacy_group(config_object* conf, const char* group_id);
+LIBSESSION_EXPORT bool user_groups_erase_community(
+        config_object* conf, const char* base_url, const char* room);
+LIBSESSION_EXPORT bool user_groups_erase_legacy_group(config_object* conf, const char* group_id);
 
 typedef struct ugroups_legacy_members_iterator ugroups_legacy_members_iterator;
 
@@ -155,10 +159,11 @@ typedef struct ugroups_legacy_members_iterator ugroups_legacy_members_iterator;
 ///     }
 ///     ugroups_legacy_members_free(it);
 ///
-ugroups_legacy_members_iterator* ugroups_legacy_members_begin(ugroups_legacy_group_info* group);
-bool ugroups_legacy_members_next(
+LIBSESSION_EXPORT ugroups_legacy_members_iterator* ugroups_legacy_members_begin(
+        ugroups_legacy_group_info* group);
+LIBSESSION_EXPORT bool ugroups_legacy_members_next(
         ugroups_legacy_members_iterator* it, const char** session_id, bool* admin);
-void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it);
+LIBSESSION_EXPORT void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it);
 
 /// This erases the group member at the current iteration location during a member iteration,
 /// allowing iteration to continue.
@@ -169,30 +174,31 @@ void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it);
 ///         if (should_remove(sid))
 ///             ugroups_legacy_members_erase(it);
 ///     }
-void ugroups_legacy_members_erase(ugroups_legacy_members_iterator* it);
+LIBSESSION_EXPORT void ugroups_legacy_members_erase(ugroups_legacy_members_iterator* it);
 
 /// Adds a member (by session id and admin status) to this group.  Returns true if the member was
 /// inserted or had the admin status changed, false if the member already existed with the given
 /// status, or if the session_id is not valid.
-bool ugroups_legacy_member_add(
+LIBSESSION_EXPORT bool ugroups_legacy_member_add(
         ugroups_legacy_group_info* group, const char* session_id, bool admin);
 
 /// Removes a member (including admins) from the group given the member's session id.  This is not
 /// safe to use on the current member during member iteration; for that see the above method
 /// instead.  Returns true if the session id was found and removed, false if not found.
-bool ugroups_legacy_member_remove(ugroups_legacy_group_info* group, const char* session_id);
+LIBSESSION_EXPORT bool ugroups_legacy_member_remove(
+        ugroups_legacy_group_info* group, const char* session_id);
 
 /// Accesses the number of members in the group.  The overall number is returned (both admins and
 /// non-admins); if the given variables are not NULL, they will be populated with the individual
 /// counts of members/admins.
-size_t ugroups_legacy_members_count(
+LIBSESSION_EXPORT size_t ugroups_legacy_members_count(
         const ugroups_legacy_group_info* group, size_t* members, size_t* admins);
 
 /// Returns the number of conversations.
-size_t user_groups_size(const config_object* conf);
+LIBSESSION_EXPORT size_t user_groups_size(const config_object* conf);
 /// Returns the number of conversations of the specific type.
-size_t user_groups_size_communities(const config_object* conf);
-size_t user_groups_size_legacy_groups(const config_object* conf);
+LIBSESSION_EXPORT size_t user_groups_size_communities(const config_object* conf);
+LIBSESSION_EXPORT size_t user_groups_size_legacy_groups(const config_object* conf);
 
 /// Functions for iterating through the entire conversation list.  Intended use is:
 ///
@@ -234,35 +240,39 @@ size_t user_groups_size_legacy_groups(const config_object* conf);
 typedef struct user_groups_iterator user_groups_iterator;
 
 // Starts a new iterator that iterates over all conversations.
-user_groups_iterator* user_groups_iterator_new(const config_object* conf);
+LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new(const config_object* conf);
 
 // The same as `user_groups_iterator_new` except that this iterates *only* over one type of
 // conversation. You still need to use `user_groups_it_is_community` (or the alternatives)
 // to load the data in each pass of the loop.  (You can, however, safely ignore the bool return
 // value of the `it_is_whatever` function: it will always be true for the particular type being
 // iterated over).
-user_groups_iterator* user_groups_iterator_new_communities(const config_object* conf);
-user_groups_iterator* user_groups_iterator_new_legacy_groups(const config_object* conf);
+LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_communities(
+        const config_object* conf);
+LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_legacy_groups(
+        const config_object* conf);
 
 // Frees an iterator once no longer needed.
-void user_groups_iterator_free(user_groups_iterator* it);
+LIBSESSION_EXPORT void user_groups_iterator_free(user_groups_iterator* it);
 
 // Returns true if iteration has reached the end.
-bool user_groups_iterator_done(user_groups_iterator* it);
+LIBSESSION_EXPORT bool user_groups_iterator_done(user_groups_iterator* it);
 
 // Advances the iterator.
-void user_groups_iterator_advance(user_groups_iterator* it);
+LIBSESSION_EXPORT void user_groups_iterator_advance(user_groups_iterator* it);
 
 // If the current iterator record is a community conversation this sets the details into `c` and
 // returns true.  Otherwise it returns false.
-bool user_groups_it_is_community(user_groups_iterator* it, ugroups_community_info* c);
+LIBSESSION_EXPORT bool user_groups_it_is_community(
+        user_groups_iterator* it, ugroups_community_info* c);
 
 // If the current iterator record is a legacy group conversation this sets the details into
 // `c` and returns true.  Otherwise it returns false.
-bool user_groups_it_is_legacy_group(user_groups_iterator* it, ugroups_legacy_group_info* c);
+LIBSESSION_EXPORT bool user_groups_it_is_legacy_group(
+        user_groups_iterator* it, ugroups_legacy_group_info* c);
 
 // Erases the current group while advancing the iterator to the next group in the iteration.
-void user_groups_iterator_erase(config_object* conf, user_groups_iterator* it);
+LIBSESSION_EXPORT void user_groups_iterator_erase(config_object* conf, user_groups_iterator* it);
 
 #ifdef __cplusplus
 }  // extern "C"

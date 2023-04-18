@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#include "../export.h"
+
 enum config_error {
     /// Value returned for no error
     SESSION_ERR_NONE = 0,
@@ -16,7 +18,7 @@ enum config_error {
 // Returns a generic string for a given integer error code as returned by some functions.  Depending
 // on the call, a more details error string may be available in the config_object's `last_error`
 // field.
-const char* config_errstr(int err);
+LIBSESSION_EXPORT const char* config_errstr(int err);
 
 #ifdef __cplusplus
 }  // extern "C"

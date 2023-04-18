@@ -273,7 +273,7 @@ namespace {
             throw oxenc::bt_deserialize_invalid{"Data contains an unpruned, empty dict"};
         while (!in.is_finished()) {
             std::string key{in.key()};
-            if (not d.empty() && key <= d.rbegin()->first)
+            if (!d.empty() && key <= d.rbegin()->first)
                 throw oxenc::bt_deserialize_invalid{"Data keys are not correctly ordered"};
             if (in.is_string())
                 d.emplace_hint(d.end(), std::move(key), in.consume_string());

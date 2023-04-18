@@ -103,7 +103,7 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
 
     for (auto& [hash, plain] : plaintexts) {
         // Remove prefix padding:
-        if (auto p = plain.find_first_not_of('\0'); p > 0 && p != std::string::npos) {
+        if (auto p = plain.find_first_not_of((unsigned char)0); p > 0 && p != std::string::npos) {
             std::memmove(plain.data(), plain.data() + p, plain.size() - p);
             plain.resize(plain.size() - p);
         }
@@ -127,9 +127,9 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
             auto* zds = z_decompressor.get();
 
             ZSTD_initDStream(zds);
-            ZSTD_inBuffer input{.src = plain.data() + 1, .size = plain.size() - 1, .pos = 0};
+            ZSTD_inBuffer input{/*.src=*/plain.data() + 1, /*.size=*/plain.size() - 1, /*.pos=*/0};
             unsigned char out_buf[4096];
-            ZSTD_outBuffer output{.dst = out_buf, .size = sizeof(out_buf)};
+            ZSTD_outBuffer output{/*.dst=*/out_buf, /*.size=*/sizeof(out_buf)};
             bool failed = false;
             size_t ret;
             ustring decompressed;

@@ -27,36 +27,40 @@ extern "C" {
 ///
 /// When done with the object the `config_object` must be destroyed by passing the pointer to
 /// config_free() (in `session/config/base.h`).
-int user_profile_init(
+LIBSESSION_EXPORT int user_profile_init(
         config_object** conf,
         const unsigned char* ed25519_secretkey,
         const unsigned char* dump,
         size_t dumplen,
-        char* error) __attribute__((warn_unused_result));
+        char* error)
+#if defined(__GNUC__) || defined(__clang__)
+        __attribute__((warn_unused_result))
+#endif
+        ;
 
 /// Returns a pointer to the currently-set name (null-terminated), or NULL if there is no name at
 /// all.  Should be copied right away as the pointer may not remain valid beyond other API calls.
-const char* user_profile_get_name(const config_object* conf);
+LIBSESSION_EXPORT const char* user_profile_get_name(const config_object* conf);
 
 /// Sets the user profile name to the null-terminated C string.  Returns 0 on success, non-zero on
 /// error (and sets the config_object's error string).
-int user_profile_set_name(config_object* conf, const char* name);
+LIBSESSION_EXPORT int user_profile_set_name(config_object* conf, const char* name);
 
 // Obtains the current profile pic.  The pointers in the returned struct will be NULL if a profile
 // pic is not currently set, and otherwise should be copied right away (they will not be valid
 // beyond other API calls on this config object).
-user_profile_pic user_profile_get_pic(const config_object* conf);
+LIBSESSION_EXPORT user_profile_pic user_profile_get_pic(const config_object* conf);
 
 // Sets a user profile
-int user_profile_set_pic(config_object* conf, user_profile_pic pic);
+LIBSESSION_EXPORT int user_profile_set_pic(config_object* conf, user_profile_pic pic);
 
 // Gets the current note-to-self priority level. Will be negative for hidden, 0 for unpinned, and >
 // 0 for pinned (with higher value = higher priority).
-int user_profile_get_nts_priority(const config_object* conf);
+LIBSESSION_EXPORT int user_profile_get_nts_priority(const config_object* conf);
 
 // Sets the current note-to-self priority level. Set to -1 for hidden; 0 for unpinned, and > 0 for
 // higher priority in the conversation list.
-void user_profile_set_nts_priority(config_object* conf, int priority);
+LIBSESSION_EXPORT void user_profile_set_nts_priority(config_object* conf, int priority);
 
 #ifdef __cplusplus
 }  // extern "C"
