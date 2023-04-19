@@ -20,8 +20,8 @@ if [ "$#" -lt 2 ]; then
     exit 1
 fi
 
-builddir=$1; shift
-archive=$1; shift
+builddir="$1"; shift
+archive="$1"; shift
 
 if [[ "$archive" =~ TAG ]]; then
     if [ -n "$DRONE_TAG" ]; then

@@ -52,7 +52,7 @@ typedef struct convo_info_volatile_legacy_group {
 ///
 /// When done with the object the `config_object` must be destroyed by passing the pointer to
 /// config_free() (in `session/config/base.h`).
-int convo_info_volatile_init(
+LIBSESSION_EXPORT int convo_info_volatile_init(
         config_object** conf,
         const unsigned char* ed25519_secretkey,
         const unsigned char* dump,
@@ -64,7 +64,7 @@ int convo_info_volatile_init(
 /// `convo` is left unchanged and false is returned.  If an error occurs, false is returned and
 /// `conf->last_error` will be set to non-NULL containing the error string (if no error occurs, such
 /// as in the case where the conversation merely doesn't exist, `last_error` will be set to NULL).
-bool convo_info_volatile_get_1to1(
+LIBSESSION_EXPORT bool convo_info_volatile_get_1to1(
         config_object* conf, convo_info_volatile_1to1* convo, const char* session_id)
         __attribute__((warn_unused_result));
 
@@ -77,7 +77,7 @@ bool convo_info_volatile_get_1to1(
 ///
 /// This is the method that should usually be used to create or update a conversation, followed by
 /// setting fields in the convo, and then giving it to convo_info_volatile_set().
-bool convo_info_volatile_get_or_construct_1to1(
+LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_1to1(
         config_object* conf, convo_info_volatile_1to1* convo, const char* session_id)
         __attribute__((warn_unused_result));
 
@@ -87,12 +87,12 @@ bool convo_info_volatile_get_or_construct_1to1(
 /// 32 bytes.  base_url and room will always be lower-cased (if not already).
 ///
 /// Error handling works the same as the 1-to-1 version.
-bool convo_info_volatile_get_community(
+LIBSESSION_EXPORT bool convo_info_volatile_get_community(
         config_object* conf,
         convo_info_volatile_community* comm,
         const char* base_url,
         const char* room) __attribute__((warn_unused_result));
-bool convo_info_volatile_get_or_construct_community(
+LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_community(
         config_object* conf,
         convo_info_volatile_community* convo,
         const char* base_url,
@@ -103,7 +103,7 @@ bool convo_info_volatile_get_or_construct_community(
 /// hex string), if the conversation exists, and returns true.  If the conversation does not exist
 /// then `convo` is left unchanged and false is returned.  On error, false is returned and the error
 /// is set in conf->last_error (on non-error, last_error is cleared).
-bool convo_info_volatile_get_legacy_group(
+LIBSESSION_EXPORT bool convo_info_volatile_get_legacy_group(
         config_object* conf, convo_info_volatile_legacy_group* convo, const char* id)
         __attribute__((warn_unused_result));
 
@@ -116,31 +116,33 @@ bool convo_info_volatile_get_legacy_group(
 ///
 /// This is the method that should usually be used to create or update a conversation, followed by
 /// setting fields in the convo, and then giving it to convo_info_volatile_set().
-bool convo_info_volatile_get_or_construct_legacy_group(
+LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_legacy_group(
         config_object* conf, convo_info_volatile_legacy_group* convo, const char* id)
         __attribute__((warn_unused_result));
 
 /// Adds or updates a conversation from the given convo info
-void convo_info_volatile_set_1to1(config_object* conf, const convo_info_volatile_1to1* convo);
-void convo_info_volatile_set_community(
+LIBSESSION_EXPORT void convo_info_volatile_set_1to1(
+        config_object* conf, const convo_info_volatile_1to1* convo);
+LIBSESSION_EXPORT void convo_info_volatile_set_community(
         config_object* conf, const convo_info_volatile_community* convo);
-void convo_info_volatile_set_legacy_group(
+LIBSESSION_EXPORT void convo_info_volatile_set_legacy_group(
         config_object* conf, const convo_info_volatile_legacy_group* convo);
 
 /// Erases a conversation from the conversation list.  Returns true if the conversation was found
 /// and removed, false if the conversation was not present.  You must not call this during
 /// iteration; see details below.
-bool convo_info_volatile_erase_1to1(config_object* conf, const char* session_id);
-bool convo_info_volatile_erase_community(
+LIBSESSION_EXPORT bool convo_info_volatile_erase_1to1(config_object* conf, const char* session_id);
+LIBSESSION_EXPORT bool convo_info_volatile_erase_community(
         config_object* conf, const char* base_url, const char* room);
-bool convo_info_volatile_erase_legacy_group(config_object* conf, const char* group_id);
+LIBSESSION_EXPORT bool convo_info_volatile_erase_legacy_group(
+        config_object* conf, const char* group_id);
 
 /// Returns the number of conversations.
-size_t convo_info_volatile_size(const config_object* conf);
+LIBSESSION_EXPORT size_t convo_info_volatile_size(const config_object* conf);
 /// Returns the number of conversations of the specific type.
-size_t convo_info_volatile_size_1to1(const config_object* conf);
-size_t convo_info_volatile_size_communities(const config_object* conf);
-size_t convo_info_volatile_size_legacy_groups(const config_object* conf);
+LIBSESSION_EXPORT size_t convo_info_volatile_size_1to1(const config_object* conf);
+LIBSESSION_EXPORT size_t convo_info_volatile_size_communities(const config_object* conf);
+LIBSESSION_EXPORT size_t convo_info_volatile_size_legacy_groups(const config_object* conf);
 
 /// Functions for iterating through the entire conversation list.  Intended use is:
 ///
@@ -185,44 +187,48 @@ size_t convo_info_volatile_size_legacy_groups(const config_object* conf);
 typedef struct convo_info_volatile_iterator convo_info_volatile_iterator;
 
 // Starts a new iterator that iterates over all conversations.
-convo_info_volatile_iterator* convo_info_volatile_iterator_new(const config_object* conf);
+LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new(
+        const config_object* conf);
 
 // The same as `convo_info_volatile_iterator_new` except that this iterates *only* over one type of
 // conversation. You still need to use `convo_info_volatile_it_is_1to1` (or the alternatives) to
 // load the data in each pass of the loop.  (You can, however, safely ignore the bool return value
 // of the `it_is_whatever` function: it will always be true for the particular type being iterated
 // over).
-convo_info_volatile_iterator* convo_info_volatile_iterator_new_1to1(const config_object* conf);
-convo_info_volatile_iterator* convo_info_volatile_iterator_new_communities(
+LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new_1to1(
         const config_object* conf);
-convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_groups(
+LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new_communities(
+        const config_object* conf);
+LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_groups(
         const config_object* conf);
 
 // Frees an iterator once no longer needed.
-void convo_info_volatile_iterator_free(convo_info_volatile_iterator* it);
+LIBSESSION_EXPORT void convo_info_volatile_iterator_free(convo_info_volatile_iterator* it);
 
 // Returns true if iteration has reached the end.
-bool convo_info_volatile_iterator_done(convo_info_volatile_iterator* it);
+LIBSESSION_EXPORT bool convo_info_volatile_iterator_done(convo_info_volatile_iterator* it);
 
 // Advances the iterator.
-void convo_info_volatile_iterator_advance(convo_info_volatile_iterator* it);
+LIBSESSION_EXPORT void convo_info_volatile_iterator_advance(convo_info_volatile_iterator* it);
 
 // If the current iterator record is a 1-to-1 conversation this sets the details into `c` and
 // returns true.  Otherwise it returns false.
-bool convo_info_volatile_it_is_1to1(convo_info_volatile_iterator* it, convo_info_volatile_1to1* c);
+LIBSESSION_EXPORT bool convo_info_volatile_it_is_1to1(
+        convo_info_volatile_iterator* it, convo_info_volatile_1to1* c);
 
 // If the current iterator record is a community conversation this sets the details into `c` and
 // returns true.  Otherwise it returns false.
-bool convo_info_volatile_it_is_community(
+LIBSESSION_EXPORT bool convo_info_volatile_it_is_community(
         convo_info_volatile_iterator* it, convo_info_volatile_community* c);
 
 // If the current iterator record is a legacy group conversation this sets the details into `c` and
 // returns true.  Otherwise it returns false.
-bool convo_info_volatile_it_is_legacy_group(
+LIBSESSION_EXPORT bool convo_info_volatile_it_is_legacy_group(
         convo_info_volatile_iterator* it, convo_info_volatile_legacy_group* c);
 
 // Erases the current convo while advancing the iterator to the next convo in the iteration.
-void convo_info_volatile_iterator_erase(config_object* conf, convo_info_volatile_iterator* it);
+LIBSESSION_EXPORT void convo_info_volatile_iterator_erase(
+        config_object* conf, convo_info_volatile_iterator* it);
 
 #ifdef __cplusplus
 }  // extern "C"

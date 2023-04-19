@@ -24,7 +24,7 @@ std::string session_id_to_bytes(std::string_view session_id) {
 
 void check_encoded_pubkey(std::string_view pk) {
     if (!((pk.size() == 64 && oxenc::is_hex(pk)) ||
-          ((pk.size() == 43 || (pk.size() == 44 && pk.back() == '=') && oxenc::is_base64(pk))) ||
+          ((pk.size() == 43 || (pk.size() == 44 && pk.back() == '=')) && oxenc::is_base64(pk)) ||
           (pk.size() == 52 && oxenc::is_base32z(pk))))
         throw std::invalid_argument{"Invalid encoded pubkey: expected hex, base32z or base64"};
 }
@@ -34,7 +34,7 @@ ustring decode_pubkey(std::string_view pk) {
     pubkey.reserve(32);
     if (pk.size() == 64 && oxenc::is_hex(pk))
         oxenc::from_hex(pk.begin(), pk.end(), std::back_inserter(pubkey));
-    else if ((pk.size() == 43 || (pk.size() == 44 && pk.back() == '=') && oxenc::is_base64(pk)))
+    else if ((pk.size() == 43 || (pk.size() == 44 && pk.back() == '=')) && oxenc::is_base64(pk))
         oxenc::from_base64(pk.begin(), pk.end(), std::back_inserter(pubkey));
     else if (pk.size() == 52 && oxenc::is_base32z(pk))
         oxenc::from_base32z(pk.begin(), pk.end(), std::back_inserter(pubkey));

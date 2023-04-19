@@ -11,7 +11,7 @@ extern "C" {
 #include "util.h"
 
 // Maximum length of a contact name/nickname, in bytes (not including the null terminator).
-extern const size_t CONTACT_MAX_NAME_LENGTH;
+LIBSESSION_EXPORT extern const size_t CONTACT_MAX_NAME_LENGTH;
 
 typedef struct contacts_contact {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
@@ -56,7 +56,7 @@ typedef struct contacts_contact {
 ///
 /// When done with the object the `config_object` must be destroyed by passing the pointer to
 /// config_free() (in `session/config/base.h`).
-int contacts_init(
+LIBSESSION_EXPORT int contacts_init(
         config_object** conf,
         const unsigned char* ed25519_secretkey,
         const unsigned char* dump,
@@ -66,7 +66,8 @@ int contacts_init(
 /// Fills `contact` with the contact info given a session ID (specified as a null-terminated hex
 /// string), if the contact exists, and returns true.  If the contact does not exist then `contact`
 /// is left unchanged and false is returned.
-bool contacts_get(config_object* conf, contacts_contact* contact, const char* session_id)
+LIBSESSION_EXPORT bool contacts_get(
+        config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
 /// Same as the above except that when the contact does not exist, this sets all the contact fields
@@ -77,12 +78,12 @@ bool contacts_get(config_object* conf, contacts_contact* contact, const char* se
 ///
 /// This is the method that should usually be used to create or update a contact, followed by
 /// setting fields in the contact, and then giving it to contacts_set().
-bool contacts_get_or_construct(
+LIBSESSION_EXPORT bool contacts_get_or_construct(
         config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
 /// Adds or updates a contact from the given contact info struct.
-void contacts_set(config_object* conf, const contacts_contact* contact);
+LIBSESSION_EXPORT void contacts_set(config_object* conf, const contacts_contact* contact);
 
 // NB: wrappers for set_name, set_nickname, etc. C++ methods are deliberately omitted as they would
 // save very little in actual calling code.  The procedure for updating a single field without them
@@ -100,10 +101,10 @@ void contacts_set(config_object* conf, const contacts_contact* contact);
 /// Erases a contact from the contact list.  session_id is in hex.  Returns true if the contact was
 /// found and removed, false if the contact was not present.  You must not call this during
 /// iteration; see details below.
-bool contacts_erase(config_object* conf, const char* session_id);
+LIBSESSION_EXPORT bool contacts_erase(config_object* conf, const char* session_id);
 
 /// Returns the number of contacts.
-size_t contacts_size(const config_object* conf);
+LIBSESSION_EXPORT size_t contacts_size(const config_object* conf);
 
 /// Functions for iterating through the entire contact list, in sorted order.  Intended use is:
 ///
@@ -142,18 +143,18 @@ typedef struct contacts_iterator {
 } contacts_iterator;
 
 // Starts a new iterator.
-contacts_iterator* contacts_iterator_new(const config_object* conf);
+LIBSESSION_EXPORT contacts_iterator* contacts_iterator_new(const config_object* conf);
 // Frees an iterator once no longer needed.
-void contacts_iterator_free(contacts_iterator* it);
+LIBSESSION_EXPORT void contacts_iterator_free(contacts_iterator* it);
 
 // Returns true if iteration has reached the end.  Otherwise `c` is populated and false is returned.
-bool contacts_iterator_done(contacts_iterator* it, contacts_contact* c);
+LIBSESSION_EXPORT bool contacts_iterator_done(contacts_iterator* it, contacts_contact* c);
 
 // Advances the iterator.
-void contacts_iterator_advance(contacts_iterator* it);
+LIBSESSION_EXPORT void contacts_iterator_advance(contacts_iterator* it);
 
 // Erases the current contact while advancing the iterator to the next contact in the iteration.
-void contacts_iterator_erase(config_object* conf, contacts_iterator* it);
+LIBSESSION_EXPORT void contacts_iterator_erase(config_object* conf, contacts_iterator* it);
 
 #ifdef __cplusplus
 }  // extern "C"

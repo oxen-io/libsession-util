@@ -101,7 +101,7 @@ if(STATIC_BUNDLE)
         crypto
         config
         version
-        libsodium-internal
+        libsodium::sodium-internal
         libzstd_static)
     set(lib_folder lib)
     if(IOS)

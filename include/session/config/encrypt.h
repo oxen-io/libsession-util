@@ -6,13 +6,15 @@ extern "C" {
 
 #include <stddef.h>
 
+#include "../export.h"
+
 /// Wrapper around session::config::encrypt.  message and key_base are binary: message has the
 /// length provided, key_base must be exactly 32 bytes.  domain is a c string.  Returns a newly
 /// allocated buffer containing the encrypted data, and sets the data's length into
 /// `ciphertext_size`.  It is the caller's responsibility to `free()` the returned buffer!
 ///
 /// Returns nullptr on error.
-unsigned char* config_encrypt(
+LIBSESSION_EXPORT unsigned char* config_encrypt(
         const unsigned char* message,
         size_t mlen,
         const unsigned char* key_base,
@@ -20,7 +22,7 @@ unsigned char* config_encrypt(
         size_t* ciphertext_size);
 
 /// Works just like config_encrypt, but in reverse.
-unsigned char* config_decrypt(
+LIBSESSION_EXPORT unsigned char* config_decrypt(
         const unsigned char* ciphertext,
         size_t clen,
         const unsigned char* key_base,
@@ -29,7 +31,7 @@ unsigned char* config_decrypt(
 
 /// Returns the amount of padding needed for a plaintext of size s with encryption overhead
 /// `overhead`.
-size_t config_padded_size(size_t s, size_t overhead);
+LIBSESSION_EXPORT size_t config_padded_size(size_t s, size_t overhead);
 
 #ifdef __cplusplus
 }
