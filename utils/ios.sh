@@ -19,22 +19,30 @@ VALID_DEVICE_ARCHS=(arm64)
 VALID_SIM_ARCH_PLATFORMS=(SIMULATORARM64 SIMULATOR64)
 VALID_DEVICE_ARCH_PLATFORMS=(OS64)
 
-BUILD_DIR="${TARGET_TEMP_DIR:-build-ios}"
 OUTPUT_DIR="${TARGET_BUILD_DIR:-build-ios}"
 IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-13}
 ENABLE_BITCODE=${ENABLE_BITCODE:-OFF}
-SKIP_ARCHIVE=${2:-$SKIP_ARCHIVE}    # Use a parameter if provided, fallback to an env variable
-SKIP_ARCHIVE=${SKIP_ARCHIVE:-false} # Use the variable, fallback to false if needed
+SHOULD_ACHIVE=${2:-true}                 # Parameter 2 is a flag indicating whether we want to archive the result
+
+# We want to customise the env variable so can't just default the value
+if [ -z "${TARGET_TEMP_DIR}" ]; then
+    BUILD_DIR="build-ios"
+elif [ "${#ARCHS[@]}" = 1 ]; then
+    BUILD_DIR="${TARGET_TEMP_DIR}/../libSession-util"
+fi
 
 # Can't dafault an array in the same way as above
-if [ -z $ARCHS ]; then
+if [ -z "${ARCHS}" ]; then
     ARCHS=(arm64 x86_64)
+elif [ "${#ARCHS[@]}" = 1 ]; then
+    # The env value is probably a string, convert it to an array just in case
+    read -ra ARCHS <<< "$ARCHS"
 fi
 
 projdir="$PWD"
 UNIQUE_NAME=""
 
-if [ $SKIP_ARCHIVE = false ]; then
+if [ $SHOULD_ACHIVE = true ]; then
     UNIQUE_NAME="${1:-libsession-util-ios-TAG}"
 
     if [[ "$UNIQUE_NAME" =~ TAG ]]; then
@@ -62,18 +70,12 @@ TARGET_PLATFORMS=()
 TARGET_SIM_ARCHS=()
 TARGET_DEVICE_ARCHS=()
 
-if [ "${#ARCHS[@]}" -eq "1" ]; then
-    ARCHS_STRING="(${ARCHS[*]})"
-else
-    ARCHS_STRING="${ARCHS[*]}"
-fi
-
 if [ -z $PLATFORM_NAME ] || [ $PLATFORM_NAME = "iphonesimulator" ]; then
     for i in "${!VALID_SIM_ARCHS[@]}"; do
         ARCH="${VALID_SIM_ARCHS[$i]}"
         ARCH_PLATFORM="${VALID_SIM_ARCH_PLATFORMS[$i]}"
 
-        if [[ " ${ARCHS_STRING[*]:1:$((${#ARCHS_STRING} - 2))} " =~ " ${ARCH} " ]]; then
+        if [[ " ${ARCHS[*]} " =~ " ${ARCH} " ]]; then
             TARGET_ARCHS+=("sim-${ARCH}")
             TARGET_PLATFORMS+=("${ARCH_PLATFORM}")
             TARGET_SIM_ARCHS+=("sim-${ARCH}")
@@ -86,7 +88,7 @@ if [ -z $PLATFORM_NAME ] || [ $PLATFORM_NAME = "iphoneos" ]; then
         ARCH="${VALID_DEVICE_ARCHS[$i]}"
         ARCH_PLATFORM="${VALID_DEVICE_ARCH_PLATFORMS[$i]}"
 
-        if [[ " ${ARCHS_STRING[*]:1:$((${#ARCHS_STRING} - 2))} " =~ " ${ARCH} " ]]; then
+        if [[ " ${ARCHS[*]} " =~ " ${ARCH} " ]]; then
             TARGET_ARCHS+=("ios-${ARCH}")
             TARGET_PLATFORMS+=("${ARCH_PLATFORM}")
             TARGET_DEVICE_ARCHS+=("ios-${ARCH}")
@@ -112,7 +114,7 @@ if [ "${#TARGET_SIM_ARCHS[@]}" -eq "1" ]; then
     # Single device build
     mkdir -p "${BUILD_DIR}/sim"
     rm -rf "${BUILD_DIR}/sim/libsession-util.a"
-    mv "${BUILD_DIR}/${TARGET_SIM_ARCHS[0]}/libsession-util.a" "${BUILD_DIR}/sim/libsession-util.a"
+    cp "${BUILD_DIR}/${TARGET_SIM_ARCHS[0]}/libsession-util.a" "${BUILD_DIR}/sim/libsession-util.a"
 elif [ "${#TARGET_SIM_ARCHS[@]}" -gt "1" ]; then
     # Combine multiple device builds into a multi-arch lib
     mkdir -p "${BUILD_DIR}/sim"
@@ -124,7 +126,7 @@ if [ "${#TARGET_DEVICE_ARCHS[@]}" -eq "1" ]; then
     # Single device build
     mkdir -p "${BUILD_DIR}/ios"
     rm -rf "${BUILD_DIR}/ios/libsession-util.a"
-    mv "${BUILD_DIR}/${TARGET_DEVICE_ARCHS[0]}/libsession-util.a" "${BUILD_DIR}/ios/libsession-util.a"
+    cp "${BUILD_DIR}/${TARGET_DEVICE_ARCHS[0]}/libsession-util.a" "${BUILD_DIR}/ios/libsession-util.a"
 elif [ "${#TARGET_DEVICE_ARCHS[@]}" -gt "1" ]; then
     # Combine multiple device builds into a multi-arch lib
     mkdir -p "${BUILD_DIR}/ios"
@@ -174,7 +176,7 @@ if false; then
 fi
 echo "}" >>"$modmap"
 
-if [ $SKIP_ARCHIVE = false ]; then
+if [ $SHOULD_ACHIVE = true ]; then
     (cd "${OUTPUT_DIR}/.." && tar cvJf "${UNIQUE_NAME}.tar.xz" "${UNIQUE_NAME}")
 fi
     
