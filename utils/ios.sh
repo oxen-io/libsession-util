@@ -23,9 +23,13 @@ BUILD_DIR="${TARGET_TEMP_DIR:-build-ios}"
 OUTPUT_DIR="${TARGET_BUILD_DIR:-build-ios}"
 IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-13}
 ENABLE_BITCODE=${ENABLE_BITCODE:-OFF}
-ARCHS=${ARCHS:-(arm64 x86_64)}
 SKIP_ARCHIVE=${2:-$SKIP_ARCHIVE}    # Use a parameter if provided, fallback to an env variable
 SKIP_ARCHIVE=${SKIP_ARCHIVE:-false} # Use the variable, fallback to false if needed
+
+# Can't dafault an array in the same way as above
+if [ -z $ARCHS ]; then
+    ARCHS=(arm64 x86_64)
+fi
 
 projdir="$PWD"
 UNIQUE_NAME=""
