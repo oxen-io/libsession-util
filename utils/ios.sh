@@ -12,55 +12,145 @@ if ! command -v xcodebuild; then
     exit 1
 fi
 
-archive="${1:-libsession-util-ios-TAG.tar.xz}"
+# Import settings from XCode (defaulting values if not present)
 
-if [[ "$archive" =~ TAG ]]; then
-    if [ -n "$DRONE_TAG" ]; then
-        tag="$DRONE_TAG"
-    elif [ -n "$DRONE_COMMIT" ]; then
-        tag="$(date --date=@$DRONE_BUILD_CREATED +%Y%m%dT%H%M%SZ)-${DRONE_COMMIT:0:9}"
-    else
-        tag="$(date +%Y%m%dT%H%M%SZ)-$(git rev-parse --short=9 HEAD)"
+VALID_SIM_ARCHS=(arm64 x86_64)
+VALID_DEVICE_ARCHS=(arm64)
+VALID_SIM_ARCH_PLATFORMS=(SIMULATORARM64 SIMULATOR64)
+VALID_DEVICE_ARCH_PLATFORMS=(OS64)
+
+BUILD_DIR="${TARGET_TEMP_DIR:-build-ios}"
+OUTPUT_DIR="${TARGET_BUILD_DIR:-build-ios}"
+IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-13}
+ENABLE_BITCODE=${ENABLE_BITCODE:-OFF}
+ARCHS=${ARCHS:-(arm64 x86_64)}
+SKIP_ARCHIVE=${2:-$SKIP_ARCHIVE}    # Use a parameter if provided, fallback to an env variable
+SKIP_ARCHIVE=${SKIP_ARCHIVE:-false} # Use the variable, fallback to false if needed
+
+projdir="$PWD"
+UNIQUE_NAME=""
+
+if [ $SKIP_ARCHIVE = false ]; then
+    UNIQUE_NAME="${1:-libsession-util-ios-TAG}"
+
+    if [[ "$UNIQUE_NAME" =~ TAG ]]; then
+        if [ -n "$DRONE_TAG" ]; then
+            tag="$DRONE_TAG"
+        elif [ -n "$DRONE_COMMIT" ]; then
+            tag="$(date --date=@$DRONE_BUILD_CREATED +%Y%m%dT%H%M%SZ)-${DRONE_COMMIT:0:9}"
+        else
+            tag="$(date +%Y%m%dT%H%M%SZ)-$(git rev-parse --short=9 HEAD)"
+        fi
+
+        UNIQUE_NAME="${UNIQUE_NAME/TAG/$tag}"
     fi
 
-    archive="${archive/TAG/$tag}"
+    OUTPUT_DIR="${OUTPUT_DIR}/${UNIQUE_NAME}"
 fi
 
 
 set -x
 
-for i in "ios-arm64 OS64" "sim-arm64 SIMULATORARM64" "sim-x86_64 SIMULATOR64"; do
-    i=($i)
-    build="build-ios/${i[0]}"
-    platform="${i[1]}"
-    echo "Building ${i[0]} for $platform in $build"
+
+# Generate the target architectures we want to build for
+TARGET_ARCHS=()
+TARGET_PLATFORMS=()
+TARGET_SIM_ARCHS=()
+TARGET_DEVICE_ARCHS=()
+
+if [ "${#ARCHS[@]}" -eq "1" ]; then
+    ARCHS_STRING="(${ARCHS[*]})"
+else
+    ARCHS_STRING="${ARCHS[*]}"
+fi
+
+if [ -z $PLATFORM_NAME ] || [ $PLATFORM_NAME = "iphonesimulator" ]; then
+    for i in "${!VALID_SIM_ARCHS[@]}"; do
+        ARCH="${VALID_SIM_ARCHS[$i]}"
+        ARCH_PLATFORM="${VALID_SIM_ARCH_PLATFORMS[$i]}"
+
+        if [[ " ${ARCHS_STRING[*]:1:$((${#ARCHS_STRING} - 2))} " =~ " ${ARCH} " ]]; then
+            TARGET_ARCHS+=("sim-${ARCH}")
+            TARGET_PLATFORMS+=("${ARCH_PLATFORM}")
+            TARGET_SIM_ARCHS+=("sim-${ARCH}")
+        fi
+    done
+fi
+
+if [ -z $PLATFORM_NAME ] || [ $PLATFORM_NAME = "iphoneos" ]; then
+    for i in "${!VALID_DEVICE_ARCHS[@]}"; do
+        ARCH="${VALID_DEVICE_ARCHS[$i]}"
+        ARCH_PLATFORM="${VALID_DEVICE_ARCH_PLATFORMS[$i]}"
+
+        if [[ " ${ARCHS_STRING[*]:1:$((${#ARCHS_STRING} - 2))} " =~ " ${ARCH} " ]]; then
+            TARGET_ARCHS+=("ios-${ARCH}")
+            TARGET_PLATFORMS+=("${ARCH_PLATFORM}")
+            TARGET_DEVICE_ARCHS+=("ios-${ARCH}")
+        fi
+    done
+fi
+
+# Build the individual architectures
+for i in "${!TARGET_ARCHS[@]}"; do
+    build="${BUILD_DIR}/${TARGET_ARCHS[$i]}"
+    platform="${TARGET_PLATFORMS[$i]}"
+    echo "Building ${TARGET_ARCHS[$i]} for $platform in $build"
 
     ./utils/static-bundle.sh "$build" "" \
-        -DCMAKE_TOOLCHAIN_FILE=../../external/ios-cmake/ios.toolchain.cmake \
+        -DCMAKE_TOOLCHAIN_FILE="${projdir}/external/ios-cmake/ios.toolchain.cmake" \
         -DPLATFORM=$platform \
-        -DDEPLOYMENT_TARGET=13 \
-        -DENABLE_BITCODE=OFF
+        -DDEPLOYMENT_TARGET=$IPHONEOS_DEPLOYMENT_TARGET \
+        -DENABLE_BITCODE=$ENABLE_BITCODE
 done
 
-pkg="${archive%%.tar.xz}"
-pkg_dir="build-ios/$pkg"
+# If needed combine simulator builds into a multi-arch lib
+if [ "${#TARGET_SIM_ARCHS[@]}" -eq "1" ]; then
+    # Single device build
+    mkdir -p "${BUILD_DIR}/sim"
+    rm -rf "${BUILD_DIR}/sim/libsession-util.a"
+    mv "${BUILD_DIR}/${TARGET_SIM_ARCHS[0]}/libsession-util.a" "${BUILD_DIR}/sim/libsession-util.a"
+elif [ "${#TARGET_SIM_ARCHS[@]}" -gt "1" ]; then
+    # Combine multiple device builds into a multi-arch lib
+    mkdir -p "${BUILD_DIR}/sim"
+    lipo -create "${BUILD_DIR}"/sim-*/libsession-util.a -output "${BUILD_DIR}/sim/libsession-util.a"
+fi
 
-# Combine simulator builds into a multi-arch lib
-mkdir -p build-ios/sim
-lipo -create build-ios/sim-*/libsession-util.a -output build-ios/sim/libsession-util.a
+# If needed combine device builds into a multi-arch lib
+if [ "${#TARGET_DEVICE_ARCHS[@]}" -eq "1" ]; then
+    # Single device build
+    mkdir -p "${BUILD_DIR}/ios"
+    rm -rf "${BUILD_DIR}/ios/libsession-util.a"
+    mv "${BUILD_DIR}/${TARGET_DEVICE_ARCHS[0]}/libsession-util.a" "${BUILD_DIR}/ios/libsession-util.a"
+elif [ "${#TARGET_DEVICE_ARCHS[@]}" -gt "1" ]; then
+    # Combine multiple device builds into a multi-arch lib
+    mkdir -p "${BUILD_DIR}/ios"
+    lipo -create "${BUILD_DIR}"/ios-*/libsession-util.a -output "${BUILD_DIR}/ios/libsession-util.a"
+fi
 
 
 # Create a '.xcframework' so XCode can deal with the different architectures
-xcodebuild -create-xcframework \
-    -library build-ios/ios-arm64/libsession-util.a \
-    -library build-ios/sim/libsession-util.a \
-    -output "$pkg_dir/libsession-util.xcframework"
+rm -rf "${OUTPUT_DIR}/libsession-util.xcframework"
+
+if [ "${#TARGET_SIM_ARCHS}" -gt "0" ] && [ "${#TARGET_DEVICE_ARCHS}" -gt "0" ]; then
+    xcodebuild -create-xcframework \
+        -library "${BUILD_DIR}/ios/libsession-util.a" \
+        -library "${BUILD_DIR}/sim/libsession-util.a" \
+        -output "${OUTPUT_DIR}/libsession-util.xcframework"
+elif [ "${#TARGET_DEVICE_ARCHS}" -gt "0" ]; then
+    xcodebuild -create-xcframework \
+        -library "${BUILD_DIR}/ios/libsession-util.a" \
+        -output "${OUTPUT_DIR}/libsession-util.xcframework"
+else
+    xcodebuild -create-xcframework \
+        -library "${BUILD_DIR}/sim/libsession-util.a" \
+        -output "${OUTPUT_DIR}/libsession-util.xcframework"
+fi
 
 # Copy the headers over
-cp -rv include/session "$pkg_dir/libsession-util.xcframework"
+cp -rv include/session "${OUTPUT_DIR}/libsession-util.xcframework"
 
 # The 'module.modulemap' is needed for XCode to be able to find the headers
-modmap="$pkg_dir/libsession-util.xcframework/module.modulemap"
+modmap="${OUTPUT_DIR}/libsession-util.xcframework/module.modulemap"
 echo "module SessionUtil {" >"$modmap"
 echo "  module capi {" >>"$modmap"
 for x in $(cd include && find session -name '*.h'); do
@@ -80,6 +170,8 @@ if false; then
 fi
 echo "}" >>"$modmap"
 
-(cd build-ios && tar cvJf "$archive" "$pkg")
-
-echo "Packaged everything up at build-ios/$archive"
+if [ $SKIP_ARCHIVE = false ]; then
+    (cd "${OUTPUT_DIR}/.." && tar cvJf "${UNIQUE_NAME}.tar.xz" "${UNIQUE_NAME}")
+fi
+    
+echo "Packaged everything up at ${OUTPUT_DIR}/libsession-util.xcframework"
