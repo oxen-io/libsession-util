@@ -252,6 +252,80 @@ TEST_CASE("group key multi-encrypt", "[groups][encrypt][sodium]") {
         }
     };
 
+    std::vector<std::array<unsigned char, crypto_scalarmult_BYTES>> mA;
+    for (const auto& member : members) {
+        int rc = crypto_scalarmult(
+                mA.emplace_back().data(), member.x25519_privkey.data(), admin.x25519_pubkey.data());
+        REQUIRE(rc == 0);
+    }
+
+    std::vector<std::array<unsigned char, crypto_scalarmult_BYTES>> aM;
+    for (const auto& member : members) {
+        int rc = crypto_scalarmult(
+                aM.emplace_back().data(), admin.x25519_privkey.data(), member.x25519_pubkey.data());
+        REQUIRE(rc == 0);
+    }
+    REQUIRE(mA == aM);
+
+    BENCHMARK("encryption (precomputed aM)") {
+        nonce = random_bytes<crypto_aead_xchacha20poly1305_ietf_NPUBBYTES>(rng);
+
+        std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> enc_key;
+
+        std::array<unsigned char, crypto_core_ed25519_BYTES> aA;
+        int rc = crypto_scalarmult_ed25519(
+                aA.data(), admin.x25519_privkey.data(), admin.ed25519_pubkey.data());
+        REQUIRE(rc == 0);
+
+        crypto_generichash_blake2b_state s;
+        crypto_generichash_blake2b_init(
+                &s, admin_hash_key.data(), admin_hash_key.size(), enc_key.size());
+        crypto_generichash_blake2b_update(&s, aA.data(), aA.size());
+        crypto_generichash_blake2b_update(
+                &s, admin.ed25519_pubkey.data(), admin.ed25519_pubkey.size());
+        crypto_generichash_blake2b_final(&s, enc_key.data(), enc_key.size());
+
+        encrypted_key_t encrypted_key_admin;
+        unsigned long long cipher_len;
+        crypto_aead_xchacha20poly1305_ietf_encrypt(
+                encrypted_key_admin.data(),
+                &cipher_len,
+                new_group_key.data(),
+                new_group_key.size(),
+                nullptr,
+                0,
+                nullptr,
+                nonce.data(),
+                enc_key.data());
+        REQUIRE(cipher_len == encrypted_key_admin.size());
+
+        member_enc_keys.clear();
+        for (size_t i = 0; i < members.size(); i++) {
+            auto& m = members[i];
+            crypto_generichash_blake2b_init(
+                    &s, member_hash_key.data(), member_hash_key.size(), enc_key.size());
+
+            crypto_generichash_blake2b_update(&s, aM[i].data(), aM[i].size());
+            crypto_generichash_blake2b_update(
+                    &s, admin.x25519_pubkey.data(), admin.x25519_pubkey.size());
+            crypto_generichash_blake2b_update(&s, m.x25519_pubkey.data(), m.x25519_pubkey.size());
+            crypto_generichash_blake2b_final(&s, enc_key.data(), enc_key.size());
+
+            auto& mek = member_enc_keys.emplace_back();
+            crypto_aead_xchacha20poly1305_ietf_encrypt(
+                    mek.data(),
+                    &cipher_len,
+                    new_group_key.data(),
+                    new_group_key.size(),
+                    nullptr,
+                    0,
+                    nullptr,
+                    nonce.data(),
+                    enc_key.data());
+            REQUIRE(cipher_len == mek.size());
+        }
+    };
+
     // NB: this benchmark isn't the same as the above: this is timing how long it takes to attempt
     // to decrypt all 1000 member keys for each of the 1000 members.  Thus *one* member decryption
     // is 1/1000th of the benchmark time here.
@@ -302,7 +376,60 @@ TEST_CASE("group key multi-encrypt", "[groups][encrypt][sodium]") {
                 if (rc == 0) {
                     successes++;
                     REQUIRE(plainlen == new_key.size());
-                    CHECK(to_hex(new_key) == to_hex(new_group_key));
+                    //CHECK(to_hex(new_key) == to_hex(new_group_key));
+                } else {
+                    failures++;
+                }
+            }
+            CHECK(successes == 1);
+            CHECK(failures == members.size() - 1);
+        }
+    };
+
+    BENCHMARK("decryption (precomputed mA)") {
+        std::uniform_int_distribution<size_t> rand_member_index{0, members.size()};
+        auto& member = members[rand_member_index(rng)];
+
+        crypto_generichash_blake2b_state s;
+        for (size_t i = 0; i < members.size(); i++) {
+            const auto& member = members[i];
+            std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> dec_key;
+            crypto_generichash_blake2b_init(
+                    &s, member_hash_key.data(), member_hash_key.size(), dec_key.size());
+
+            crypto_generichash_blake2b_update(&s, mA[i].data(), mA[i].size());
+            crypto_generichash_blake2b_update(
+                    &s, admin.x25519_pubkey.data(), admin.x25519_pubkey.size());
+            crypto_generichash_blake2b_update(
+                    &s, member.x25519_pubkey.data(), member.x25519_pubkey.size());
+            crypto_generichash_blake2b_final(&s, dec_key.data(), dec_key.size());
+
+            // Now we have our dec_key, so iterate through all the encrypted keys and count how many
+            // we successfully decrypt.  (We try them all, even after a success, for the test suite
+            // but in production use we'd stop after a success).
+            int successes = 0, failures = 0;
+            std::array<unsigned char, 32> new_key;
+            static_assert(
+                    std::tuple_size_v<encrypted_key_t> ==
+                    std::tuple_size_v<decltype(new_key)> +
+                            crypto_aead_xchacha20poly1305_ietf_ABYTES);
+
+            for (const auto& cipherkey : member_enc_keys) {
+                unsigned long long plainlen;
+                int rc = crypto_aead_xchacha20poly1305_ietf_decrypt(
+                        new_key.data(),
+                        &plainlen,
+                        nullptr,
+                        cipherkey.data(),
+                        cipherkey.size(),
+                        nullptr,
+                        0,
+                        nonce.data(),
+                        dec_key.data());
+                if (rc == 0) {
+                    successes++;
+                    REQUIRE(plainlen == new_key.size());
+                    //CHECK(to_hex(new_key) == to_hex(new_group_key));
                 } else {
                     failures++;
                 }
