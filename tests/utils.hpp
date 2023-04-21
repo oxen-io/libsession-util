@@ -2,6 +2,7 @@
 
 #include <oxenc/hex.h>
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <set>
@@ -23,9 +24,11 @@ inline ustring operator""_hexbytes(const char* x, size_t n) {
 }
 
 inline std::string to_hex(ustring_view bytes) {
-    std::string hex;
-    oxenc::to_hex(bytes.begin(), bytes.end(), std::back_inserter(hex));
-    return hex;
+    return oxenc::to_hex(bytes.begin(), bytes.end());
+}
+template <typename Char, size_t N, std::enable_if_t<sizeof(Char) == 1, int> = 0>
+inline std::string to_hex(const std::array<Char, N>& arr) {
+    return oxenc::to_hex(arr.begin(), arr.end());
 }
 
 inline constexpr auto operator""_kiB(unsigned long long kiB) {
@@ -37,6 +40,10 @@ inline std::string_view to_sv(ustring_view x) {
 }
 inline ustring_view to_usv(std::string_view x) {
     return {reinterpret_cast<const unsigned char*>(x.data()), x.size()};
+}
+template <size_t N>
+inline ustring_view to_usv(const std::array<unsigned char, N>& arr) {
+    return {reinterpret_cast<const unsigned char*>(arr.data()), arr.size()};
 }
 
 inline std::string printable(ustring_view x) {
