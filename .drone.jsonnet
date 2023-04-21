@@ -333,7 +333,7 @@ local static_build(name,
 
   mac_pipeline('Static iOS', build=[
     'export JOBS=6',
-    './utils/ios.sh libsession-util-ios-TAG.tar.xz',
+    './utils/ios.sh libsession-util-ios-TAG',
     'cd build-ios && ../utils/ci/drone-static-upload.sh',
   ]),
 ]
