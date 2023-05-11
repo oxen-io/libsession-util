@@ -189,6 +189,16 @@ class ConfigBase {
 
         template <typename T>
         void assign_if_changed(T value) {
+            if constexpr (is_one_of<T, config::set, config::dict>) {
+                // If we're assigning an empty set or dict then that's really the same as deleting
+                // the element, since empty sets/dicts get pruned.  If we *don't* do this, then
+                // assigning an empty value will dirty even though, ultimately, we aren't changing
+                // anything.
+                if (value.empty()) {
+                    erase();
+                    return;
+                }
+            }
             // Try to avoiding dirtying the config if this assignment isn't changing anything
             if (!_conf.is_dirty())
                 if (auto current = get_clean<T>(); current && *current == value)

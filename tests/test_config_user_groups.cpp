@@ -552,6 +552,92 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     CHECK(grp->joined_at == created_ts);
 }
 
+TEST_CASE("User groups empty member bug", "[config][groups][bug]") {
+    // Tests a bug where setting legacy group with empty members (or empty admin) list would dirty
+    // the config, even when the current members (or admin) list is empty.  (This isn't strictly
+    // specific to user groups, but that's where the bug is easily encountered).
+
+    const auto seed = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    session::config::UserGroups c{ustring_view{seed}, std::nullopt};
+
+    CHECK_FALSE(c.needs_push());
+
+    {
+        auto lg = c.get_or_construct_legacy_group(
+                "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
+        lg.insert("050000000000000000000000000000000000000000000000000000000000000000", true);
+        lg.insert("051111111111111111111111111111111111111111111111111111111111111111", true);
+        lg.insert("052222222222222222222222222222222222222222222222222222222222222222", true);
+
+        c.set(lg);
+    }
+
+    CHECK(c.needs_push());
+    auto [seqno, data, obs] = c.push();
+    CHECK(seqno == 1);
+    auto d = c.dump();
+    c.confirm_pushed(seqno, "fakehash1");
+    CHECK_FALSE(c.needs_push());
+
+    {
+        auto lg = c.get_or_construct_legacy_group(
+                "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
+        lg.insert("050000000000000000000000000000000000000000000000000000000000000000", true);
+        lg.insert("051111111111111111111111111111111111111111111111111111111111111111", true);
+        lg.insert("052222222222222222222222222222222222222222222222222222222222222222", true);
+
+        // The bug was here: because *members* is empty, we would assign an empty set, which would
+        // set the dirty flag, even though an empty set gets pruned away, so end up with an empty
+        // diff.
+        c.set(lg);
+    }
+
+    {
+        auto lg = c.get_or_construct_legacy_group(
+                "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
+        // Now add an actual member:
+        lg.insert("053333333333333333333333333333333333333333333333333333333333333333", false);
+        c.set(lg);
+    }
+
+    CHECK(c.needs_push());
+    c.push();
+
+    {
+        auto lg = c.get_or_construct_legacy_group(
+                "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
+        // Remove them again, so that members is empty again (to make sure it gets emptied out in
+        // storage):
+        lg.erase("053333333333333333333333333333333333333333333333333333333333333333");
+        c.set(lg);
+    }
+    CHECK(c.needs_push());
+    c.push();
+
+    {
+        auto lg = c.get_or_construct_legacy_group(
+                "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
+        auto [admins, members] = lg.counts();
+        CHECK(admins == 3);
+        CHECK(members == 0);
+    }
+}
+
 namespace Catch {
 template <>
 struct StringMaker<std::pair<const std::string, bool>> {
