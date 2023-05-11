@@ -219,8 +219,6 @@ class UserGroups : public ConfigBase {
     ///
     void set(const community_info& info);
     void set(const legacy_group_info& info);
-    /// Takes a variant of either group type to set:
-    void set(const any_group_info& info);
 
   protected:
     // Drills into the nested dicts to access open group details
