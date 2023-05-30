@@ -108,3 +108,21 @@ LIBSESSION_C_API int user_profile_get_nts_priority(const config_object* conf) {
 LIBSESSION_C_API void user_profile_set_nts_priority(config_object* conf, int priority) {
     unbox<UserProfile>(conf)->set_nts_priority(priority);
 }
+
+void UserProfile::set_nts_expiry(std::chrono::seconds expiry) {
+    set_positive_int(data["e"], expiry.count());
+}
+
+std::optional<std::chrono::seconds> UserProfile::get_nts_expiry() const {
+    if (auto* e = data["e"].integer(); e && *e > 0)
+        return std::chrono::seconds{*e};
+    return std::nullopt;
+}
+
+LIBSESSION_C_API int user_profile_get_nts_expiry(const config_object* conf) {
+    return unbox<UserProfile>(conf)->get_nts_expiry().value_or(0s).count();
+}
+
+LIBSESSION_C_API void user_profile_set_nts_expiry(config_object* conf, int expiry) {
+    unbox<UserProfile>(conf)->set_nts_expiry(std::max(0, expiry) * 1s);
+}

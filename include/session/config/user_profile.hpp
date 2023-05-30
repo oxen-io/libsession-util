@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <session/config.hpp>
 
@@ -9,6 +10,8 @@
 
 namespace session::config {
 
+using namespace std::literals;
+
 /// keys used in this config, either currently or in the past (so that we don't reuse):
 ///
 /// n - user profile name
@@ -16,6 +19,7 @@ namespace session::config {
 /// q - user profile decryption key (binary)
 /// + - the priority value for the "Note to Self" pseudo-conversation (higher = higher in the
 ///     conversation list).  Omitted when 0.  -1 means hidden.
+/// e - the expiry timer (in seconds) for the "Note to Self" pseudo-conversation.  Omitted when 0.
 
 class UserProfile final : public ConfigBase {
 
@@ -62,6 +66,14 @@ class UserProfile final : public ConfigBase {
     /// Sets the Note-to-self conversation priority. -1 for hidden, 0 for unpinned, higher for
     /// pinned higher.
     void set_nts_priority(int priority);
+
+    /// Returns the current Note-to-self message expiry timer, if set, or std::nullopt if there is
+    /// no current expiry timer set.
+    std::optional<std::chrono::seconds> get_nts_expiry() const;
+
+    /// Sets the Note-to-self message expiry timer.  Call without arguments (or pass a zero time) to
+    /// disable the expiry timer.
+    void set_nts_expiry(std::chrono::seconds timer = 0s);
 };
 
 }  // namespace session::config

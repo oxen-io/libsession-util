@@ -68,11 +68,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     free(to_push);
     free(to_push_decrypted);
 
-    // This should also be unset:
+    // These should also be unset:
     auto pic = user_profile_get_pic(conf);
     CHECK(strlen(pic.url) == 0);
+    CHECK(user_profile_get_nts_priority(conf) == 0);
+    CHECK(user_profile_get_nts_expiry(conf) == 0);
 
-    // Now let's go set a profile name and picture:
+    // Now let's go set them:
     CHECK(0 == user_profile_set_name(conf, "Kallie"));
     user_profile_pic p;
     strcpy(p.url, "http://example.org/omg-pic-123.bmp");  // NB: length must be < sizeof(p.url)!
@@ -235,10 +237,13 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     user_profile_set_name(conf, "Nibbler");
     user_profile_set_name(conf2, "Raz");
 
-    // And, on conf2, we're also going to change the profile pic:
+    // And, on conf2, we're also going to change some other things:
     strcpy(p.url, "http://new.example.com/pic");
     memcpy(p.key, "qwert\0yuio1234567890123456789012", 32);
     user_profile_set_pic(conf2, p);
+
+    user_profile_set_nts_expiry(conf2, 86400);
+    CHECK(user_profile_get_nts_expiry(conf2) == 86400);
 
     // Both have changes, so push need a push
     CHECK(config_needs_push(conf));
@@ -311,6 +316,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     CHECK(user_profile_get_nts_priority(conf) == 9);
     CHECK(user_profile_get_nts_priority(conf2) == 9);
+    CHECK(user_profile_get_nts_expiry(conf) == 86400);
+    CHECK(user_profile_get_nts_expiry(conf2) == 86400);
 
     config_confirm_pushed(conf, to_push->seqno, "fakehash4");
     config_confirm_pushed(conf2, to_push2->seqno, "fakehash4");
