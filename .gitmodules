@@ -13,3 +13,6 @@
 [submodule "external/zstd"]
 	path = external/zstd
 	url = https://github.com/facebook/zstd.git
+[submodule "tests/rapidcheck"]
+	path = tests/rapidcheck
+	url = https://github.com/emil-e/rapidcheck
