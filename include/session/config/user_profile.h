@@ -62,6 +62,13 @@ LIBSESSION_EXPORT int user_profile_get_nts_priority(const config_object* conf);
 // higher priority in the conversation list.
 LIBSESSION_EXPORT void user_profile_set_nts_priority(config_object* conf, int priority);
 
+// Gets the Note-to-self message expiry timer (seconds).  Returns 0 if not set.
+LIBSESSION_EXPORT int user_profile_get_nts_expiry(const config_object* conf);
+
+// Sets the Note-to-self message expiry timer (seconds).  Setting 0 (or negative) will clear the
+// current timer.
+LIBSESSION_EXPORT void user_profile_set_nts_expiry(config_object* conf, int expiry);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
