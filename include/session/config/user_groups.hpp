@@ -87,21 +87,76 @@ struct legacy_group_info : base_group_info {
     /// if id is invalid.
     explicit legacy_group_info(std::string sid);
 
-    // Accesses the session ids (in hex) of members of this group.  The key is the hex session_id;
-    // the value indicates whether the member is an admin (true) or not (false).
+    /// API: user_groups/legacy_group_info::members
+    ///
+    /// Accesses the session ids (in hex) of members of this group.  The key is the hex session_id;
+    /// the value indicates whether the member is an admin (true) or not (false).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// const std::map<std::string, bool>& members() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::map<std::string, bool>&` -- Returns a reference to the members of the group. Contains
+    ///   - `std::string` -- Hex Session ID
+    ///   - `bool` -- Whether the member is an admin (true)
     const std::map<std::string, bool>& members() const { return members_; }
 
-    // Returns a pair of the number of admins, and regular members of this group.  (If all you want
-    // is the overall number just use `.members().size()` instead).
+    /// API: user_groups/legacy_group_info::counts
+    ///
+    /// Returns a pair of the number of admins, and regular members of this group.  (If all you want
+    /// is the overall number just use `.members().size()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// std::pair<size_t, size_t> counts() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::pair<size_t, size_t>` -- Returns a pair of the counts of members of the group. Contains
+    ///   - `size_t` -- number of admins
+    ///   - `size_t` -- number of regular members
     std::pair<size_t, size_t> counts() const;
 
-    // Adds a member (by session id and admin status) to this group.  Returns true if the member was
-    // inserted or changed admin status, false if the member already existed.  Throws
-    // std::invalid_argument if the given session id is invalid.
+    /// API: user_groups/legacy_group_info::insert
+    ///
+    /// Adds a member (by session id and admin status) to this group.  Returns true if the member was
+    /// inserted or changed admin status, false if the member already existed.  Throws
+    /// std::invalid_argument if the given session id is invalid.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool insert(std::string session_id, bool admin);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- Hex string of the Session ID
+    /// - `admin` -- boolean if the user is to have admin powers
+    ///
+    /// Outputs:
+    /// - `bool` -- Returns true if the member was inserted or changed, otherwise false.
     bool insert(std::string session_id, bool admin);
 
-    // Removes a member (by session id) from this group.  Returns true if the member was
-    // removed, false if the member was not present.
+    /// API: user_groups/legacy_group_info::erase
+    ///
+    /// Removes a member (by session id) from this group.  Returns true if the member was
+    /// removed, false if the member was not present.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool erase(const std::string& session_id);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- Hex string of the Session ID
+    ///
+    /// Outputs:
+    /// - `bool` -- Returns true if the member was found and removed, false otherwise
     bool erase(const std::string& session_id);
 
     // Internal ctor/method for C API implementations:
@@ -152,28 +207,83 @@ class UserGroups : public ConfigBase {
     // No default constructor
     UserGroups() = delete;
 
+    /// API: user_groups/UserGroups::UserGroups
+    ///
     /// Constructs a user group list from existing data (stored from `dump()`) and the user's
     /// secret key for generating the data encryption key.  To construct a blank list (i.e. with no
     /// pre-existing dumped data to load) pass `std::nullopt` as the second argument.
     ///
-    /// \param ed25519_secretkey - contains the libsodium secret key used to encrypt/decrypt the
+    /// Declaration:
+    /// ```cpp
+    /// UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `ed25519_secretkey` -- contains the libsodium secret key used to encrypt/decrypt the
     /// data when pushing/pulling from the swarm.  This can either be the full 64-byte value (which
     /// is technically the 32-byte seed followed by the 32-byte pubkey), or just the 32-byte seed of
     /// the secret key.
-    ///
-    /// \param dumped - either `std::nullopt` to construct a new, empty object; or binary state data
+    /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     /// that was previously dumped from an instance of this class by calling `dump()`.
+    ///
+    /// Outputs: 
+    /// - `UserGroups` - Constructor
     UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
 
+    /// API: user_groups/UserGroups::storage_namespace
+    ///
+    /// Returns the Contacts namespace. Is constant, will always return 5
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// Namespace storage_namespace() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `Namespace` - Returns 5
     Namespace storage_namespace() const override { return Namespace::UserGroups; }
 
+    /// API: user_groups/UserGroups::encryption_domain
+    ///
+    /// Returns the domain. Is constant, will always return "Contacts"
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// const char* encryption_domain() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `const char*` - Returns "UserGroups"
     const char* encryption_domain() const override { return "UserGroups"; }
 
+    /// API: user_groups/UserGroups::get_community
+    ///
     /// Looks up and returns a community (aka open group) conversation.  Takes the base URL and room
     /// token (case insensitive).  Retuns nullopt if the open group was not found, otherwise a
     /// filled out `community_info`.  Note that the `room` argument here is case-insensitive, but
     /// the returned value will be the room as stored in the object (i.e. it may have a different
     /// case from the requested `room` value).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// std::optional<community_info> get_community(
+    ///         std::string_view base_url, std::string_view room) const;
+    /// std::optional<community_info> get_community(std::string_view partial_url) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - First Function:
+    ///    - `base_url` -- base URL
+    ///    - `room` -- room token (case insensitive)
+    /// - Second Function
+    ///    - `partial_url` -- Looks up a community from a url permitting to omit the pubkey
+    ///
+    /// Outputs: 
+    /// - `std::optional<community_info>` - Returns the filled out community_info struct if found
     std::optional<community_info> get_community(
             std::string_view base_url, std::string_view room) const;
 
@@ -181,42 +291,112 @@ class UserGroups : public ConfigBase {
     /// is not used or needed by this call).
     std::optional<community_info> get_community(std::string_view partial_url) const;
 
+    /// API: user_groups/UserGroups::get_legacy_group
+    ///
     /// Looks up and returns a legacy group by group ID (hex, looks like a Session ID).  Returns
     /// nullopt if the group was not found, otherwise returns a filled out `legacy_group_info`.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// std::optional<legacy_group_info> get_legacy_group(std::string_view pubkey_hex) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
+    ///
+    /// Outputs: 
+    /// - `std::optional<legacy_group_info>` - Returns the filled out legacy_group_info struct if found
     std::optional<legacy_group_info> get_legacy_group(std::string_view pubkey_hex) const;
 
+    /// API: user_groups/UserGroups::get_or_construct_community
+    ///
     /// Same as `get_community`, except if the community isn't found a new blank one is created for
     /// you, prefilled with the url/room/pubkey.
     ///
-    /// Note that `room` and `pubkey` have special handling:
-    /// - `room` is case-insensitive for the lookup: if a matching room is found then the returned
+    /// Declaration:
+    /// ```cpp
+    /// community_info get_or_construct_community(
+    ///         std::string_view base_url,
+    ///         std::string_view room,
+    ///         std::string_view pubkey_encoded) const;
+    /// community_info get_or_construct_community(
+    ///         std::string_view base_url, std::string_view room, ustring_view pubkey) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - `base_url` -- text string containing the base URL
+    /// - `room` -- is case-insensitive for the lookup: if a matching room is found then the returned
     ///   value reflects the room case of the existing record, which is not necessarily the same as
     ///   the `room` argument given here (to force a case change, set it within the returned
     ///   object).
-    /// - `pubkey` is not used to find an existing community, but if the community found has a
+    /// - `pubkey` -- is not used to find an existing community, but if the community found has a
     ///   *different* pubkey from the one given then the returned record has its pubkey updated in
     ///   the return instance (note that this changed value is not committed to storage, however,
     ///   until the instance is passed to `set()`).  For the string_view version the pubkey is
     ///   accepted as hex, base32z, or base64.
+    ///
+    /// Outputs: 
+    /// - `community_info` - Returns the filled out community_info struct
     community_info get_or_construct_community(
             std::string_view base_url,
             std::string_view room,
             std::string_view pubkey_encoded) const;
     community_info get_or_construct_community(
             std::string_view base_url, std::string_view room, ustring_view pubkey) const;
-    /// Shortcut to pass the url through community::parse_full_url, then call the above.
+
+    /// API: user_groups/UserGroups::get_or_construct_community(string_view)
+    ///
+    /// Shortcut to pass the url through community::parse_full_url, then call the above `get_or_construct_community`.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// community_info get_or_construct_community(std::string_view full_url) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - `full_url` -- text string containing the full URL including pubkey
+    ///
+    /// Outputs: 
+    /// - `community_info` - Returns the filled out community_info struct
     community_info get_or_construct_community(std::string_view full_url) const;
 
+    /// API: user_groups/UserGroups::get_or_construct_legacy_group
+    ///
     /// Gets or constructs a blank legacy_group_info for the given group id.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// legacy_group_info get_or_construct_legacy_group(std::string_view pubkey_hex) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
+    ///
+    /// Outputs: 
+    /// - `legacy_group_info` - Returns the filled out legacy_group_info struct
     legacy_group_info get_or_construct_legacy_group(std::string_view pubkey_hex) const;
 
+    /// API: user_groups/UserGroups::set
+    ///
     /// Inserts or replaces existing group info.  For example, to update the info for a community
     /// you would do:
-    ///
+    /// ```cpp
     ///     auto info = conversations.get_or_construct_community(some_session_id);
     ///     info.last_read = new_unix_timestamp;
     ///     conversations.set(info);
+    /// ```
     ///
+    /// Declaration:
+    /// ```cpp
+    /// void set(const community_info& info);
+    /// void set(const legacy_group_info& info);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `info` -- group info struct to insert. Can be either community_info or legacy_group_info
+    ///
+    /// Outputs: 
+    /// - `void` - Returns nothing
     void set(const community_info& info);
     void set(const legacy_group_info& info);
 
@@ -228,42 +408,148 @@ class UserGroups : public ConfigBase {
     void set_base(const base_group_info& bg, DictFieldProxy& info) const;
 
   public:
+    /// API: user_groups/UserGroups::erase_community
+    ///
     /// Removes a community group.  Returns true if found and removed, false if not present.
     /// Arguments are the same as `get_community`.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool erase_community(std::string_view base_url, std::string_view room);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `base_url` -- text string containing the base URL
+    /// - `room` -- room token to lookup
+    ///
+    /// Outputs: 
+    /// - `bool` - Returns true if found and removed, false otherwise
     bool erase_community(std::string_view base_url, std::string_view room);
 
+    /// API: user_groups/UserGroups::erase_legacy_group
+    ///
     /// Removes a legacy group conversation.  Returns true if found and removed, false if not
     /// present.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool erase_legacy_group(std::string_view pubkey_hex);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
+    ///
+    /// Outputs: 
+    /// - `bool` - Returns true if found and removed, false otherwise
     bool erase_legacy_group(std::string_view pubkey_hex);
 
+    /// API: user_groups/UserGroups::erase
+    ///
     /// Removes a conversation taking the community_info or legacy_group_info instance (rather than
     /// the pubkey/url) for convenience.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool erase(const community_info& g);
+    /// bool erase(const legacy_group_info& c);
+    /// bool erase(const any_group_info& info);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `group_info` -- any group info struct
+    ///
+    /// Outputs: 
+    /// - `bool` - Returns true if found and removed, false otherwise
     bool erase(const community_info& g);
     bool erase(const legacy_group_info& c);
     bool erase(const any_group_info& info);
 
     struct iterator;
 
-    /// This works like erase, but takes an iterator to the group to remove.  The element is removed
-    /// and the iterator to the next element after the removed one is returned.  This is intended
-    /// for use where elements are to be removed during iteration: see below for an example.
+    /// API: user_groups/UserGroups::erase(iterator)
+    ///
+    /// This works like erase, but takes an iterator to the contact to remove.  The element is
+    /// removed and the iterator to the next element after the removed one is returned.  This is
+    /// intended for use where elements are to be removed during iteration: see below for an
+    /// example.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// iterator erase(iterator it);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `it` -- iterator resolving to the group to remove
+    ///
+    /// Outputs: 
+    /// - `iterator` - Returns the next element after the removed one
     iterator erase(iterator it);
 
+    /// API: user_groups/UserGroups::size
+    ///
     /// Returns the number of groups (of any type).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// size_t size() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `size_t` - Returns the number of groups
     size_t size() const;
 
+    /// API: user_groups/UserGroups::size_communities
+    ///
     /// Returns the number of communities
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// size_t size_communities() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `size_t` - Returns the number of groups
     size_t size_communities() const;
 
+    /// API: user_groups/UserGroups::size_communities
+    ///
     /// Returns the number of legacy groups
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// size_t size_legacy_groups() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `size_t` - Returns the number of legacy groups
     size_t size_legacy_groups() const;
 
+    /// API: user_groups/UserGroups::empty
+    ///
     /// Returns true if the group list is empty.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool empty() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `bool` - Returns true if the contact list is empty
     bool empty() const { return size() == 0; }
 
+    /// API: user_groups/UserGroups::begin
+    ///
     /// Iterators for iterating through all groups.  Typically you access this implicit via a
     /// for loop over the `UserGroups` object:
-    ///
+    /// ```cpp
     ///     for (auto& group : usergroups) {
     ///         if (auto* comm = std::get_if<community_info>(&group)) {
     ///             // use comm->name, comm->priority, etc.
@@ -271,6 +557,7 @@ class UserGroups : public ConfigBase {
     ///             // use lg->session_id, lg->priority, etc.
     ///         }
     ///     }
+    /// ```
     ///
     /// This iterates through all groups in sorted order (sorted first by convo type, then by
     /// id within the type).
@@ -281,20 +568,44 @@ class UserGroups : public ConfigBase {
     /// If you need to erase the current conversation during iteration then care is required: you
     /// need to advance the iterator via the iterator version of erase when erasing an element
     /// rather than incrementing it regularly.  For example:
-    ///
+    /// ```cpp
     ///     for (auto it = conversations.begin(); it != conversations.end(); ) {
     ///         if (should_remove(*it))
     ///             it = converations.erase(it);
     ///         else
     ///             ++it;
     ///     }
+    /// ```
     ///
     /// Alternatively, you can use the first version with two loops: the first loop through all
     /// converations doesn't erase but just builds a vector of IDs to erase, then the second loops
     /// through that vector calling `erase_1to1()`/`erase_open()`/`erase_legacy_group()` for each
     /// one.
     ///
+    /// Declaration:
+    /// ```cpp
+    /// iterator begin() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `iterator` - Returns an iterator for the beginning of the groups
     iterator begin() const { return iterator{data}; }
+
+    /// API: user_groups/UserGroups::end
+    ///
+    /// Iterator for passing the end of the groups
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// iterator end() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `iterator` - Returns an iterator for the end of the groups
     iterator end() const { return iterator{}; }
 
     template <typename GroupType>

@@ -72,10 +72,40 @@ struct contact_info {
 
     // Internal ctor/method for C API implementations:
     contact_info(const struct contacts_contact& c);  // From c struct
-    void into(contacts_contact& c) const;            // Into c struct
+                                                     //
+    /// API: contacts/contact_info::into
+    ///
+    /// converts the contact info into a c struct
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void into(contacts_contact& c) const;
+    /// );
+    /// ```
+    ///
+    /// Inputs:
+    /// - `c` -- Return Parameter that will be filled with data in contact_info
+    ///
+    /// Outputs:
+    /// - `void` -- Returns Nothing
+    void into(contacts_contact& c) const;
 
-    // Sets a name or nickname; this is exactly the same as assigning to .name/.nickname directly,
-    // except that we throw an exception if the given name is longer than MAX_NAME_LENGTH.
+    /// API: contacts/contact_info::set_name
+    ///
+    /// Sets a name or nickname; this is exactly the same as assigning to .name/.nickname directly,
+    /// except that we throw an exception if the given name is longer than MAX_NAME_LENGTH.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_name(std::string name);
+    /// );
+    /// ```
+    ///
+    /// Inputs:
+    /// - `name` -- Name to assign to the contact
+    ///
+    /// Outputs:
+    /// - `void` -- Returns Nothing
     void set_name(std::string name);
     void set_nickname(std::string nickname);
 
@@ -90,85 +120,387 @@ class Contacts : public ConfigBase {
     // No default constructor
     Contacts() = delete;
 
+    /// API: contacts/Contacts::Contacts
+    ///
     /// Constructs a contact list from existing data (stored from `dump()`) and the user's secret
     /// key for generating the data encryption key.  To construct a blank list (i.e. with no
     /// pre-existing dumped data to load) pass `std::nullopt` as the second argument.
     ///
-    /// \param ed25519_secretkey - contains the libsodium secret key used to encrypt/decrypt the
+    /// Declaration:
+    /// ```cpp
+    /// Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `ed25519_secretkey` -- contains the libsodium secret key used to encrypt/decrypt the
     /// data when pushing/pulling from the swarm.  This can either be the full 64-byte value (which
     /// is technically the 32-byte seed followed by the 32-byte pubkey), or just the 32-byte seed of
     /// the secret key.
-    ///
-    /// \param dumped - either `std::nullopt` to construct a new, empty object; or binary state data
+    /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     /// that was previously dumped from an instance of this class by calling `dump()`.
+    ///
+    /// Outputs: 
+    /// - `Contact` - Constructor
     Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
 
+    /// API: contacts/Contacts::storage_namespace
+    ///
+    /// Returns the Contacts namespace. Is constant, will always return 3
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// Namespace storage_namespace() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `Namespace` - Will return 3
     Namespace storage_namespace() const override { return Namespace::Contacts; }
 
+    /// API: contacts/Contacts::encryption_domain
+    ///
+    /// Returns the domain. Is constant, will always return "Contacts"
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// const char* encryption_domain() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `const char*` - Will return "Contacts"
     const char* encryption_domain() const override { return "Contacts"; }
 
+    /// API: contacts/Contacts::get
+    ///
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `contact_info`.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// std::optional<contact_info> get(std::string_view pubkey_hex) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- hex string of the session id
+    ///
+    /// Outputs: 
+    /// - `std::optional<contact_info>` - Returns nullopt if session ID was not found, otherwise a filled out contact_info
     std::optional<contact_info> get(std::string_view pubkey_hex) const;
 
+    /// API: contacts/Contacts::get_or_construct
+    ///
     /// Similar to get(), but if the session ID does not exist this returns a filled-out
     /// contact_info containing the session_id (all other fields will be empty/defaulted).  This is
     /// intended to be combined with `set` to set-or-create a record.
     ///
     /// NB: calling this does *not* add the session id to the contact list when called: that
     /// requires also calling `set` with this value.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// contact_info get_or_construct(std::string_view pubkey_hex) const;
+    /// ```
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- hex string of the session id
+    ///
+    /// Outputs: 
+    /// - `contact_info` - Returns a filled out contact_info
     contact_info get_or_construct(std::string_view pubkey_hex) const;
 
+    /// API: contacts/contacts::set
+    ///
     /// Sets or updates multiple contact info values at once with the given info.  The usual use is
     /// to access the current info, change anything desired, then pass it back into set_contact,
     /// e.g.:
     ///
+    ///```cpp
     ///     auto c = contacts.get_or_construct(pubkey);
     ///     c.name = "Session User 42";
     ///     c.nickname = "BFF";
     ///     contacts.set(c);
+    ///```
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set(const contact_info& contact);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `contact` -- contact_info value to set
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set(const contact_info& contact);
 
+    /// API: contacts/contacts::set_name
+    ///
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_name(std::string_view session_id, std::string name);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `name` -- string of the contacts name
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_name(std::string_view session_id, std::string name);
+
+    /// API: contacts/contacts::set_nickname
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_nickname(std::string_view session_id, std::string nickname);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `nickname` -- string of the contacts nickname
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_nickname(std::string_view session_id, std::string nickname);
+
+    /// API: contacts/contacts::set_profile_pic
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_profile_pic(std::string_view session_id, profile_pic pic);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `profile_pic` -- profile pic of the contact
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_profile_pic(std::string_view session_id, profile_pic pic);
+
+    /// API: contacts/contacts::set_approved
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_approved(std::string_view session_id, bool approved);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `approved` -- boolean on whether the contact is approved by me (to send messages to me)
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_approved(std::string_view session_id, bool approved);
+
+    /// API: contacts/contacts::set_approved_me
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_approved_me(std::string_view session_id, bool approved_me);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `approved_me` -- boolean on whether the contact has approved the user (so we can send messages to them)
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_approved_me(std::string_view session_id, bool approved_me);
+
+    /// API: contacts/contacts::set_blocked
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_blocked(std::string_view session_id, bool blocked);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `blocked` -- boolean on whether the contact is blocked by us
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_blocked(std::string_view session_id, bool blocked);
+
+    /// API: contacts/contacts::set_priority
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_priority(std::string_view session_id, int priority);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `priority` -- numerical value on the contacts priority (pinned, normal, hidden etc)
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_priority(std::string_view session_id, int priority);
+
+    /// API: contacts/contacts::set_notifications
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_notifications(std::string_view session_id, notify_mode notifications);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `notifications` -- detail on notifications
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_notifications(std::string_view session_id, notify_mode notifications);
+
+    /// API: contacts/contacts::set_expiry
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_expiry(
+    ///         std::string_view session_id,
+    ///         expiration_mode exp_mode,
+    ///         std::chrono::seconds expiration_timer = 0min);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `exp_mode` -- detail on expirations
+    /// - `expiration_timer` -- how long the expiration timer should be, defaults to zero
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_expiry(
             std::string_view session_id,
             expiration_mode exp_mode,
             std::chrono::seconds expiration_timer = 0min);
+
+    /// API: contacts/contacts::set_created
+    ///
+    /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
+    /// should use `set()` instead).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_created(std::string_view session_id, int64_t timestamp);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    /// - `timestamp` -- standard unix timestamp of the time contact was created
+    ///
+    /// Outputs: 
+    /// - `void` - Returns Nothing
     void set_created(std::string_view session_id, int64_t timestamp);
 
+    /// API: contacts/contacts::erase
+    ///
     /// Removes a contact, if present.  Returns true if it was found and removed, false otherwise.
     /// Note that this removes all fields related to a contact, even fields we do not know about.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool erase(std::string_view session_id);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `session_id` -- hex string of the session id
+    ///
+    /// Outputs: 
+    /// - `bool` - Returns true if contact was found and removed, false otherwise
     bool erase(std::string_view session_id);
 
     struct iterator;
 
+    /// API: contacts/contacts::erase(iterator)
+    ///
     /// This works like erase, but takes an iterator to the contact to remove.  The element is
     /// removed and the iterator to the next element after the removed one is returned.  This is
     /// intended for use where elements are to be removed during iteration: see below for an
     /// example.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// iterator erase(iterator it);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `it` -- iterator resolving to the contact to remove
+    ///
+    /// Outputs: 
+    /// - `iterator` - Returns the next element after the removed one
     iterator erase(iterator it);
 
+    /// API: contacts/contacts::size
+    ///
     /// Returns the number of contacts.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// size_t size() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `size_t` - Returns the number of contacts
     size_t size() const;
 
+    /// API: contacts/contacts::empty
+    ///
     /// Returns true if the contact list is empty.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool empty() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `bool` - Returns true if the contact list is empty
     bool empty() const { return size() == 0; }
 
+    /// API: contacts/contacts::begin
+    ///
     /// Iterators for iterating through all contacts.  Typically you access this implicit via a for
     /// loop over the `Contacts` object:
     ///
+    ///```cpp
     ///     for (auto& contact : contacts) {
     ///         // use contact.session_id, contact.name, etc.
     ///     }
+    ///```
     ///
     /// This iterates in sorted order through the session_ids.
     ///
@@ -179,18 +511,43 @@ class Contacts : public ConfigBase {
     /// advance the iterator via the iterator version of erase when erasing an element rather than
     /// incrementing it regularly.  For example:
     ///
+    ///```cpp
     ///     for (auto it = contacts.begin(); it != contacts.end(); ) {
     ///         if (should_remove(*it))
     ///             it = contacts.erase(it);
     ///         else
     ///             ++it;
     ///     }
+    ///```
     ///
     /// Alternatively, you can use the first version with two loops: the first loop through all
     /// contacts doesn't erase but just builds a vector of IDs to erase, then the second loops
     /// through that vector calling `erase()` for each one.
     ///
+    /// Declaration:
+    /// ```cpp
+    /// iterator begin() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `iterator` - Returns an iterator for the beginning of the contacts
     iterator begin() const { return iterator{data["c"].dict()}; }
+
+    /// API: contacts/contacts::end
+    ///
+    /// Iterator for passing the end of the contacts
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// iterator end() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `iterator` - Returns an iterator for the end of the contacts
     iterator end() const { return iterator{nullptr}; }
 
     using iterator_category = std::input_iterator_tag;

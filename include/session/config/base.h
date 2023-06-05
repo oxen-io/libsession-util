@@ -26,8 +26,23 @@ typedef struct config_object {
 
 // Common functions callable on any config instance:
 
+/// API: base/config_free
+///
 /// Frees a config object created with one of the config-dependent ..._init functions (e.g.
 /// user_profile_init).
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_free(
+///     [in, out]   config_object*      conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `void` -- nothing returned
 LIBSESSION_EXPORT void config_free(config_object* conf);
 
 typedef enum config_log_level {
@@ -37,6 +52,8 @@ typedef enum config_log_level {
     LOG_LEVEL_ERROR
 } config_log_level;
 
+/// API: base/config_set_logger
+///
 /// Sets a logging function; takes the log function pointer and a context pointer (which can be NULL
 /// if not needed).  The given function pointer will be invoked with one of the above values, a
 /// null-terminated c string containing the log message, and the void* context object given when
@@ -49,21 +66,64 @@ typedef enum config_log_level {
 /// Can be called with callback set to NULL to clear an existing logger.
 ///
 /// The config object itself has no log level: the caller should filter by level as needed.
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_set_logger(
+///     [in, out]   config_object*                                  conf,
+///     [in]        void(*)(config_log_level, const char*, void*)   callback,
+///     [in]        void*                                           ctx
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `callback` -- [in] Callback function
+/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
+///
+/// Outputs:
+/// - `void` -- Nothing returned
 LIBSESSION_EXPORT void config_set_logger(
         config_object* conf, void (*callback)(config_log_level, const char*, void*), void* ctx);
 
+/// API: base/config_storage_namespace
+///
 /// Returns the numeric namespace in which config messages of this type should be stored.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `int16_t` -- integer of the namespace
 LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf);
 
+/// API: base/config_merge
+///
 /// Merges the config object with one or more remotely obtained config strings.  After this call the
 /// config object may be unchanged, complete replaced, or updated and needing a push, depending on
 /// the messages that are merged; the caller should check config_needs_push().
 ///
-/// `msg_hashes` is an array of null-terminated C strings containing the hashes of the configs being
+/// Declaration:
+/// ```cpp
+/// INT config_merge(
+///     [in, out]   config_object*          conf,
+///     [in]        const char**            msg_hashes,
+///     [in]        const unsigned char**   configs,
+///     [in]        const size_t*           lengths,
+///     [in]        size_t                  count
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in, out] Pointer to config_object object
+/// - `msg_hashes` -- [in] is an array of null-terminated C strings containing the hashes of the configs being
 /// provided.
-/// `configs` is an array of pointers to the start of the (binary) data.
-/// `lengths` is an array of lengths of the binary data
-/// `count` is the length of all three arrays.
+/// - `configs` -- [in] is an array of pointers to the start of the (binary) data.
+/// - `lengths` -- [in] is an array of lengths of the binary data
+/// - `count` -- [in] is the length of all three arrays.
+///
+/// Outputs:
+/// - `int` -- 
 LIBSESSION_EXPORT int config_merge(
         config_object* conf,
         const char** msg_hashes,
@@ -71,8 +131,23 @@ LIBSESSION_EXPORT int config_merge(
         const size_t* lengths,
         size_t count);
 
+/// API: base/config_needs_push
+///
 /// Returns true if this config object contains updated data that has not yet been confirmed stored
 /// on the server.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL config_needs_push(
+///     [in]   const config_object*      conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `bool` -- returns true if object contains updated data
 LIBSESSION_EXPORT bool config_needs_push(const config_object* conf);
 
 /// Returned struct of config push data.
@@ -89,6 +164,8 @@ typedef struct config_push_data {
     size_t obsolete_len;
 } config_push_data;
 
+/// API: base/config_push
+///
 /// Obtains the configuration data that needs to be pushed to the server.
 ///
 /// Generally this call should be guarded by a call to `config_needs_push`, however it can be used
@@ -97,14 +174,48 @@ typedef struct config_push_data {
 ///
 /// NB: The returned pointer belongs to the caller: that is, the caller *MUST* free() it when
 /// done with it.
+///
+/// Declaration:
+/// ```cpp
+/// CONFIG_PUSH_DATA* config_push(
+///     [in, out]   config_object*      conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `config_push_data*` -- pointer to the config object. Pointer belongs to the caller.
 LIBSESSION_EXPORT config_push_data* config_push(config_object* conf);
 
+/// API: base/config_confirm_pushed
+///
 /// Reports that data obtained from `config_push` has been successfully stored on the server with
 /// message hash `msg_hash`.  The seqno value is the one returned by the config_push call that
 /// yielded the config data.
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_confirm_pushed(
+///     [in, out]   config_object*      conf,
+///     [out]       seqno_t             seqno,
+///     [out]       const char*         msg_hash
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `seqno` -- [out] Value returned by config_push call
+/// - `msg_hash` -- [out] Value returned by config_push call
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_confirm_pushed(
         config_object* conf, seqno_t seqno, const char* msg_hash);
 
+/// API: base/config_dump
+///
 /// Returns a binary dump of the current state of the config object.  This dump can be used to
 /// resurrect the object at a later point (e.g. after a restart).  Allocates a new buffer and sets
 /// it in `out` and the length in `outlen`.  Note that this is binary data, *not* a null-terminated
@@ -114,10 +225,42 @@ LIBSESSION_EXPORT void config_confirm_pushed(
 ///
 /// Immediately after this is called `config_needs_dump` will start returning true (until the
 /// configuration is next modified).
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_dump(
+///     [in]    config_object*          conf
+/// );
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `out` -- [out] Pointer to the output location
+/// - `outlen` -- [out] Length of output
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_dump(config_object* conf, unsigned char** out, size_t* outlen);
 
+/// API: base/config_needs_dump
+///
 /// Returns true if something has changed since the last call to `dump()` that requires calling
 /// and saving the `config_dump()` data again.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL config_needs_dump(
+///     [in]    const config_object*          conf
+/// );
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `bool` -- True if config has changed since last call to `dump()`
 LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf);
 
 /// Struct containing a list of C strings.  Typically where this is returned by this API it must be
@@ -127,28 +270,198 @@ typedef struct config_string_list {
     size_t len;    // length of `value`
 } config_string_list;
 
+/// API: base/config_current_hashes
+///
 /// Obtains the current active hashes.  Note that this will be empty if the current hash is unknown
 /// or not yet determined (for example, because the current state is dirty or because the most
 /// recent push is still pending and we don't know the hash yet).
 ///
 /// The returned pointer belongs to the caller and must be freed via `free()` when done with it.
+///
+/// Declaration:
+/// ```cpp
+/// CONFIG_STRING_LIST* config_current_hashes(
+///     [in]    const config_object*          conf
+/// );
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `config_string_list*` -- point to the list of hashes, pointer belongs to the caller
 LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf);
 
 /// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
 /// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).
+
+/// API: base/config_add_key
+///
+/// Adds an encryption/decryption key, without removing existing keys.  They key must be exactly
+/// 32 bytes long.  The newly added key becomes the highest priority key: it will be used for encryption of
+/// config pushes after the call, and will be tried first when decrypting, followed by keys
+/// present (if any) before this call.  If the given key is already present in the key list then
+/// this call moves it to the front of the list (if not already at the front).
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_add_key(
+///     [in, out]       config_object*          conf,
+///     [in]            const unsigned char*    key
+/// );
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in, out] Pointer to config_object object
+/// - `key` -- [in] Pointer to the binary key object, must be 32 bytes
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key);
+
+/// API: base/config_add_key_low_prio
+///
+/// Adds an encryption/decryption key, without removing existing keys.  They key must be exactly
+/// 32 bytes long.  The newly added key becomes the lowest priority key
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_add_key_low_prio(
+///     [in, out]       config_object*          conf,
+///     [in]            const unsigned char*    key
+/// );
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in, out] Pointer to config_object object
+/// - `key` -- [in] Pointer to the binary key object, must be 32 bytes
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_add_key_low_prio(config_object* conf, const unsigned char* key);
+
+/// API: base/config_clear_keys
+///
+/// Clears all stored encryption/decryption keys.  This is typically immediately followed with
+/// one or more `add_key` call to replace existing keys.  Returns the number of keys removed.
+///
+/// Declaration:
+/// ```cpp
+/// INT config_clear_keys(
+///     [in]    config_object*          conf
+/// );
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `int` -- Number of keys removed
 LIBSESSION_EXPORT int config_clear_keys(config_object* conf);
+
+/// API: base/config_remove_key
+///
+/// Removes the given encryption/decryption key, if present.  Returns true if it was found and
+/// removed, false if it was not in the key list.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL config_remove_key(
+///     [in]    const config_object*    conf,
+///     [in]    const unsigned char*    key
+/// ),
+///
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `key` -- [in] Pointer to the binary key object, must be 32 bytes
+///
+/// Outputs:
+/// - `bool` -- True if key successfully removed
 LIBSESSION_EXPORT bool config_remove_key(config_object* conf, const unsigned char* key);
+
+/// API: base/config_key_count
+///
+/// Returns the number of encryption keys.
+///
+/// Declaration:
+/// ```cpp
+/// INT config_key_count(
+///     [in]    const config_object*    conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `int` -- Number of encryption keys
 LIBSESSION_EXPORT int config_key_count(const config_object* conf);
+
+/// API: base/config_key_count
+///
+/// Returns true if the given key is already in the keys list.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL config_has_key(
+///     [in]    const config_object*    conf,
+///     [in]    const unsigned char*    key
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `key` -- [in] Pointer to the binary key object, must be 32 bytes
+///
+/// Outputs:
+/// - `bool` -- True if key exists
 LIBSESSION_EXPORT bool config_has_key(const config_object* conf, const unsigned char* key);
-// Returns a pointer to the 32-byte binary key at position i.  This is *not* null terminated (and is
-// exactly 32 bytes long).  `i < config_key_count(conf)` must be satisfied.  Ownership of the data
-// remains in the object (that is: the caller must not attempt to free it).
+
+/// API: base/config_has_key
+///
+/// Returns a pointer to the 32-byte binary key at position i.  This is *not* null terminated (and is
+/// exactly 32 bytes long).  `i < config_key_count(conf)` must be satisfied.  Ownership of the data
+/// remains in the object (that is: the caller must not attempt to free it).
+///
+/// Declaration:
+/// ```cpp
+/// CONST UNSIGNED CHAR* config_key(
+///     [in]    const config_object*    conf,
+///     [in]    size_t                  i 
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `i` -- [in] Position of key in config object
+///
+/// Outputs:
+/// - `unsigned char*` -- binary data of the key, exactly 32 bytes and is not null terminated
 LIBSESSION_EXPORT const unsigned char* config_key(const config_object* conf, size_t i);
 
+/// API: base/config_encryption_domain
+///
 /// Returns the encryption domain C-str used to encrypt values for this config object.  (This is
 /// here only for debugging/testing).
+///
+/// Declaration:
+/// ```cpp
+/// CONST CHAR* config_encryption_domain(
+///     [in]    const config_object*    conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+///
+/// Outputs:
+/// - `char*` -- encryption domain C-str used to encrypt values
 LIBSESSION_EXPORT const char* config_encryption_domain(const config_object* conf);
 
 #ifdef __cplusplus

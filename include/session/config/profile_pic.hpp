@@ -31,11 +31,35 @@ struct profile_pic {
         check_key(this->key);
     }
 
-    // Returns true if either url or key are empty (or invalid)
+    /// API: profile_pic/profile_pic::empty
+    ///
+    /// Returns true if either url or key are empty (or invalid)
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// bool empty() const;
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    ///  - `bool` -- Returns true if either url or key are empty
     bool empty() const { return url.empty() || key.size() != 32; }
 
-    // Clears the current url/key, if set.  This is just a shortcut for calling `.clear()` on each
-    // of them.
+    /// API: profile_pic/profile_pic::clear
+    ///
+    /// Clears the current url/key, if set.  This is just a shortcut for calling `.clear()` on each
+    /// of them.
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void clear();
+    /// ```
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: 
+    /// - `void` -- Returns Nothing
     void clear() {
         url.clear();
         key.clear();
@@ -45,9 +69,22 @@ struct profile_pic {
     // `empty()`.
     explicit operator bool() const { return !empty(); }
 
-    // Sets and validates the key.  The key can be empty, or 32 bytes.  This is almost the same as
-    // just setting `.key` directly, except that it will throw if the provided key is invalid (i.e.
-    // neither empty nor 32 bytes).
+    /// API: profile_pic/profile_pic::set_key
+    ///
+    /// Sets and validates the key.  The key can be empty, or 32 bytes.  This is almost the same as
+    /// just setting `.key` directly, except that it will throw if the provided key is invalid (i.e.
+    /// neither empty nor 32 bytes).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// void set_key(ustring new_key);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `new_key` -- binary data of a new key to be set. Must be 32 bytes
+    ///
+    /// Outputs: 
+    /// - `void` -- Returns Nothing
     void set_key(ustring new_key) {
         check_key(new_key);
         key = std::move(new_key);

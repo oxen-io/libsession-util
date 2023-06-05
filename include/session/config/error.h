@@ -15,9 +15,24 @@ enum config_error {
     SESSION_ERR_BAD_VALUE = 2,
 };
 
-// Returns a generic string for a given integer error code as returned by some functions.  Depending
-// on the call, a more details error string may be available in the config_object's `last_error`
-// field.
+/// API: error/config_errstr
+///
+/// Returns a generic string for a given integer error code as returned by some functions.  Depending
+/// on the call, a more details error string may be available in the config_object's `last_error`
+/// field.
+///
+/// Declaration:
+/// ```cpp
+/// CONST CHAR* config_errstr(
+///     [in]    int     err
+/// );
+/// ```
+///
+/// Inputs:
+/// - `err` -- [in] Integer of the error code
+///
+/// Outputs:
+/// - `const char*` -- text of the error string
 LIBSESSION_EXPORT const char* config_errstr(int err);
 
 #ifdef __cplusplus

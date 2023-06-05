@@ -36,26 +36,39 @@ typedef struct contacts_contact {
 
 } contacts_contact;
 
+/// API: contacts/contacts_init
+///
 /// Constructs a contacts config object and sets a pointer to it in `conf`.
-///
-/// \param ed25519_secretkey must be the 32-byte secret key seed value.  (You can also pass the
-/// pointer to the beginning of the 64-byte value libsodium calls the "secret key" as the first 32
-/// bytes of that are the seed).  This field cannot be null.
-///
-/// \param dump - if non-NULL this restores the state from the dumped byte string produced by a past
-/// instantiation's call to `dump()`.  To construct a new, empty object this should be NULL.
-///
-/// \param dumplen - the length of `dump` when restoring from a dump, or 0 when `dump` is NULL.
-///
-/// \param error - the pointer to a buffer in which we will write an error string if an error
-/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
-/// buffer of at least 256 bytes.
-///
-/// Returns 0 on success; returns a non-zero error code and write the exception message as a
-/// C-string into `error` (if not NULL) on failure.
 ///
 /// When done with the object the `config_object` must be destroyed by passing the pointer to
 /// config_free() (in `session/config/base.h`).
+///
+/// Declaration:
+/// ```cpp
+/// INT contacts_init(
+///     [out]   config_object**         conf,
+///     [in]    const unsigned char*    ed25519_secretkey, 
+///     [in]    const unsigned char*    dump, 
+///     [in]    size_t                  dumplen, 
+///     [out]   char*                   error
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [out] Pointer to the config object
+/// - `ed25519_secretkey` -- [in] must be the 32-byte secret key seed value.  (You can also pass the
+/// pointer to the beginning of the 64-byte value libsodium calls the "secret key" as the first 32
+/// bytes of that are the seed).  This field cannot be null.
+/// - `dump` -- [in] if non-NULL this restores the state from the dumped byte string produced by a past
+/// instantiation's call to `dump()`.  To construct a new, empty object this should be NULL.
+/// - `dumplen` -- [in] the length of `dump` when restoring from a dump, or 0 when `dump` is NULL.
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
+///
+/// Outputs:
+/// - `int` -- Returns 0 on success; returns a non-zero error code and write the exception message as a
+/// C-string into `error` (if not NULL) on failure.
 LIBSESSION_EXPORT int contacts_init(
         config_object** conf,
         const unsigned char* ed25519_secretkey,
@@ -63,14 +76,35 @@ LIBSESSION_EXPORT int contacts_init(
         size_t dumplen,
         char* error) __attribute__((warn_unused_result));
 
+/// API: contacts/contacts_get
+///
 /// Fills `contact` with the contact info given a session ID (specified as a null-terminated hex
 /// string), if the contact exists, and returns true.  If the contact does not exist then `contact`
 /// is left unchanged and false is returned.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL contacts_get(
+///     [in]    config_object*      conf,
+///     [out]   contacts_contact*   contact, 
+///     [in]    const char*         session_id
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `contact` -- [out] the contact info data
+/// - `session_id` -- [in] null terminated hex string
+///
+/// Output:
+/// - `bool` -- Returns true if contact exsts
 LIBSESSION_EXPORT bool contacts_get(
         config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
-/// Same as the above except that when the contact does not exist, this sets all the contact fields
+/// API: contacts/contacts_get_or_construct
+///
+/// Same as the above `contacts_get()` except that when the contact does not exist, this sets all the contact fields
 /// to defaults and loads it with the given session_id.
 ///
 /// Returns true as long as it is given a valid session_id.  A false return is considered an error,
@@ -78,11 +112,45 @@ LIBSESSION_EXPORT bool contacts_get(
 ///
 /// This is the method that should usually be used to create or update a contact, followed by
 /// setting fields in the contact, and then giving it to contacts_set().
+///
+/// Declaration:
+/// ```cpp
+/// BOOL contacts_get_or_construct(
+///     [in]    config_object*      conf,
+///     [out]   contacts_contact*   contact, 
+///     [in]    const char*         session_id
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `contact` -- [out] the contact info data
+/// - `session_id` -- [in] null terminated hex string
+///
+/// Output:
+/// - `bool` -- Returns true if contact exsts
 LIBSESSION_EXPORT bool contacts_get_or_construct(
         config_object* conf, contacts_contact* contact, const char* session_id)
         __attribute__((warn_unused_result));
 
+/// API: contacts/contacts_set
+///
 /// Adds or updates a contact from the given contact info struct.
+///
+/// Declaration:
+/// ```cpp
+/// VOID contacts_set(
+///     [in, out]   config_object*              conf,
+///     [in]        const contacts_contact*     contact
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in, out] Pointer to the config object
+/// - `contact` -- [in] Pointer containing the contact info data
+///
+/// Output:
+/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void contacts_set(config_object* conf, const contacts_contact* contact);
 
 // NB: wrappers for set_name, set_nickname, etc. C++ methods are deliberately omitted as they would
@@ -98,14 +166,54 @@ LIBSESSION_EXPORT void contacts_set(config_object* conf, const contacts_contact*
 //     // some_session_id was invalid!
 // }
 
+/// API: contacts/contacts_erase
+///
 /// Erases a contact from the contact list.  session_id is in hex.  Returns true if the contact was
 /// found and removed, false if the contact was not present.  You must not call this during
 /// iteration; see details below.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL contacts_erase(
+///     [in, out]   config_object*  conf,
+///     [in]    const char*     session_id 
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in, out] Pointer to the config object
+/// - `session_id` -- [in] Text containing null terminated hex string
+///
+/// Outputs:
+/// - `bool` -- True if erasing was successful
 LIBSESSION_EXPORT bool contacts_erase(config_object* conf, const char* session_id);
 
+/// API: contacts/contacts_size
+///
 /// Returns the number of contacts.
+///
+/// Declaration:
+/// ```cpp
+/// SIZE_T contacts_size(
+///     [in]   const config_object*  conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- input - Pointer to the config object
+///
+/// Outputs:
+/// - `size_t` -- number of contacts
 LIBSESSION_EXPORT size_t contacts_size(const config_object* conf);
 
+typedef struct contacts_iterator {
+    void* _internals;
+} contacts_iterator;
+
+/// API: contacts/contacts_iterator_new
+///
+/// Starts a new iterator.
+///
 /// Functions for iterating through the entire contact list, in sorted order.  Intended use is:
 ///
 ///     contacts_contact c;
@@ -136,24 +244,94 @@ LIBSESSION_EXPORT size_t contacts_size(const config_object* conf);
 ///     }
 ///     contacts_iterator_free(it);
 ///
+/// Declaration:
+/// ```cpp
+/// CONTACTS_ITERATOR* contacts_iterator_new(
+///     [in]   const config_object*  conf
+/// );
+/// ```
 ///
-
-typedef struct contacts_iterator {
-    void* _internals;
-} contacts_iterator;
-
-// Starts a new iterator.
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `contacts_iterator*` -- pointer to the iterator
 LIBSESSION_EXPORT contacts_iterator* contacts_iterator_new(const config_object* conf);
-// Frees an iterator once no longer needed.
+
+/// API: contacts/contacts_iterator_free
+///
+/// Frees an iterator once no longer needed.
+///
+/// Declaration:
+/// ```cpp
+/// VOID contacts_iterator_free(
+///     [in]   contacts_iterator*   it
+/// );
+/// ```
+///
+/// Inputs:
+/// - `it` -- [in] Pointer to the contacts_iterator
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void contacts_iterator_free(contacts_iterator* it);
 
-// Returns true if iteration has reached the end.  Otherwise `c` is populated and false is returned.
+/// API: contacts/contacts_iterator_done
+///
+/// Returns true if iteration has reached the end.  Otherwise `c` is populated and false is returned.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL contacts_iterator_done(
+///     [in]    contacts_iterator*  it,
+///     [out]   contacts_contact*   c
+/// );
+/// ```
+///
+/// Inputs:
+/// - `it` -- [in] Pointer to the contacts_iterator
+/// - `c` -- [out] Pointer to the contact, will be populated if false
+///
+/// Outputs:
+/// - `bool` -- True if iteration has reached the end
 LIBSESSION_EXPORT bool contacts_iterator_done(contacts_iterator* it, contacts_contact* c);
 
-// Advances the iterator.
+/// API: contacts/contacts_iterator_advance
+///
+/// Advances the iterator.
+///
+/// Declaration:
+/// ```cpp
+/// VOID contacts_iterator_advance(
+///     [in]    contacts_iterator*  it
+/// );
+/// ```
+///
+/// Inputs:
+/// - `it` -- [in] Pointer to the contacts_iterator
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void contacts_iterator_advance(contacts_iterator* it);
 
-// Erases the current contact while advancing the iterator to the next contact in the iteration.
+/// API: contacts/contacts_iterator_erase
+///
+/// Erases the current contact while advancing the iterator to the next contact in the iteration.
+///
+/// Declaration:
+/// ```cpp
+/// VOID contacts_iterator_erase(
+///     [in]    config_object*      conf,
+///     [in]    contacts_iterator*  it
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `it` -- [in] Pointer to the contacts_iterator
+///
+/// Outputs:
+/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void contacts_iterator_erase(config_object* conf, contacts_iterator* it);
 
 #ifdef __cplusplus
