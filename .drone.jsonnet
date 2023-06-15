@@ -294,8 +294,7 @@ local static_build(name,
         './drone-docs-upload.sh cpp',
       ],
     }],
-    // trigger: { branch: ["dev"], event: ["push"] },
-    trigger: { branch: ["docs"] },
+    trigger: { branch: ["docs"], event: ["push"] },
   },
 
   {
@@ -320,8 +319,7 @@ local static_build(name,
         './drone-docs-upload.sh c',
       ],
     }],
-    // trigger: { branch: ["dev"], event: ["push"] },
-    trigger: { branch: ["docs"] },
+    trigger: { branch: ["docs"], event: ["push"] },
   },
 
   // Various debian builds
