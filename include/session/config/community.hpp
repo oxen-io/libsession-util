@@ -324,6 +324,8 @@ struct community {
     /// Same as above canonical_room, but modifies the argument in-place instead of returning a modified
     /// copy.
     ///
+    /// TODO SEAN REMOVE THIS
+    ///
     /// Declaration:
     /// ```cpp
     /// static void canonicalize_room(std::string& room);
