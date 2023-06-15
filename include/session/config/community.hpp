@@ -325,6 +325,7 @@ struct community {
     /// copy.
     ///
     /// TODO SEAN REMOVE THIS
+    /// TODO SEAN ALSO REMOVE THIS
     ///
     /// Declaration:
     /// ```cpp
