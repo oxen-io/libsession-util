@@ -762,57 +762,48 @@ ustring ConfigMessage::serialize(bool enable_signing) {
 }
 
 ustring ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enable_signing) {
-    ustring result;
-    // FIXME: we don't have a max (multi-messages will get encoded to larger and then split up).
-    result.resize(MAX_MESSAGE_SIZE);
-    oxenc::bt_dict_producer outer{from_unsigned(result.data()), result.size()};
+    oxenc::bt_dict_producer outer{};
 
-    try {
-        outer.append("#", seqno());
+    outer.append("#", seqno());
 
-        auto unknown_it = append_unknown(outer, unknown_.begin(), unknown_.end(), "&");
+    auto unknown_it = append_unknown(outer, unknown_.begin(), unknown_.end(), "&");
 
-        serialize_data(outer.append_dict("&"), data_);
+    serialize_data(outer.append_dict("&"), data_);
 
-        unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "<");
+    unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "<");
 
-        {
-            auto lags = outer.append_list("<");
-            for (auto& [seqno_hash, lag_data] : lagged_diffs_) {
-                const auto& [lag_seqno, lag_hash] = seqno_hash;
-                if (lag_seqno <= seqno() - lag || lag_seqno >= seqno())
-                    continue;
-                auto lag = lags.append_list();
-                lag.append(lag_seqno);
-                lag.append(view(lag_hash));
-                lag.append_bt(lag_data);
-            }
+    {
+        auto lags = outer.append_list("<");
+        for (auto& [seqno_hash, lag_data] : lagged_diffs_) {
+            const auto& [lag_seqno, lag_hash] = seqno_hash;
+            if (lag_seqno <= seqno() - lag || lag_seqno >= seqno())
+                continue;
+            auto lag = lags.append_list();
+            lag.append(lag_seqno);
+            lag.append(view(lag_hash));
+            lag.append_bt(lag_data);
         }
-
-        unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "=");
-
-        outer.append_bt("=", curr_diff);
-
-        unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "~");
-        assert(unknown_it == unknown_.end());
-
-        if (signer && enable_signing) {
-            auto to_sign = to_unsigned_sv(outer.view());
-            // The view contains the trailing "e", but we don't sign it (we are going to append the
-            // signature there instead):
-            to_sign.remove_suffix(1);
-            auto sig = signer(to_sign);
-            if (sig.size() != 64)
-                throw std::logic_error{
-                        "Invalid signature: signing function did not return 64 bytes"};
-
-            outer.append("~", from_unsigned_sv(sig));
-        }
-    } catch (const std::length_error&) {
-        throw std::length_error{"Config data is too large"};
     }
-    result.resize(outer.view().size());
-    return result;
+
+    unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "=");
+
+    outer.append_bt("=", curr_diff);
+
+    unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "~");
+    assert(unknown_it == unknown_.end());
+
+    if (signer && enable_signing) {
+        auto to_sign = to_unsigned_sv(outer.view());
+        // The view contains the trailing "e", but we don't sign it (we are going to append the
+        // signature there instead):
+        to_sign.remove_suffix(1);
+        auto sig = signer(to_sign);
+        if (sig.size() != 64)
+            throw std::logic_error{"Invalid signature: signing function did not return 64 bytes"};
+
+        outer.append("~", from_unsigned_sv(sig));
+    }
+    return ustring{to_unsigned_sv(outer.view())};
 }
 
 const hash_t& MutableConfigMessage::hash() {
