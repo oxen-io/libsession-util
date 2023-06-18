@@ -152,7 +152,7 @@ local windows_cross_pipeline(name,
                    commands: [
                      apt_get_quiet + ' install -y --no-install-recommends wine64',
                      'cd build',
-                     'wine64-stable ./tests/testAll.exe --colour-mode ansi',
+                     '/usr/lib/wine/wine64 ./tests/testAll.exe --colour-mode ansi',
                    ],
                  }] else [])
 );
