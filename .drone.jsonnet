@@ -152,7 +152,7 @@ local windows_cross_pipeline(name,
                    commands: [
                      apt_get_quiet + ' install -y --no-install-recommends wine64',
                      'cd build',
-                     'wine64-stable ./tests/testAll.exe --colour-mode ansi',
+                     'wine-stable ./tests/testAll.exe --colour-mode ansi',
                    ],
                  }] else [])
 );
@@ -292,7 +292,7 @@ local static_build(name,
   debian_build('Debian stable (armhf)', docker_base + 'debian-stable/arm32v7', arch='arm64', jobs=4),
 
   // Windows builds (x64)
-  windows_cross_pipeline('Windows (amd64)', docker_base + 'debian-win32-cross'),
+  windows_cross_pipeline('Windows (amd64)', docker_base + 'debian-win32-cross-wine'),
 
   // Macos builds:
   mac_builder('macOS (Release)'),
