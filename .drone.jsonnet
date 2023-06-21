@@ -316,7 +316,6 @@ local static_build(name,
   debian_pipeline(
     'Static Android',
     docker_base + 'android',
-    deps=['google-android-ndk-installer'],
     build=[
       'export JOBS=6',
       'export NDK=/usr/lib/android-ndk',
