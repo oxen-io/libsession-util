@@ -1,3 +1,4 @@
+#include <oxenc/endian.h>
 #include <oxenc/hex.h>
 #include <session/config/contacts.h>
 #include <sodium/crypto_sign_ed25519.h>
@@ -370,4 +371,48 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
 
     CHECK(contacts_get(conf, &ci, definitely_real_id));
     CHECK_FALSE(contacts_get(conf, &ci, another_id));
+}
+
+TEST_CASE("huge contacts compression", "[config][compression][contacts]") {
+    // Test that we can produce a config message whose *uncompressed* length exceeds the maximum
+    // message length as long as its *compressed* length does not.
+
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
+    REQUIRE(oxenc::to_hex(curve_pk.begin(), curve_pk.end()) ==
+            "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+
+    session::config::Contacts contacts{ustring_view{seed}, std::nullopt};
+
+    for (uint16_t i = 0; i < 10000; i++) {
+        char buf[2];
+        oxenc::write_host_as_big(i, buf);
+        std::string session_id = "05000000000000000000000000000000000000000000000000000000000000";
+        session_id += oxenc::to_hex(buf, buf + 2);
+        REQUIRE(session_id.size() == 66);
+
+        auto c = contacts.get_or_construct(session_id);
+        c.nickname = "My friend " + std::to_string(i);
+        c.approved = true;
+        c.approved_me = true;
+        contacts.set(c);
+    }
+
+    CHECK(contacts.needs_push());
+    CHECK(contacts.needs_dump());
+
+    auto [seqno, to_push, obs] = contacts.push();
+    CHECK(seqno == 1);
+    CHECK(to_push.size() == 46'080);
+    auto dump = contacts.dump();
+    // With tons of duplicate info the push should have been nicely compressible:
+    CHECK(dump.size() > 1'320'000);
 }

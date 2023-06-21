@@ -256,9 +256,6 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     if (_keys_size == 0)
         throw std::logic_error{"Cannot push data without an encryption key!"};
 
-    if (is_dirty())
-        set_state(ConfigState::Waiting);
-
     std::tuple<seqno_t, ustring, std::vector<std::string>> ret{
             _config->seqno(), _config->serialize(), {}};
 
@@ -267,6 +264,12 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
         compress_message(msg, *lvl);
     pad_message(msg);  // Prefix pad with nulls
     encrypt_inplace(msg, key(), encryption_domain());
+
+    if (msg.size() > MAX_MESSAGE_SIZE)
+        throw std::length_error{"Config data is too large"};
+
+    if (is_dirty())
+        set_state(ConfigState::Waiting);
 
     for (auto& old : _old_hashes)
         obs.push_back(std::move(old));
