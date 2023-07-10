@@ -117,3 +117,8 @@ option(WITH_TESTS "Enable unit tests" ${libsession_IS_TOPLEVEL_PROJECT})
 if(WITH_TESTS)
     add_subdirectory(tests)
 endif()
+
+option(WITH_TRAINING "Enable training data generator" OFF)
+if (WITH_TRAINING)
+    add_subdirectory(zstd-training)
+endif()
