@@ -502,28 +502,8 @@ typedef struct convo_info_volatile_iterator convo_info_volatile_iterator;
 ///     convo_info_volatile_iterator_free(it);
 /// ```
 ///
-/// It is permitted to modify records (e.g. with a call to one of the `convo_info_volatile_set_*`
-/// functions) and add records while iterating.
-///
-/// If you need to remove while iterating then usage is slightly different: you must advance the
-/// iteration by calling either convo_info_volatile_iterator_advance if not deleting, or
-/// convo_info_volatile_iterator_erase to erase and advance.  Usage looks like this:
-/// ```cpp
-///     convo_info_volatile_1to1 c1;
-///     convo_info_volatile_iterator *it = convo_info_volatile_iterator_new(my_convos);
-///     while (!convo_info_volatile_iterator_done(it)) {
-///         if (convo_it_is_1to1(it, &c1)) {
-///             bool should_delete = /* ... */;
-///             if (should_delete)
-///                 convo_info_volatile_iterator_erase(it);
-///             else
-///                 convo_info_volatile_iterator_advance(it);
-///         } else {
-///             convo_info_volatile_iterator_advance(it);
-///         }
-///     }
-///     convo_info_volatile_iterator_free(it);
-/// ```
+/// It is NOT permitted to add/modify/remove records while iterating; instead you must use two
+/// loops: a first one to identify changes, and a second to apply them.
 ///
 /// Declaration:
 /// ```cpp
@@ -728,27 +708,6 @@ LIBSESSION_EXPORT bool convo_info_volatile_it_is_community(
 /// - `bool` -- True if the record is a legacy group conversation
 LIBSESSION_EXPORT bool convo_info_volatile_it_is_legacy_group(
         convo_info_volatile_iterator* it, convo_info_volatile_legacy_group* c);
-
-/// API: convo_info_volatile/convo_info_volatile_iterator_erase
-///
-/// Erases the current convo while advancing the iterator to the next convo in the iteration.
-///
-/// Declaration:
-/// ```cpp
-/// VOID convo_info_volatile_iterator_erase(
-///     [in]    config_object*                  conf,
-///     [in]    convo_info_volatile_iterator*   it
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in] Pointer to the config object
-/// - `it` -- [in] The convo_info_volatile_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
-LIBSESSION_EXPORT void convo_info_volatile_iterator_erase(
-        config_object* conf, convo_info_volatile_iterator* it);
 
 #ifdef __cplusplus
 }  // extern "C"

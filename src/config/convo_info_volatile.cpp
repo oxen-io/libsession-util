@@ -200,23 +200,38 @@ void ConvoInfoVolatile::set_base(const convo::base& c, DictFieldProxy& info) {
     set_flag(info["u"], c.unread);
 }
 
-std::tuple<seqno_t, ustring, std::vector<std::string>> ConvoInfoVolatile::push() {
-    // Prune off any conversations with last_read timestamps more than PRUNE_HIGH ago (unless they
-    // also have a `unread` flag set, in which case we keep them indefinitely).
+void ConvoInfoVolatile::prune_stale(std::chrono::milliseconds prune) {
     const int64_t cutoff =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                     (std::chrono::system_clock::now() - PRUNE_HIGH).time_since_epoch())
                     .count();
 
-    for (auto it = begin(); it != end();)
-        std::visit(
-                [&it, &cutoff, this](const auto& convo) {
-                    if (!convo.unread && convo.last_read < cutoff)
-                        it = erase(it);
-                    else
-                        ++it;
-                },
-                *it);
+    std::vector<std::string> stale;
+    for (auto it = begin_1to1(); it != end(); ++it)
+        if (!it->unread && it->last_read < cutoff)
+            stale.push_back(it->session_id);
+    for (const auto& sid : stale)
+        erase_1to1(sid);
+
+    stale.clear();
+    for (auto it = begin_legacy_groups(); it != end(); ++it)
+        if (!it->unread && it->last_read < cutoff)
+            stale.push_back(it->id);
+    for (const auto& id : stale)
+        erase_legacy_group(id);
+
+    std::vector<std::pair<std::string, std::string>> stale_comms;
+    for (auto it = begin_communities(); it != end(); ++it)
+        if (!it->unread && it->last_read < cutoff)
+            stale_comms.emplace_back(it->base_url(), it->room());
+    for (const auto& [base, room] : stale_comms)
+        erase_community(base, room);
+}
+
+std::tuple<seqno_t, ustring, std::vector<std::string>> ConvoInfoVolatile::push() {
+    // Prune off any conversations with last_read timestamps more than PRUNE_HIGH ago (unless they
+    // also have a `unread` flag set, in which case we keep them indefinitely).
+    prune_stale();
 
     return ConfigBase::push();
 }
@@ -270,12 +285,6 @@ bool ConvoInfoVolatile::erase_community(std::string_view base_url, std::string_v
 }
 bool ConvoInfoVolatile::erase_legacy_group(std::string_view id) {
     return erase(convo::legacy_group{id});
-}
-
-ConvoInfoVolatile::iterator ConvoInfoVolatile::erase(iterator it) {
-    auto remove_it = it++;
-    erase(*remove_it);
-    return it;
 }
 
 size_t ConvoInfoVolatile::size_1to1() const {
@@ -635,10 +644,4 @@ LIBSESSION_C_API bool convo_info_volatile_it_is_community(
 LIBSESSION_C_API bool convo_info_volatile_it_is_legacy_group(
         convo_info_volatile_iterator* it, convo_info_volatile_legacy_group* c) {
     return convo_info_volatile_it_is_impl<convo::legacy_group>(it, c);
-}
-
-LIBSESSION_C_API void convo_info_volatile_iterator_erase(
-        config_object* conf, convo_info_volatile_iterator* it) {
-    auto& real = *static_cast<ConvoInfoVolatile::iterator*>(it->_internals);
-    real = unbox<ConvoInfoVolatile>(conf)->erase(real);
 }

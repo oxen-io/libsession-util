@@ -223,26 +223,7 @@ typedef struct contacts_iterator {
 ///     }
 ///     contacts_iterator_free(it);
 ///
-/// It is permitted to modify records (e.g. with a call to `contacts_set`) and add records while
-/// iterating.
-///
-/// If you need to remove while iterating then usage is slightly different: you must advance the
-/// iteration by calling either contacts_iterator_advance if not deleting, or
-/// contacts_iterator_erase to erase and advance.  Usage looks like this:
-///
-///     contacts_contact c;
-///     contacts_iterator *it = contacts_iterator_new(contacts);
-///     while (!contacts_iterator_done(it, &c)) {
-///         // c.session_id, c.nickname, etc. are loaded
-///
-///         bool should_delete = /* ... */;
-///
-///         if (should_delete)
-///             contacts_iterator_erase(it);
-///         else
-///             contacts_iterator_advance(it);
-///     }
-///     contacts_iterator_free(it);
+/// It is NOT permitted to add/remove/modify records while iterating.
 ///
 /// Declaration:
 /// ```cpp
@@ -314,26 +295,6 @@ LIBSESSION_EXPORT bool contacts_iterator_done(contacts_iterator* it, contacts_co
 /// Outputs:
 /// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void contacts_iterator_advance(contacts_iterator* it);
-
-/// API: contacts/contacts_iterator_erase
-///
-/// Erases the current contact while advancing the iterator to the next contact in the iteration.
-///
-/// Declaration:
-/// ```cpp
-/// VOID contacts_iterator_erase(
-///     [in]    config_object*      conf,
-///     [in]    contacts_iterator*  it
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in] Pointer to the config object
-/// - `it` -- [in] Pointer to the contacts_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
-LIBSESSION_EXPORT void contacts_iterator_erase(config_object* conf, contacts_iterator* it);
 
 #ifdef __cplusplus
 }  // extern "C"

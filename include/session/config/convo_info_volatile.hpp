@@ -206,11 +206,28 @@ class ConvoInfoVolatile : public ConfigBase {
     const char* encryption_domain() const override { return "ConvoInfoVolatile"; }
 
     /// Our pruning ages.  We ignore added conversations that are more than PRUNE_LOW before now,
-    /// and we active remove (when doing a new push) any conversations that are more than PRUNE_HIGH
-    /// before now.  Clients can mostly ignore these and just add all conversations; the class just
-    /// transparently ignores (or removes) pruned values.
+    /// and we actively remove (when doing a new push) any conversations that are more than
+    /// PRUNE_HIGH before now.  Clients can mostly ignore these and just add all conversations; the
+    /// class just transparently ignores (or removes) pruned values.
     static constexpr auto PRUNE_LOW = 30 * 24h;
     static constexpr auto PRUNE_HIGH = 45 * 24h;
+
+    /// API: convo_info_volatile/ConvoInfoVolatile::prune_stale
+    ///
+    /// Prunes any "stale" conversations: that is, ones with a last read more than `prune` ago that
+    /// are not specifically "marked as unread" by the client.
+    ///
+    /// This method is called automatically by `push()` and does not typically need to be invoked
+    /// directly.
+    ///
+    /// Inputs:
+    /// - `prune` the "too old" time; any conversations with a last_read time more than this
+    ///   duration ago will be removed (unless they have the explicit `unread` flag set).  If
+    ///   omitted, defaults to the PRUNE_HIGH constant (45 days).
+    ///
+    /// Outputs:
+    /// - returns nothing.
+    void prune_stale(std::chrono::milliseconds prune = PRUNE_HIGH);
 
     /// API: convo_info_volatile/ConvoInfoVolatile::push
     ///
@@ -501,27 +518,6 @@ class ConvoInfoVolatile : public ConfigBase {
 
     bool erase(const convo::any& c);  // Variant of any of them
 
-    struct iterator;
-
-    /// API: convo_info_volatile/ConvoInfoVolatile::erase(iterator)
-    ///
-    /// This works like erase, but takes an iterator to the conversation to remove.  The element is
-    /// removed and the iterator to the next element after the removed one is returned.  This is
-    /// intended for use where elements are to be removed during iteration: see below for an
-    /// example.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator erase(iterator it);
-    /// ```
-    ///
-    /// Inputs:
-    /// - `it` -- iterator resolving to the conversation to remove
-    ///
-    /// Outputs:
-    /// - `iterator` - Returns the next element after the removed conversation
-    iterator erase(iterator it);
-
     /// API: convo_info_volatile/ConvoInfoVolatile::size
     ///
     /// Returns the number of conversations, if `size()` is called it will return the total of any
@@ -562,6 +558,7 @@ class ConvoInfoVolatile : public ConfigBase {
     /// - `bool` -- Returns true if the convesation list is empty
     bool empty() const { return size() == 0; }
 
+    struct iterator;
     /// API: convo_info_volatile/ConvoInfoVolatile::begin
     ///
     /// Iterators for iterating through all conversations.  Typically you access this implicit via a
@@ -569,11 +566,11 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// ```cpp
     ///     for (auto& convo : conversations) {
-    ///         if (auto* dm = std::get_if<convo::one_to_one>(&convo)) {
+    ///         if (const auto* dm = std::get_if<convo::one_to_one>(&convo)) {
     ///             // use dm->session_id, dm->last_read, etc.
-    ///         } else if (auto* og = std::get_if<convo::community>(&convo)) {
+    ///         } else if (const auto* og = std::get_if<convo::community>(&convo)) {
     ///             // use og->base_url, og->room, om->last_read, etc.
-    ///         } else if (auto* lcg = std::get_if<convo::legacy_group>(&convo)) {
+    ///         } else if (const auto* lcg = std::get_if<convo::legacy_group>(&convo)) {
     ///             // use lcg->id, lcg->last_read
     ///         }
     ///     }
@@ -582,26 +579,9 @@ class ConvoInfoVolatile : public ConfigBase {
     /// This iterates through all conversations in sorted order (sorted first by convo type, then by
     /// id within the type).
     ///
-    /// It is permitted to modify and add records while iterating (e.g. by modifying one of the
-    /// `dm`/`og`/`lcg` and then calling set()).
-    ///
-    /// If you need to erase the current conversation during iteration then care is required: you
-    /// need to advance the iterator via the iterator version of erase when erasing an element
-    /// rather than incrementing it regularly.  For example:
-    ///
-    /// ```cpp
-    ///     for (auto it = conversations.begin(); it != conversations.end(); ) {
-    ///         if (should_remove(*it))
-    ///             it = converations.erase(it);
-    ///         else
-    ///             ++it;
-    ///     }
-    /// ```
-    ///
-    /// Alternatively, you can use the first version with two loops: the first loop through all
-    /// converations doesn't erase but just builds a vector of IDs to erase, then the second loops
-    /// through that vector calling `erase_1to1()`/`erase_community()`/`erase_legacy_group()` for
-    /// each one.
+    /// It is NOT permitted to add/modify/remove records while iterating; performing modifications
+    /// based on a condition requires two passes: one to collect the required changes, and another
+    /// to apply them key by key.
     ///
     /// Declaration:
     /// ```cpp

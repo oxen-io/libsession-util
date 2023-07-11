@@ -351,12 +351,6 @@ bool UserGroups::erase_legacy_group(std::string_view id) {
     return erase(legacy_group_info{std::string{id}});
 }
 
-UserGroups::iterator UserGroups::erase(iterator it) {
-    auto remove_it = it++;
-    erase(*remove_it);
-    return it;
-}
-
 size_t UserGroups::size_communities() const {
     size_t count = 0;
     auto og = data["o"];
@@ -708,8 +702,4 @@ LIBSESSION_C_API bool user_groups_it_is_community(
 LIBSESSION_C_API bool user_groups_it_is_legacy_group(
         user_groups_iterator* it, ugroups_legacy_group_info* g) {
     return user_groups_it_is_impl<legacy_group_info>(it, g);
-}
-
-LIBSESSION_C_API void user_groups_iterator_erase(config_object* conf, user_groups_iterator* it) {
-    it->it = unbox<UserGroups>(conf)->erase(it->it);
 }
