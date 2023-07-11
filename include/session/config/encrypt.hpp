@@ -6,6 +6,8 @@
 
 namespace session::config {
 
+/// API: encrypt/encrypt
+///
 /// Encrypts a config message using XChaCha20-Poly1305, using a blake2b keyed hash of the message
 /// for the nonce (rather than pure random) so that different clients will encrypt the same data to
 /// the same encrypted value (thus allowing for server-side deduplication of identical messages).
@@ -24,10 +26,38 @@ namespace session::config {
 /// suitable for being passed to decrypt() to authenticate and decrypt.
 ///
 /// Throw std::invalid_argument on bad input (i.e. from invalid key_base or domain).
+///
+/// Declaration:
+/// ```cpp
+/// ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain);
+/// ```
+///
+/// Inputs:
+/// - `message` -- message to encrypt
+/// - `key_base` -- Fixed key that all clients, must be 32 bytes.
+/// - `domain` -- short string for the keyed hash
+///
+/// Outputs:
+/// - `ustring` -- Returns the encrypted message bytes
 ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain);
 
-/// Same as above, but modifies `message` in place.  `message` gets encrypted plus has the extra
-/// data and nonce appended.
+/// API: encrypt/encrypt_inplace
+///
+/// Same as above `encrypt`, but modifies `message` in place.  `message` gets encrypted plus has the
+/// extra data and nonce appended.
+///
+/// Declaration:
+/// ```cpp
+/// void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain);
+/// ```
+///
+/// Inputs:
+/// - `message` -- message to encrypt
+/// - `key_base` -- Fixed key that all clients, must be 32 bytes.
+/// - `domain` -- short string for the keyed hash
+///
+/// Outputs:
+/// - `void` -- Returns nothing
 void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain);
 
 /// Constant amount of extra bytes required to be appended when encrypting.
@@ -38,12 +68,43 @@ struct decrypt_error : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+/// API: encrypt/decrypt
+///
 /// Takes a value produced by `encrypt()` and decrypts it.  `key_base` and `domain` must be the same
 /// given to encrypt or else decryption fails.  Upon decryption failure a `decrypt_error` exception
 /// is thrown.
+///
+/// Declaration:
+/// ```cpp
+/// ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain);
+/// ```
+///
+/// Inputs:
+/// - `ciphertext` -- message to decrypt
+/// - `key_base` -- Fixed key that all clients, must be 32 bytes.
+/// - `domain` -- short string for the keyed hash
+///
+/// Outputs:
+/// - `ustring` -- Returns the decrypt message bytes
 ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain);
 
-/// Same as above, but does in in-place.  The string gets shortend to the plaintext after this call.
+/// API: encrypt/decrypt_inplace
+///
+/// Same as above `decrypt()`, but does in in-place.  The string gets shortend to the plaintext
+/// after this call.
+///
+/// Declaration:
+/// ```cpp
+/// void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_view domain);
+/// ```
+///
+/// Inputs:
+/// - `ciphertext` -- message to decrypt
+/// - `key_base` -- Fixed key that all clients, must be 32 bytes.
+/// - `domain` -- short string for the keyed hash
+///
+/// Outputs:
+/// - `void` -- Returns nothing
 void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_view domain);
 
 /// Returns the target size of the message with padding, assuming an additional `overhead` bytes of
@@ -58,12 +119,26 @@ inline constexpr size_t padded_size(size_t s, size_t overhead = ENCRYPT_DATA_OVE
     return (s2 + chunk - 1) / chunk * chunk - overhead;
 }
 
+/// API: encrypt/pad_message
+///
 /// Inserts null byte padding to the beginning of a message to make the final message size granular.
 /// See the above function for the sizes.
 ///
 /// \param data - the data; this is modified in place.
-/// \param overhead - encryption overhead to account for to reach the desired padded size.  The
+/// \param overhead -
+///
+/// Declaration:
+/// ```cpp
+/// void pad_message(ustring& data, size_t overhead = ENCRYPT_DATA_OVERHEAD);
+/// ```
+///
+/// Inputs:
+/// - `data` -- the data; this is modified in place
+/// - `overhead` -- encryption overhead to account for to reach the desired padded size.  The
 /// default, if omitted, is the space used by the `encrypt()` function defined above.
+///
+/// Outputs:
+/// - `void` -- Returns nothing
 void pad_message(ustring& data, size_t overhead = ENCRYPT_DATA_OVERHEAD);
 
 }  // namespace session::config
