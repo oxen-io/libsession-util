@@ -337,13 +337,6 @@ LIBSESSION_C_API bool contacts_erase(config_object* conf, const char* session_id
     }
 }
 
-Contacts::iterator Contacts::erase(iterator it) {
-    std::string session_id = it->session_id;
-    ++it;
-    erase(session_id);
-    return it;
-}
-
 size_t Contacts::size() const {
     if (auto* c = data["c"].dict())
         return c->size();
@@ -413,9 +406,4 @@ LIBSESSION_C_API bool contacts_iterator_done(contacts_iterator* it, contacts_con
 
 LIBSESSION_C_API void contacts_iterator_advance(contacts_iterator* it) {
     ++*static_cast<Contacts::iterator*>(it->_internals);
-}
-
-LIBSESSION_C_API void contacts_iterator_erase(config_object* conf, contacts_iterator* it) {
-    auto& real = *static_cast<Contacts::iterator*>(it->_internals);
-    real = unbox<Contacts>(conf)->erase(real);
 }

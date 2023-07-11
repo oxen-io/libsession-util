@@ -469,27 +469,6 @@ class UserGroups : public ConfigBase {
     bool erase(const legacy_group_info& c);
     bool erase(const any_group_info& info);
 
-    struct iterator;
-
-    /// API: user_groups/UserGroups::erase(iterator)
-    ///
-    /// This works like erase, but takes an iterator to the contact to remove.  The element is
-    /// removed and the iterator to the next element after the removed one is returned.  This is
-    /// intended for use where elements are to be removed during iteration: see below for an
-    /// example.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator erase(iterator it);
-    /// ```
-    ///
-    /// Inputs:
-    /// - `it` -- iterator resolving to the group to remove
-    ///
-    /// Outputs:
-    /// - `iterator` - Returns the next element after the removed one
-    iterator erase(iterator it);
-
     /// API: user_groups/UserGroups::size
     ///
     /// Returns the number of groups (of any type).
@@ -550,6 +529,7 @@ class UserGroups : public ConfigBase {
     /// - `bool` - Returns true if the contact list is empty
     bool empty() const { return size() == 0; }
 
+    struct iterator;
     /// API: user_groups/UserGroups::begin
     ///
     /// Iterators for iterating through all groups.  Typically you access this implicit via a
@@ -567,25 +547,9 @@ class UserGroups : public ConfigBase {
     /// This iterates through all groups in sorted order (sorted first by convo type, then by
     /// id within the type).
     ///
-    /// It is permitted to modify and add records while iterating (e.g. by modifying one of the
-    /// `comm`/`lg` objects and then calling set()).
-    ///
-    /// If you need to erase the current conversation during iteration then care is required: you
-    /// need to advance the iterator via the iterator version of erase when erasing an element
-    /// rather than incrementing it regularly.  For example:
-    /// ```cpp
-    ///     for (auto it = conversations.begin(); it != conversations.end(); ) {
-    ///         if (should_remove(*it))
-    ///             it = converations.erase(it);
-    ///         else
-    ///             ++it;
-    ///     }
-    /// ```
-    ///
-    /// Alternatively, you can use the first version with two loops: the first loop through all
-    /// converations doesn't erase but just builds a vector of IDs to erase, then the second loops
-    /// through that vector calling `erase_1to1()`/`erase_open()`/`erase_legacy_group()` for each
-    /// one.
+    /// It is NOT permitted to add/remove/modify records while iterating.  If such is needed it must
+    /// be done in two passes: once to collect the modifications, then a loop applying the collected
+    /// modifications.
     ///
     /// Declaration:
     /// ```cpp

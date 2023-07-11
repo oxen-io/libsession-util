@@ -613,28 +613,7 @@ typedef struct user_groups_iterator user_groups_iterator;
 ///     user_groups_iterator_free(it);
 /// ```
 ///
-/// It is permitted to modify records (e.g. with a call to one of the `user_groups_set_*`
-/// functions) and add records while iterating.
-///
-/// If you need to remove while iterating then usage is slightly different: you must advance the
-/// iteration by calling either user_groups_iterator_advance if not deleting, or
-/// user_groups_iterator_erase to erase and advance.  Usage looks like this:
-/// ```cpp
-///     ugroups_community_info comm;
-///     ugroups_iterator *it = ugroups_iterator_new(my_groups);
-///     while (!user_groups_iterator_done(it)) {
-///         if (user_groups_it_is_community(it, &comm)) {
-///             bool should_delete = /* ... */;
-///             if (should_delete)
-///                 user_groups_iterator_erase(it);
-///             else
-///                 user_groups_iterator_advance(it);
-///         } else {
-///             user_groups_iterator_advance(it);
-///         }
-///     }
-///     user_groups_iterator_free(it);
-/// ```
+/// It is NOT permitted to add/remove/modify records while iterating.
 ///
 /// Declaration:
 /// ```cpp
@@ -793,26 +772,6 @@ LIBSESSION_EXPORT bool user_groups_it_is_community(
 /// - `bool` -- Returns True if the group is a legacy group
 LIBSESSION_EXPORT bool user_groups_it_is_legacy_group(
         user_groups_iterator* it, ugroups_legacy_group_info* c);
-
-/// API: user_groups/user_groups_iterator_erase
-///
-/// Erases the current group while advancing the iterator to the next group in the iteration.
-///
-/// Declaration:
-/// ```cpp
-/// VOID user_groups_iterator_erase(
-///     [in]    config_object*              conf,
-///     [in]    user_groups_iterator*       it
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in] Pointer to the config object
-/// - `it` -- [in] The user_groups_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
-LIBSESSION_EXPORT void user_groups_iterator_erase(config_object* conf, user_groups_iterator* it);
 
 #ifdef __cplusplus
 }  // extern "C"

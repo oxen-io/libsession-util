@@ -356,15 +356,18 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     // Changing things while iterating:
     it = contacts_iterator_new(conf);
     int deletions = 0, non_deletions = 0;
+    std::vector<std::string> contacts_to_remove;
     while (!contacts_iterator_done(it, &ci)) {
         if (ci.session_id != std::string_view{definitely_real_id}) {
-            contacts_iterator_erase(conf, it);
+            contacts_to_remove.push_back(ci.session_id);
             deletions++;
         } else {
             non_deletions++;
-            contacts_iterator_advance(it);
         }
+        contacts_iterator_advance(it);
     }
+    for (auto& cont : contacts_to_remove)
+        contacts_erase(conf, cont.c_str());
 
     CHECK(deletions == 1);
     CHECK(non_deletions == 1);

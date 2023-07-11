@@ -442,27 +442,6 @@ class Contacts : public ConfigBase {
     /// - `bool` - Returns true if contact was found and removed, false otherwise
     bool erase(std::string_view session_id);
 
-    struct iterator;
-
-    /// API: contacts/contacts::erase(iterator)
-    ///
-    /// This works like erase, but takes an iterator to the contact to remove.  The element is
-    /// removed and the iterator to the next element after the removed one is returned.  This is
-    /// intended for use where elements are to be removed during iteration: see below for an
-    /// example.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator erase(iterator it);
-    /// ```
-    ///
-    /// Inputs:
-    /// - `it` -- iterator resolving to the contact to remove
-    ///
-    /// Outputs:
-    /// - `iterator` - Returns the next element after the removed one
-    iterator erase(iterator it);
-
     /// API: contacts/contacts::size
     ///
     /// Returns the number of contacts.
@@ -493,6 +472,7 @@ class Contacts : public ConfigBase {
     /// - `bool` - Returns true if the contact list is empty
     bool empty() const { return size() == 0; }
 
+    struct iterator;
     /// API: contacts/contacts::begin
     ///
     /// Iterators for iterating through all contacts.  Typically you access this implicit via a for
@@ -506,25 +486,9 @@ class Contacts : public ConfigBase {
     ///
     /// This iterates in sorted order through the session_ids.
     ///
-    /// It is permitted to modify and add records while iterating (e.g. by modifying `contact` and
-    /// then calling set()).
-    ///
-    /// If you need to erase the current contact during iteration then care is required: you need to
-    /// advance the iterator via the iterator version of erase when erasing an element rather than
-    /// incrementing it regularly.  For example:
-    ///
-    ///```cpp
-    ///     for (auto it = contacts.begin(); it != contacts.end(); ) {
-    ///         if (should_remove(*it))
-    ///             it = contacts.erase(it);
-    ///         else
-    ///             ++it;
-    ///     }
-    ///```
-    ///
-    /// Alternatively, you can use the first version with two loops: the first loop through all
-    /// contacts doesn't erase but just builds a vector of IDs to erase, then the second loops
-    /// through that vector calling `erase()` for each one.
+    /// It is NOT permitted to add/modify/remove records while iterating; instead such modifications
+    /// require two passes: an iterator loop to collect the required modifications, then a second
+    /// pass to apply the modifications.
     ///
     /// Declaration:
     /// ```cpp
