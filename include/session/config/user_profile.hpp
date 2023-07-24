@@ -134,7 +134,7 @@ class UserProfile final : public ConfigBase {
     /// - `priority` -- Numeric representing priority
     void set_nts_priority(int priority);
 
-    /// API: user_profile/UserProfile::get_nts_priority
+    /// API: user_profile/UserProfile::get_nts_expiry
     ///
     /// Returns the current Note-to-self message expiry timer, if set, or std::nullopt if there is
     /// no current expiry timer set.
@@ -146,7 +146,7 @@ class UserProfile final : public ConfigBase {
     /// expiry timer if the timer is set
     std::optional<std::chrono::seconds> get_nts_expiry() const;
 
-    /// API: user_profile/UserProfile::set_nts_priority
+    /// API: user_profile/UserProfile::set_nts_expiry
     ///
     /// Sets the Note-to-self message expiry timer.  Call without arguments (or pass a zero time) to
     /// disable the expiry timer.
