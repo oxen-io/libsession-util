@@ -45,16 +45,8 @@ struct community {
     /// for info on limitations on "case-preserving", particularly for volatile configs); and the
     /// embedded pubkey must be encoded in one of hex, base32z, or base64.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_full_url(std::string_view full_url);
-    /// ```
-    ///
     /// Inputs:
     /// - `full_url` -- URL to be stored
-    ///
-    /// Outputs:
-    /// - `void` -- Nothing returned
     void set_full_url(std::string_view full_url);
 
     /// API: community/community::set_base_url
@@ -63,16 +55,8 @@ struct community {
     /// `set` will end up inserting a *new* record but not removing the *old* one (you need to erase
     /// first to do that).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_base_url(std::string_view new_url);
-    /// ```
-    ///
     /// Inputs:
     /// - `new_url` -- URL to be stored
-    ///
-    /// Outputs:
-    /// - `void` -- Nothing returned
     void set_base_url(std::string_view new_url);
 
     /// API: community/community::set_room
@@ -84,16 +68,8 @@ struct community {
     /// changes) then a call to `set` will end up inserting a *new* record but not removing the
     /// *old* one (you need to erase first to do that).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_room(std::string_view room);
-    /// ```
-    ///
     /// Inputs:
     /// - `room` -- Room to be stored
-    ///
-    /// Outputs:
-    /// - `void` -- Nothing returned
     void set_room(std::string_view room);
 
     /// API: community/community::set_pubkey
@@ -115,9 +91,6 @@ struct community {
     ///
     /// Inputs:
     /// - `pubkey` -- Pubkey to be stored
-    ///
-    /// Outputs:
-    /// - `void` -- Nothing returned
     void set_pubkey(ustring_view pubkey);
     void set_pubkey(std::string_view pubkey);
 
@@ -125,15 +98,10 @@ struct community {
     ///
     /// Accesses the base url (i.e. not including room or pubkey). Always lower-case/normalized.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// const std::string& base_url() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
-    /// - `std::string&` -- Returns the base url
+    /// - `const std::string&` -- Returns the base url
     const std::string& base_url() const { return base_url_; }
 
     /// API: community/community::room
@@ -142,55 +110,35 @@ struct community {
     /// however, such as volatile info, the case is not preserved and this will always return the
     /// normalized (lower-case) form rather than the preferred form.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// const std::string& room() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
-    /// - `std::string&` -- Returns the room token
+    /// - `const std::string&` -- Returns the room token
     const std::string& room() const { return localized_room_ ? *localized_room_ : room_; }
 
     /// API: community/community::room
     ///
     /// Accesses the normalized room token, i.e. always lower-case.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// const std::string& room_norm() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
-    /// - `std::string&` -- Returns the room token
+    /// - `const std::string&` -- Returns the room token
     const std::string& room_norm() const { return room_; }
 
     /// API: community/community::pubkey
     ///
     /// Accesses the server pubkey (32 bytes).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// const ustring& pubkey() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
-    /// - `ustring&` -- Returns the pubkey
+    /// - `const ustring&` -- Returns the pubkey
     const ustring& pubkey() const { return pubkey_; }
 
     /// API: community/community::pubkey_hex
     ///
     /// Accesses the server pubkey as hex (64 hex digits).
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::string pubkey_hex() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -202,11 +150,6 @@ struct community {
     ///
     /// Accesses the server pubkey as base32z (52 alphanumeric digits)
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::string pubkey_b32z() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -217,11 +160,6 @@ struct community {
     ///
     /// Accesses the server pubkey as unpadded base64 (43 from alphanumeric, '+', and '/').
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::string pubkey_b64() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -231,11 +169,6 @@ struct community {
     /// API: community/community::full_url
     ///
     /// Constructs and returns the full URL for this room.  See below.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::string full_url() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -249,12 +182,6 @@ struct community {
     /// returns it in a Session-compatibility form (https://server.com/RoomName?public_key=....),
     /// but future versions are expected to change to use
     /// (https://server.com/r/RoomName?public_key=...), which this library also accepts.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// static std::string full_url(
-    ///        std::string_view base_url, std::string_view room, ustring_view pubkey);
-    /// ```
     ///
     /// Inputs:
     /// - `base_url` -- string of the base url to construct the full url with
@@ -272,11 +199,6 @@ struct community {
     /// like lower casing it and removing redundant ports (e.g. :80 when using http://).  Throws
     /// std::invalid_argument if given an invalid base URL.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// static std::string canonical_url(std::string_view url);
-    /// ```
-    ///
     /// Inputs:
     /// - `url` -- string of the url to construct the canonical url with
     ///
@@ -290,11 +212,6 @@ struct community {
     /// std::invalid_argument if given an invalid room token (e.g. too long, or containing token
     /// other than a-z, 0-9, -, _).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// static std::string canonical_room(std::string_view room);
-    /// ```
-    ///
     /// Inputs:
     /// - `room` -- string of the room token to construct the canonical room with
     ///
@@ -307,16 +224,8 @@ struct community {
     /// Same as above canonical_url, but modifies the argument in-place instead of returning a
     /// modified copy.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// static void canonicalize_url(std::string& url);
-    /// ```
-    ///
     /// Inputs:
     /// - `url` -- string of the url to modify to the canonical url
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     static void canonicalize_url(std::string& url);
 
     /// API: community/community::canonicalize_room
@@ -324,16 +233,8 @@ struct community {
     /// Same as above canonical_room, but modifies the argument in-place instead of returning a
     /// modified copy.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// static void canonicalize_room(std::string& room);
-    /// ```
-    ///
     /// Inputs:
     /// - `room` -- string of the room to modify to the canonical room
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     static void canonicalize_room(std::string& room);
 
     /// API: community/community::parse_full_url
@@ -351,12 +252,6 @@ struct community {
     ///
     /// Throw std::invalid_argument if anything in the URL is unparseable or invalid.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// static std::tuple<std::string, std::string, ustring> parse_full_url(std::string_view
-    /// full_url);
-    /// ```
-    ///
     /// Inputs:
     /// - `full_url` -- string of the url to parse
     ///
@@ -371,12 +266,6 @@ struct community {
     ///
     /// Takes a full or partial room URL (partial here meaning missing the ?public_key=...) and
     /// splits it up into canonical url, room, and (if present) pubkey.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// static std::tuple<std::string, std::string, std::optional<ustring>>
-    /// parse_partial_url(std::string_view url);
-    /// ```
     ///
     /// Inputs:
     /// - `url` -- string of the url to parse

@@ -10,16 +10,6 @@ if [ -z "$SSH_KEY" ]; then
     exit 0
 fi
 
-# First argument passed to the script
-language="$1"
-
-if [ "$language" == "cpp" ] || [ "$language" == "c" ]; then
-    upload_to="/home/apidocs/www/libsession-util-$language/"
-else
-    echo "Invalid argument. Please specify either 'cpp' or 'c'"
-    exit 1
-fi
-
 echo "$SSH_KEY" >~/ssh_key
 
 set -o xtrace  # Don't start tracing until *after* we write the ssh key
@@ -28,10 +18,11 @@ chmod 600 ~/ssh_key
 
 
 sftp -i ~/ssh_key -b - -o StrictHostKeyChecking=off apidocs@chianina.oxen.io <<SFTP
-put -r ./api/* $upload_to
+put -r ./libsession-util-c/* /home/apidocs/www/libsession-util-c/
+put -r ./libsession-util-cpp/* /home/apidocs/www/libsession-util-cpp/
 SFTP
 
 set +o xtrace
 
-echo -e "\n\n\n\n\e[32;1mUploaded docs to https://${upload_to}/\e[0m\n\n\n"
+echo -e "\n\n\n\n\e[32;1mUploaded docs to https://api.oxen.io/\e[0m\n\n\n"
 

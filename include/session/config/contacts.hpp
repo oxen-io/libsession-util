@@ -77,17 +77,8 @@ struct contact_info {
     ///
     /// converts the contact info into a c struct
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void into(contacts_contact& c) const;
-    /// );
-    /// ```
-    ///
     /// Inputs:
     /// - `c` -- Return Parameter that will be filled with data in contact_info
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     void into(contacts_contact& c) const;
 
     /// API: contacts/contact_info::set_name
@@ -95,17 +86,8 @@ struct contact_info {
     /// Sets a name or nickname; this is exactly the same as assigning to .name/.nickname directly,
     /// except that we throw an exception if the given name is longer than MAX_NAME_LENGTH.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_name(std::string name);
-    /// );
-    /// ```
-    ///
     /// Inputs:
     /// - `name` -- Name to assign to the contact
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     void set_name(std::string name);
     void set_nickname(std::string nickname);
 
@@ -126,11 +108,6 @@ class Contacts : public ConfigBase {
     /// key for generating the data encryption key.  To construct a blank list (i.e. with no
     /// pre-existing dumped data to load) pass `std::nullopt` as the second argument.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
-    /// ```
-    ///
     /// Inputs:
     /// - `ed25519_secretkey` -- contains the libsodium secret key used to encrypt/decrypt the
     /// data when pushing/pulling from the swarm.  This can either be the full 64-byte value (which
@@ -147,11 +124,6 @@ class Contacts : public ConfigBase {
     ///
     /// Returns the Contacts namespace. Is constant, will always return 3
     ///
-    /// Declaration:
-    /// ```cpp
-    /// Namespace storage_namespace() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -161,11 +133,6 @@ class Contacts : public ConfigBase {
     /// API: contacts/Contacts::encryption_domain
     ///
     /// Returns the domain. Is constant, will always return "Contacts"
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// const char* encryption_domain() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -177,11 +144,6 @@ class Contacts : public ConfigBase {
     ///
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `contact_info`.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<contact_info> get(std::string_view pubkey_hex) const;
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- hex string of the session id
@@ -199,11 +161,6 @@ class Contacts : public ConfigBase {
     ///
     /// NB: calling this does *not* add the session id to the contact list when called: that
     /// requires also calling `set` with this value.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// contact_info get_or_construct(std::string_view pubkey_hex) const;
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- hex string of the session id
@@ -225,16 +182,8 @@ class Contacts : public ConfigBase {
     ///     contacts.set(c);
     ///```
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set(const contact_info& contact);
-    /// ```
-    ///
     /// Inputs:
     /// - `contact` -- contact_info value to set
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set(const contact_info& contact);
 
     /// API: contacts/contacts::set_name
@@ -242,17 +191,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_name(std::string_view session_id, std::string name);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `name` -- string of the contacts name
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_name(std::string_view session_id, std::string name);
 
     /// API: contacts/contacts::set_nickname
@@ -260,17 +201,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_nickname(std::string_view session_id, std::string nickname);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `nickname` -- string of the contacts nickname
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_nickname(std::string_view session_id, std::string nickname);
 
     /// API: contacts/contacts::set_profile_pic
@@ -278,17 +211,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_profile_pic(std::string_view session_id, profile_pic pic);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `profile_pic` -- profile pic of the contact
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_profile_pic(std::string_view session_id, profile_pic pic);
 
     /// API: contacts/contacts::set_approved
@@ -296,17 +221,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_approved(std::string_view session_id, bool approved);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `approved` -- boolean on whether the contact is approved by me (to send messages to me)
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_approved(std::string_view session_id, bool approved);
 
     /// API: contacts/contacts::set_approved_me
@@ -314,18 +231,10 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_approved_me(std::string_view session_id, bool approved_me);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `approved_me` -- boolean on whether the contact has approved the user (so we can send
     /// messages to them)
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_approved_me(std::string_view session_id, bool approved_me);
 
     /// API: contacts/contacts::set_blocked
@@ -333,17 +242,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_blocked(std::string_view session_id, bool blocked);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `blocked` -- boolean on whether the contact is blocked by us
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_blocked(std::string_view session_id, bool blocked);
 
     /// API: contacts/contacts::set_priority
@@ -351,17 +252,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_priority(std::string_view session_id, int priority);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `priority` -- numerical value on the contacts priority (pinned, normal, hidden etc)
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_priority(std::string_view session_id, int priority);
 
     /// API: contacts/contacts::set_notifications
@@ -369,17 +262,9 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_notifications(std::string_view session_id, notify_mode notifications);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `notifications` -- detail on notifications
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_notifications(std::string_view session_id, notify_mode notifications);
 
     /// API: contacts/contacts::set_expiry
@@ -387,21 +272,10 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_expiry(
-    ///         std::string_view session_id,
-    ///         expiration_mode exp_mode,
-    ///         std::chrono::seconds expiration_timer = 0min);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `exp_mode` -- detail on expirations
     /// - `expiration_timer` -- how long the expiration timer should be, defaults to zero
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_expiry(
             std::string_view session_id,
             expiration_mode exp_mode,
@@ -412,28 +286,15 @@ class Contacts : public ConfigBase {
     /// Alternative to `set()` for setting a single field.  (If setting multiple fields at once you
     /// should use `set()` instead).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_created(std::string_view session_id, int64_t timestamp);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
     /// - `timestamp` -- standard unix timestamp of the time contact was created
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set_created(std::string_view session_id, int64_t timestamp);
 
     /// API: contacts/contacts::erase
     ///
     /// Removes a contact, if present.  Returns true if it was found and removed, false otherwise.
     /// Note that this removes all fields related to a contact, even fields we do not know about.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase(std::string_view session_id);
-    /// ```
     ///
     /// Inputs:
     /// - `session_id` -- hex string of the session id
@@ -446,11 +307,6 @@ class Contacts : public ConfigBase {
     ///
     /// Returns the number of contacts.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// size_t size() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -460,11 +316,6 @@ class Contacts : public ConfigBase {
     /// API: contacts/contacts::empty
     ///
     /// Returns true if the contact list is empty.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool empty() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -490,11 +341,6 @@ class Contacts : public ConfigBase {
     /// require two passes: an iterator loop to collect the required modifications, then a second
     /// pass to apply the modifications.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator begin() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -504,11 +350,6 @@ class Contacts : public ConfigBase {
     /// API: contacts/contacts::end
     ///
     /// Iterator for passing the end of the contacts
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator end() const;
-    /// ```
     ///
     /// Inputs: None
     ///

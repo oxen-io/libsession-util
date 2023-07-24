@@ -122,12 +122,6 @@ class ConfigBase {
         /// type; if omitted you get back the dict_value pointer itself.  If the field exists but is
         /// not the requested `T` type, you get back the key string pointer with a nullptr value.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// template <typename T = dict_value, typename = std::enable_if_t<is_dict_value<T>>>
-        /// std::pair<const std::string*, const T*> get_clean_pair() const;
-        /// ```
-        ///
         /// Inputs: None
         ///
         /// Outputs:
@@ -168,12 +162,6 @@ class ConfigBase {
         ///
         /// Same as above `get_clean_pair()` but just gives back the value, not the key
         ///
-        /// Declaration:
-        /// ```cpp
-        /// template <typename T = dict_value, typename = std::enable_if_t<is_dict_value<T>>>
-        /// const T* get_clean() const;
-        /// ```
-        ///
         /// Inputs: None
         ///
         /// Outputs:
@@ -189,12 +177,6 @@ class ConfigBase {
         /// create subdicts as needed to reach the target value.  If given a template type then we
         /// also cast the final dict_value variant into the given type (and replace if with a
         /// default-constructed value if it has the wrong type) then return a reference to that.
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// template <typename T = dict_value, typename = std::enable_if_t<is_dict_value<T>>>
-        /// T& get_dirty();
-        /// ```
         ///
         /// Inputs: None
         ///
@@ -232,17 +214,8 @@ class ConfigBase {
         /// Takes a value and assigns it to the dict only if that value is different.
         /// Will avoid dirtying the config if the assignement isnt changing anything
         ///
-        /// Declaration:
-        /// ```cpp
-        /// template <typename T>
-        /// void assign_if_changed(T value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- This will be assigned to the dict if it has changed
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         template <typename T>
         void assign_if_changed(T value) {
             if constexpr (is_one_of<T, config::set, config::dict>) {
@@ -267,16 +240,8 @@ class ConfigBase {
         ///
         /// Takes a value and assigns it to the dict if it does not exist
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void insert_if_missing(config::scalar&& value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- This will be assigned to the dict if it is missing
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void insert_if_missing(config::scalar&& value) {
             if (!_conf.is_dirty())
                 if (auto current = get_clean<config::set>(); current && current->count(value))
@@ -289,16 +254,8 @@ class ConfigBase {
         ///
         /// Erases from the dict
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void set_erase_impl(const config::scalar& value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- This will be deleted from the dict
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void set_erase_impl(const config::scalar& value) {
             if (!_conf.is_dirty())
                 if (auto current = get_clean<config::set>(); current && !current->count(value))
@@ -331,11 +288,6 @@ class ConfigBase {
         /// Descends into a dict, returning a copied proxy object for the path to the requested
         /// field.  Nothing is created by doing this unless you actually assign to a value.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// DictFieldProxy operator[](std::string subkey) const&;
-        /// ```
-        ///
         /// Inputs:
         /// - `subkey` -- searches through the dict this requested field
         ///
@@ -355,11 +307,6 @@ class ConfigBase {
         /// Same as above `operator[]&`, but when called on an rvalue reference we just mutate the
         /// current proxy to the new dict path.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// DictFieldProxy operator[](std::string subkey) &&;
-        /// ```
-        ///
         /// Inputs:
         /// - `subkey` -- searches through the dict this requested field
         ///
@@ -377,11 +324,6 @@ class ConfigBase {
         /// the given location, nullptr otherwise.  This allows a caller to get a reference to the
         /// actual key, rather than an ephemeral copy of the current key value.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// const std::string* key() const;
-        /// ```
-        ///
         /// Inputs: None
         ///
         /// Outputs:
@@ -393,11 +335,6 @@ class ConfigBase {
         /// Returns a const pointer to the string if one exists at the given location, nullptr
         /// otherwise.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// const std::string* string() const;
-        /// ```
-        ///
         /// Inputs: None
         ///
         /// Outputs:
@@ -407,11 +344,6 @@ class ConfigBase {
         /// API: base/ConfigBase::DictFieldProxy::uview
         ///
         /// Returns the value as a ustring_view, if it exists and is a string; nullopt otherwise.
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// std::optional<ustring_view> uview() const;
-        /// ```
         ///
         /// Inputs: None
         ///
@@ -429,11 +361,6 @@ class ConfigBase {
         /// string).  The returned view is directly into the value (or fallback) and so mustn't be
         /// used beyond the validity of either.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// std::string_view string_view_or(std::string_view fallback) const;
-        /// ```
-        ///
         /// Inputs:
         /// - `fallback` -- this value will be returned if it the requested value doesn't exist
         ///
@@ -449,11 +376,6 @@ class ConfigBase {
         ///
         /// Returns a copy of the value as a string, if it exists and is a string; returns
         /// `fallback` otherwise.
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// std::string string_or(std::string fallback) const;
-        /// ```
         ///
         /// Inputs:
         /// - `fallback` -- this value will be returned if it the requested value doesn't exist
@@ -471,11 +393,6 @@ class ConfigBase {
         /// Returns a const pointer to the integer if one exists at the given location, nullptr
         /// otherwise.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// const int64_t* integer() const;
-        /// ```
-        ///
         /// Inputs: None
         ///
         /// Outputs:
@@ -486,11 +403,6 @@ class ConfigBase {
         ///
         /// Returns the value as an integer or a fallback if the value doesn't exist (or isn't an
         /// integer).
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// int64_t integer_or(int64_t fallback) const;
-        /// ```
         ///
         /// Inputs:
         /// - `fallback` -- this value will be returned if it the requested value doesn't exist
@@ -508,11 +420,6 @@ class ConfigBase {
         /// Returns a const pointer to the set if one exists at the given location, nullptr
         /// otherwise.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// const config::set* set() const;
-        /// ```
-        ///
         /// Inputs: None
         ///
         /// Outputs:
@@ -524,11 +431,6 @@ class ConfigBase {
         /// Returns a const pointer to the dict if one exists at the given location, nullptr
         /// otherwise.  (You typically don't need to use this but can rather just use [] to descend
         /// into the dict).
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// const config::dict* dict() const;
-        /// ```
         ///
         /// Inputs: None
         ///
@@ -542,16 +444,8 @@ class ConfigBase {
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void operator=(std::string&& value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- replaces current value with given string
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void operator=(std::string&& value) { assign_if_changed(std::move(value)); }
 
         /// API: base/ConfigBase::DictFieldProxy::operator=(std::string_view)
@@ -560,16 +454,8 @@ class ConfigBase {
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path (this makes a copy).
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void operator=(std::string_view value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- replaces current value with given string view
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void operator=(std::string_view value) { *this = std::string{value}; }
 
         /// API: base/ConfigBase::DictFieldProxy::operator=(ustring_view)
@@ -578,16 +464,9 @@ class ConfigBase {
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path (this makes a copy).
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void operator=(ustring_view value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- replaces current value with given ustring_view
         ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         /// Same as above, but takes a ustring_view
         void operator=(ustring_view value) {
             *this = std::string{reinterpret_cast<const char*>(value.data()), value.size()};
@@ -599,16 +478,8 @@ class ConfigBase {
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void operator=(int64_t value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- replaces current value with given integer
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void operator=(int64_t value) { assign_if_changed(value); }
 
         /// API: base/ConfigBase::DictFieldProxy::operator=(config::set)
@@ -617,16 +488,8 @@ class ConfigBase {
         /// intermediate dicts needed to reach the given key, including replacing non-dict values if
         /// they currently exist along the path.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void operator=(config::set value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- replaces current value with given set
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void operator=(config::set value) { assign_if_changed(std::move(value)); }
 
         /// API: base/ConfigBase::DictFieldProxy::operator=(config::set)
@@ -636,27 +499,14 @@ class ConfigBase {
         /// to reach the given key, including replacing non-dict values if they currently exist
         /// along the path.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void operator=(config::dict value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- replaces current value with given dict
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void operator=(config::dict value) { assign_if_changed(std::move(value)); }
 
         /// API: base/ConfigBase::DictFieldProxy::exists
         ///
         /// Returns true if there is a value at the current key.  If a template type T is given, it
         /// only returns true if that value also is a `T`.
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// bool exists() const;
-        /// ```
         ///
         /// Inputs: None
         ///
@@ -670,11 +520,6 @@ class ConfigBase {
         /// API: base/ConfigBase::DictFieldProxy::exists
         ///
         /// Alias for `exists<T>()`
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// bool is() const;
-        /// ```
         ///
         /// Inputs: None
         ///
@@ -690,15 +535,7 @@ class ConfigBase {
         /// Removes the value at the current location, regardless of what it currently is.  This
         /// does nothing if the current location does not have a value.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void erase();
-        /// ```
-        ///
         /// Inputs: None
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void erase() {
             if (!_conf.is_dirty() && !get_clean())
                 return;
@@ -718,16 +555,8 @@ class ConfigBase {
         /// Adds a value to the set at the current location.  If the current value is not a set or
         /// does not exist then dicts will be created to reach it and a new set will be created.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void set_insert(std::string_view value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- The value to be set
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void set_insert(std::string_view value) {
             insert_if_missing(config::scalar{std::string{value}});
         }
@@ -737,16 +566,8 @@ class ConfigBase {
         /// Adds a value to the set at the current location.  If the current value is not a set or
         /// does not exist then dicts will be created to reach it and a new set will be created.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void set_insert(int64_t value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- The value to be set
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void set_insert(int64_t value) { insert_if_missing(config::scalar{value}); }
 
         /// API: base/ConfigBase::DictFieldProxy::set_erase(std::string_view)
@@ -755,16 +576,8 @@ class ConfigBase {
         /// exist then nothing happens.  If it does exist, but is not a set, it will be replaced
         /// with an empty set.  Otherwise the given value will be removed from the set, if present.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void set_erase(std::string_view value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- The value to be set
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void set_erase(std::string_view value) {
             set_erase_impl(config::scalar{std::string{value}});
         }
@@ -775,16 +588,8 @@ class ConfigBase {
         /// exist then nothing happens.  If it does exist, but is not a set, it will be replaced
         /// with an empty set.  Otherwise the given value will be removed from the set, if present.
         ///
-        /// Declaration:
-        /// ```cpp
-        /// void set_erase(int64_t value);
-        /// ```
-        ///
         /// Inputs:
         /// - `value` -- The value to be set
-        ///
-        /// Outputs:
-        /// - `void` -- Returns Nothing
         void set_erase(int64_t value) { set_erase_impl(scalar{value}); }
 
         /// API: base/ConfigBase::DictFieldProxy::emplace
@@ -792,12 +597,6 @@ class ConfigBase {
         /// Emplaces a value at the current location.  As with assignment, this creates dicts as
         /// needed along the keys to reach the target.  The existing value (if present) is destroyed
         /// to make room for the new one.
-        ///
-        /// Declaration:
-        /// ```cpp
-        /// template < typename T, typename... Args, typename = std::enable_if_t< is_one_of<T,
-        /// config::set, config::dict, int64_t, std::string>>> T& emplace(Args&&... args);
-        /// ```
         ///
         /// Inputs:
         /// - `args` -- Value to be emplaced at current location
@@ -834,11 +633,6 @@ class ConfigBase {
         /// Access a dict element.  This returns a proxy object for accessing the value, but does
         /// *not* auto-vivify the path (unless/until you assign to it).
         ///
-        /// Declaration:
-        /// ```cpp
-        /// DictFieldProxy operator[](std::string key) const&;
-        /// ```
-        ///
         /// Inputs:
         /// - `key` -- Access a dict element with this key
         ///
@@ -859,11 +653,6 @@ class ConfigBase {
     /// extra data).  Internally this extra data (if non-empty) is stored in the "+" key of the
     /// dump.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// virtual oxenc::bt_dict extra_data();
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -875,16 +664,8 @@ class ConfigBase {
     /// Called when constructing from a dump that has extra data.  The base implementation does
     /// nothing.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// virtual void load_extra_data(oxenc::bt_dict extra);
-    /// ```
-    ///
     /// Inputs:
     /// - `extra` -- bt_dict containing a previous dump of data
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     virtual void load_extra_data(oxenc::bt_dict extra) {}
 
     /// API: base/ConfigBase::load_key
@@ -896,16 +677,8 @@ class ConfigBase {
     /// is just the seed and pubkey concatenated together), and then calls `key(...)` with the seed.
     /// Throws std::invalid_argument if given something that doesn't match the required input.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void load_key(ustring_view ed25519_secretkey);
-    /// ```
-    ///
     /// Inputs:
     /// - `ed25519_secret_key` -- key is loaded for encryption
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     void load_key(ustring_view ed25519_secretkey);
 
   public:
@@ -922,11 +695,6 @@ class ConfigBase {
     /// Accesses the storage namespace where this config type is to be stored/loaded from.  See
     /// namespaces.hpp for the underlying integer values.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// Namespace storage_namespace() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -940,11 +708,6 @@ class ConfigBase {
     /// and 24 characters; use the class name (e.g. "UserProfile") unless you have something better
     /// to use.  This is rarely needed externally; it is public merely for testing purposes.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// const char* encryption_domain() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -956,11 +719,6 @@ class ConfigBase {
     /// The zstd compression level to use for this type.  Subclasses can override this if they have
     /// some particular special compression level, or to disable compression entirely (by returning
     /// std::nullopt).  The default is zstd level 1.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<int> compression_level() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -974,11 +732,6 @@ class ConfigBase {
     /// can override to return a different constant if desired.  More lags require more "diff"
     /// storage in the config messages, but also allow for a higher tolerance of simultaneous
     /// message conflicts.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// int config_lags() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -1024,11 +777,6 @@ class ConfigBase {
     /// Returns true if we are currently dirty (i.e. have made changes that haven't been serialized
     /// yet).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool is_dirty() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -1040,11 +788,6 @@ class ConfigBase {
     /// Returns true if we are curently clean (i.e. our current config is stored on the server and
     /// unmodified).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool is_clean() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -1055,11 +798,6 @@ class ConfigBase {
     ///
     /// The current config hash(es); this can be empty if the current hash is unknown or the current
     /// state is not clean (i.e. a push is needed or pending).
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::vector<std::string> current_hashes() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -1073,11 +811,6 @@ class ConfigBase {
     /// the server.  This will be true whenever `is_clean()` is false: that is, if we are currently
     /// "dirty" (i.e.  have changes that haven't been pushed) or are still awaiting confirmation of
     /// storage of the most recent serialized push data.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool needs_push() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -1106,11 +839,6 @@ class ConfigBase {
     /// Subclasses that need to perform pre-push tasks (such as pruning stale data) can override
     /// this to prune and then call the base method to perform the actual push generation.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::tuple<seqno_t, ustring, std::vector<std::string>> push();
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -1137,17 +865,9 @@ class ConfigBase {
     /// seqnos (e.g. calling with seqno 122 after having called with 123; the duplicates and earlier
     /// ones will just be ignored).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void confirm_pushed(seqno_t seqno, std::string msg_hash);
-    /// ```
-    ///
     /// Inputs:
     /// - `seqno` -- sequence number that was pushed
     /// - `msg_hash` -- message hash that was pushed
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     virtual void confirm_pushed(seqno_t seqno, std::string msg_hash);
 
     /// API: base/ConfigBase::dump
@@ -1157,10 +877,6 @@ class ConfigBase {
     /// method is *not* virtual: if subclasses need to store extra data they should set it in the
     /// `subclass_data` field.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// ustring dump();
-    /// ```
     /// Inputs: None
     ///
     /// Outputs:
@@ -1172,10 +888,6 @@ class ConfigBase {
     /// Returns true if something has changed since the last call to `dump()` that requires calling
     /// and saving the `dump()` data again.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool needs_dump();
-    /// ```
     /// Inputs: None
     ///
     /// Outputs:
@@ -1204,17 +916,10 @@ class ConfigBase {
     ///
     /// Will throw a std::invalid_argument if the key is not 32 bytes.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void add_key(ustring_view key, bool high_priority = true);
-    /// ```
     /// Inputs:
     /// - `ustring_view key` -- 32 byte binary key
     /// - `high_priority` -- Whether to add to front or back of key list. If true then key is added
     /// to beginning and replace highest-priority key for encryption
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     void add_key(ustring_view key, bool high_priority = true);
 
     /// API: base/ConfigBase::clear_keys
@@ -1222,10 +927,6 @@ class ConfigBase {
     /// Clears all stored encryption/decryption keys.  This is typically immediately followed with
     /// one or more `add_key` call to replace existing keys.  Returns the number of keys removed.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// int clear_keys();
-    /// ```
     /// Inputs: None
     ///
     /// Outputs:
@@ -1240,10 +941,6 @@ class ConfigBase {
     /// The optional second argument removes the key only from position `from` or higher.  It is
     /// mainly for internal use and is usually omitted.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool remove_key(ustring_view key, size_t from = 0);
-    /// ```
     /// Inputs:
     /// - `key` -- the key to remove from the key list
     /// - `from` -- optional agrument to specify which position to remove from, usually omitted
@@ -1257,10 +954,6 @@ class ConfigBase {
     /// Returns a vector of encryption keys, in priority order (i.e. element 0 is the encryption
     /// key, and the first decryption key).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::vector<ustring_view> get_keys() const;
-    /// ```
     /// Inputs: None
     ///
     /// Outputs:
@@ -1271,10 +964,6 @@ class ConfigBase {
     ///
     /// Returns the number of encryption keys.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// int key_count() const;
-    /// ```
     /// Inputs: None
     ///
     /// Outputs:
@@ -1285,10 +974,6 @@ class ConfigBase {
     ///
     /// Returns true if the given key is already in the keys list.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool has_key(ustring_view key) const;
-    /// ```
     /// Inputs:
     /// - `key` -- will search if this key exists in the key list
     ///
@@ -1302,10 +987,6 @@ class ConfigBase {
     /// be less than key_count().  The key at position 0 is used for encryption; for decryption all
     /// keys are tried in order, starting from position 0.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// ustring_view key(size_t i = 0) const;
-    /// ```
     /// Inputs:
     /// - `i` -- keys position in key list
     ///
