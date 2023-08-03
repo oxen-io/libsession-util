@@ -446,6 +446,57 @@ LIBSESSION_EXPORT const unsigned char* config_key(const config_object* conf, siz
 /// - `char*` -- encryption domain C-str used to encrypt values
 LIBSESSION_EXPORT const char* config_encryption_domain(const config_object* conf);
 
+/// API: base/config_set_sig_keys
+///
+/// Sets an Ed25519 keypair pair for signing and verifying config messages.  When set, this adds an
+/// additional signature for verification into the config message (*after* decryption) that
+/// validates a config message.
+///
+/// This is used in config contexts where the encryption/decryption keys are insufficient for
+/// permission verification to produce new messages, such as in groups where non-admins need to be
+/// able to decrypt group data, but are not permitted to push new group data.  In such a case only
+/// the admins have the secret key with which messages can be signed; regular users can only read,
+/// but cannot write, config messages.
+///
+/// When a signature public key (with or without a secret key) is set the config object enters a
+/// "signing-required" mode, which has some implications worth noting:
+/// - incoming messages must contain a signature that verifies with the public key; messages
+///   without such a signature will be dropped as invalid.
+/// - because of the above, a config object cannot push config updates without the secret key:
+///   thus any attempt to modify the config message with a pubkey-only config object will raise
+///   an exception.
+///
+/// Inputs:
+/// - `secret` -- pointer to a 64-byte sodium-style Ed25519 "secret key" buffer (technically the
+///   seed+precomputed pubkey concatenated together) that sets both the secret key and public key.
+LIBSESSION_EXPORT void config_set_sig_keys(config_object* conf, const unsigned char* secret);
+
+/// API: base/config_set_sig_pubkey
+///
+/// Sets a Ed25519 signing pubkey which incoming messages must be signed by to be acceptable.  This
+/// is intended for use when the secret key is not known (see `config_set_sig_keys()` to set both
+/// secret and pubkey keys together).
+///
+/// Inputs:
+/// - `pubkey` -- pointer to the 32-byte Ed25519 pubkey that must have signed incoming messages.
+LIBSESSION_EXPORT void config_set_sig_pubkey(config_object* conf, const unsigned char* pubkey);
+
+/// API: base/config_get_sig_pubkey
+///
+/// Returns a pointer to the 32-byte Ed25519 signing pubkey, if set.  Returns nullptr if there is no
+/// current signing pubkey.
+///
+/// Outputs:
+/// - pointer to the 32-byte pubkey, or NULL if not set.
+LIBSESSION_EXPORT const unsigned char* config_get_sig_pubkey(const config_object* conf);
+
+/// API: base/config_clear_sig_keys
+///
+/// Drops the signature pubkey and/or secret key, if the object has them.
+///
+/// Inputs: none.
+LIBSESSION_EXPORT void config_clear_sig_keys(config_object* conf);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

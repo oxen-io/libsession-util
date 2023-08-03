@@ -87,7 +87,7 @@ class ConfigMessage {
     /// (so that they can return a reference to it).
     seqno_hash_t seqno_hash_{0, {0}};
 
-    bool verified_signature_ = false;
+    std::optional<std::array<unsigned char, 64>> verified_signature_;
 
     // This will be set during construction from configs based on the merge result:
     // -1 means we had to merge one or more configs together into a new merged config
@@ -214,7 +214,7 @@ class ConfigMessage {
     /// Returns true if this message contained a valid, verified signature when it was parsed.
     /// Returns false otherwise (e.g. not loaded from verification at all; loaded without a
     /// verification function; or had no signature and a signature wasn't required).
-    bool verified_signature() const { return verified_signature_; }
+    bool verified_signature() const { return verified_signature_.has_value(); }
 
     /// Constructs a new MutableConfigMessage from this config message with an incremented seqno.
     /// The new config message's diff will reflect changes made after this construction.

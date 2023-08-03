@@ -2,6 +2,7 @@
 
 #include <oxenc/hex.h>
 #include <sodium/core.h>
+#include <sodium/crypto_sign_ed25519.h>
 #include <sodium/utils.h>
 #include <zstd.h>
 
@@ -19,6 +20,10 @@ using namespace std::literals;
 namespace session::config {
 
 void ConfigBase::set_state(ConfigState s) {
+    if (s == ConfigState::Dirty && is_readonly())
+        throw std::runtime_error{
+            "Unable to make changes to a read-only config object"};
+
     if (_state == ConfigState::Clean && !_curr_hash.empty()) {
         _old_hashes.insert(std::move(_curr_hash));
         _curr_hash.clear();
@@ -63,12 +68,21 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
     std::vector<ustring_view> all_confs;
     all_hashes.reserve(configs.size() + 1);
     all_confs.reserve(configs.size() + 1);
+
     // We serialize our current config and include it in the list of configs to be merged, as if it
     // had already been pushed to the server (so that this code will be identical whether or not the
     // value was pushed).
-    auto mine = _config->serialize();
-    all_hashes.emplace_back(_curr_hash);
-    all_confs.emplace_back(mine);
+    //
+    // (We skip this for seqno=0, but that's just a default-constructed, nothing-in-the-config case
+    // for which we also can't have or produce a signature, so there's no point in even trying to
+    // merge it).
+
+    ustring mine;
+    if (old_seqno != 0 || is_dirty()) {
+        mine = _config->serialize();
+        all_hashes.emplace_back(_curr_hash);
+        all_confs.emplace_back(mine);
+    }
 
     std::vector<std::pair<std::string_view, ustring>> plaintexts;
 
@@ -165,8 +179,8 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
     auto new_conf = make_config_message(
             _state == ConfigState::Dirty,
             all_confs,
-            nullptr, /* FIXME for signed messages: verifier */
-            nullptr, /* FIXME for signed messages: signer */
+            _config->verifier,
+            _config->signer,
             config_lags(),
             false, /* signature not optional (if we have a verifier) */
             [&](size_t i, const config_error& e) {
@@ -219,7 +233,7 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
     }
 
     return all_confs.size() - bad_confs.size() -
-           1;  // -1 because we don't count the first one (reparsing ourself).
+           (mine.empty() ? 0 : 1);  // -1 because we don't count the first one (reparsing ourself).
 }
 
 std::vector<std::string> ConfigBase::current_hashes() const {
@@ -271,8 +285,9 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     if (is_dirty())
         set_state(ConfigState::Waiting);
 
-    for (auto& old : _old_hashes)
-        obs.push_back(std::move(old));
+    if (!is_readonly())
+        for (auto& old : _old_hashes)
+            obs.push_back(std::move(old));
     _old_hashes.clear();
 
     return ret;
@@ -291,6 +306,10 @@ ustring ConfigBase::dump() {
     auto data = _config->serialize(false /* disable signing for local storage */);
     auto data_sv = from_unsigned_sv(data);
     oxenc::bt_list old_hashes;
+
+    if (is_readonly())
+        _old_hashes.clear();
+
     for (auto& old : _old_hashes)
         old_hashes.emplace_back(old);
     oxenc::bt_dict d{
@@ -307,15 +326,30 @@ ustring ConfigBase::dump() {
     return ustring{to_unsigned_sv(dumped)};
 }
 
-ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
+ConfigBase::ConfigBase(
+        std::optional<ustring_view> dump,
+        std::optional<ustring_view> ed25519_pubkey,
+        std::optional<ustring_view> ed25519_secretkey) {
+
     if (sodium_init() == -1)
         throw std::runtime_error{"libsodium initialization failed!"};
-    if (!dump) {
-        _config = std::make_unique<ConfigMessage>();
-        return;
-    }
 
-    oxenc::bt_dict_consumer d{from_unsigned_sv(*dump)};
+    if (dump)
+        init_from_dump(from_unsigned_sv(*dump));
+    else
+        _config = std::make_unique<ConfigMessage>();
+
+    if (ed25519_secretkey) {
+        if (ed25519_pubkey)
+            assert(*ed25519_pubkey == ed25519_secretkey->substr(32));
+        set_sig_keys(*ed25519_secretkey);
+    } else if (ed25519_pubkey) {
+        set_sig_pubkey(*ed25519_pubkey);
+    }
+}
+
+void ConfigBase::init_from_dump(std::string_view dump) {
+    oxenc::bt_dict_consumer d{dump};
     if (!d.skip_until("!"))
         throw std::runtime_error{"Unable to parse dumped config data: did not find '!' state key"};
     _state = static_cast<ConfigState>(d.consume_integer<int>());
@@ -330,9 +364,8 @@ ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
         // could store a dump.
         _config = std::make_unique<MutableConfigMessage>(
                 to_unsigned_sv(d.consume_string_view()),
-                nullptr,  // FIXME: verifier; but maybe want to delay setting this since it
-                          // shouldn't be signed?
-                nullptr,  // FIXME: signer
+                nullptr,  // verifier, set later
+                nullptr,  // signer, set later
                 config_lags(),
                 true /* signature optional because we don't sign the dump */);
     else
@@ -354,6 +387,8 @@ ConfigBase::ConfigBase(std::optional<ustring_view> dump) {
 
 ConfigBase::~ConfigBase() {
     sodium_free(_keys);
+    if (_sign_sk)
+        sodium_free(_sign_sk);
 }
 
 int ConfigBase::key_count() const {
@@ -453,6 +488,51 @@ void ConfigBase::load_key(ustring_view ed25519_secretkey) {
                 encryption_domain() + " requires an Ed25519 64-byte secret key or 32-byte seed"s};
 
     add_key(ed25519_secretkey.substr(0, 32));
+}
+
+void ConfigBase::set_sig_keys(ustring_view secret) {
+    if (secret.size() != 64)
+        throw std::invalid_argument{"Invalid sodium secret: expected 64 bytes"};
+    clear_sig_keys();
+    _sign_sk = static_cast<Ed25519Secret*>(sodium_malloc(sizeof(Ed25519Secret)));
+    std::memcpy(_sign_sk->data(), secret.data(), secret.size());
+    _sign_pk.emplace();
+    crypto_sign_ed25519_sk_to_pk(_sign_pk->data(), _sign_sk->data());
+
+    _config->verifier = [this](ustring_view data, ustring_view sig) {
+        return 0 == crypto_sign_ed25519_verify_detached(
+                            sig.data(), data.data(), data.size(), _sign_pk->data());
+    };
+    _config->signer = [this](ustring_view data) {
+        ustring sig;
+        sig.resize(64);
+        if (0 != crypto_sign_ed25519_detached(
+                         sig.data(), nullptr, data.data(), data.size(), _sign_sk->data()))
+            throw std::runtime_error{"Internal error: config signing failed!"};
+        return sig;
+    };
+}
+
+void ConfigBase::set_sig_pubkey(ustring_view pubkey) {
+    if (pubkey.size() != 32)
+        throw std::invalid_argument{"Invalid pubkey: expected 32 bytes"};
+    _sign_pk.emplace();
+    std::memcpy(_sign_pk->data(), pubkey.data(), 32);
+
+    _config->verifier = [this](ustring_view data, ustring_view sig) {
+        return 0 == crypto_sign_ed25519_verify_detached(
+                            sig.data(), data.data(), data.size(), _sign_pk->data());
+    };
+}
+
+void ConfigBase::clear_sig_keys() {
+    _sign_pk.reset();
+    if (_sign_sk) {
+        sodium_free(_sign_sk);
+        _sign_sk = nullptr;
+    }
+    _config->signer = nullptr;
+    _config->verifier = nullptr;
 }
 
 void set_error(config_object* conf, std::string e) {
@@ -594,6 +674,25 @@ LIBSESSION_EXPORT const unsigned char* config_key(const config_object* conf, siz
 
 LIBSESSION_EXPORT const char* config_encryption_domain(const config_object* conf) {
     return unbox(conf)->encryption_domain();
+}
+
+LIBSESSION_EXPORT void config_set_sig_keys(config_object* conf, const unsigned char* secret) {
+    unbox(conf)->set_sig_keys({secret, 64});
+}
+
+LIBSESSION_EXPORT void config_set_sig_pubkey(config_object* conf, const unsigned char* pubkey) {
+    unbox(conf)->set_sig_pubkey({pubkey, 32});
+}
+
+LIBSESSION_EXPORT const unsigned char* config_get_sig_pubkey(const config_object* conf) {
+    const auto& pk = unbox(conf)->get_sig_pubkey();
+    if (pk)
+        return pk->data();
+    return nullptr;
+}
+
+LIBSESSION_EXPORT void config_clear_sig_keys(config_object* conf) {
+    unbox(conf)->clear_sig_keys();
 }
 
 LIBSESSION_EXPORT void config_set_logger(

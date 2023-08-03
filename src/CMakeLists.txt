@@ -22,6 +22,7 @@ add_library(config
     config/convo_info_volatile.cpp
     config/encrypt.cpp
     config/error.c
+    config/groups/info.cpp
     config/internal.cpp
     config/user_groups.cpp
     config/user_profile.cpp

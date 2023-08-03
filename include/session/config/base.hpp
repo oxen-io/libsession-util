@@ -3,6 +3,7 @@
 #include <cassert>
 #include <memory>
 #include <session/config.hpp>
+#include <stdexcept>
 #include <type_traits>
 #include <unordered_set>
 #include <variant>
@@ -55,6 +56,8 @@ class ConfigBase {
     // Tracks our current state
     ConfigState _state = ConfigState::Clean;
 
+    void init_from_dump(std::string_view dump);
+
     static constexpr size_t KEY_SIZE = 32;
 
     // Contains the base key(s) we use to encrypt/decrypt messages.  If non-empty, the .front()
@@ -64,6 +67,15 @@ class ConfigBase {
     Key* _keys = nullptr;
     size_t _keys_size = 0;
     size_t _keys_capacity = 0;
+
+    // Contains an optional signing keypair; if the public key is set then incoming messages must
+    // contain a valid signature from that key to be loaded.  If the private key is set then a
+    // signature will be added to the message signed by that key.  (Note that if a public key is set
+    // but not a private key then this config object cannot push config changes!)
+    using Ed25519PubKey = std::array<unsigned char, 32>;
+    using Ed25519Secret = std::array<unsigned char, 64>;
+    std::optional<Ed25519PubKey> _sign_pk = std::nullopt;
+    Ed25519Secret* _sign_sk = nullptr;
 
     // Contains the current active message hash, as fed into us in `confirm_pushed()`.  Empty if we
     // don't know it yet.  When we dirty the config this value gets moved into `old_hashes_` to be
@@ -78,7 +90,15 @@ class ConfigBase {
     // Constructs a base config by loading the data from a dump as produced by `dump()`.  If the
     // dump is nullopt then an empty base config is constructed with no config settings and seqno
     // set to 0.
-    explicit ConfigBase(std::optional<ustring_view> dump = std::nullopt);
+    //
+    // Can optionally be passed a pubkey or secretkey (or both, but the pubkey can be obtained from
+    // the secretkey automatically): if either is given, the config object is set up to require
+    // verification of incoming messages using the associated pubkey, and will be signed using the
+    // secretkey (if a secret key is given).
+    explicit ConfigBase(
+            std::optional<ustring_view> dump = std::nullopt,
+            std::optional<ustring_view> ed25519_pubkey = std::nullopt,
+            std::optional<ustring_view> ed25519_secretkey = std::nullopt);
 
     // Tracks whether we need to dump again; most mutating methods should set this to true (unless
     // calling set_state, which sets to to true implicitly).
@@ -684,6 +704,13 @@ class ConfigBase {
   public:
     virtual ~ConfigBase();
 
+    // Object is non-movable and non-copyable; you need to hold it in a smart pointer if it needs to
+    // be managed.
+    ConfigBase(ConfigBase&&) = delete;
+    ConfigBase(const ConfigBase&) = delete;
+    ConfigBase& operator=(ConfigBase&&) = delete;
+    ConfigBase& operator=(const ConfigBase&) = delete;
+
     // Proxy class providing read and write access to the contained config data.
     const DictFieldRoot data{*this};
 
@@ -793,6 +820,43 @@ class ConfigBase {
     /// Outputs:
     /// - `bool` -- Returns true if changes have been serialized
     bool is_clean() const { return _state == ConfigState::Clean; }
+
+    /// API: base/ConfigBase::is_readonly
+    ///
+    /// Returns true if this config object is in read-only mode: specifically that means that this
+    /// config object can only absorb new config entries but is incapable of producing new entries,
+    /// and thus cannot modify or merge configs.
+    ///
+    /// This currently happens for config messages that require verification of a signature but do
+    /// not have the private keys required to *produce* a signature.  For private config types, such
+    /// as single-user configs, this will never be the case (as those can only be decrypted in the
+    /// first place if you possess the private key).  Note, however, that additional conditions for
+    /// read-only could be added in the future, so this being true should not *strictly* be
+    /// interpreted as a cannot-sign issue.
+    ///
+    /// There are some consequences of being readonly:
+    ///
+    /// - any attempt to modify config values will throw an exception.
+    /// - when multiple conflicting config objects are loaded only the "best" (i.e. higher seqno,
+    ///   with ties determined by hashed value) config is loaded; if values need to be merged this
+    ///   config will ignore the alternate values until someone who can produce a signature produces
+    ///   a merged config that properly incorporates (and signs) the updated config.
+    /// - read-only configurations never have anything to push, that is, `needs_push()` will always
+    ///   be false.
+    /// - it is still possible to `push()` a config anyway, but this only returns the current config
+    ///   and signature of the message currently being used, and *never* returns any obsolete
+    ///   hashes.  Typically this is unlikely to be useful, as it is expected that only signers (who
+    ///   can update and merge) are likely also the only ones who can actually push new configs to
+    ///   the swarm.
+    /// - read-only configurations do not reliably track obsolete hashes as the obsolesence logic
+    ///   depends on the results of merging, which read-only configs do not support.  (If you do
+    ///   call `push()`, you'll always just get back an empty list of obsolete hashes).
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `bool` true if this config object is read-only
+    bool is_readonly() const { return _config->verifier && !_config->signer; }
 
     /// API: base/ConfigBase::current_hashes
     ///
@@ -996,6 +1060,56 @@ class ConfigBase {
         assert(i < _keys_size);
         return {_keys[i].data(), _keys[i].size()};
     }
+
+    /// API: base/ConfigBase::set_sig_keys
+    ///
+    /// Sets an Ed25519 keypair pair for signing and verifying config messages.  When set, this adds
+    /// an additional signature for verification into the config message (*after* decryption) that
+    /// validates a config message.
+    ///
+    /// This is used in config contexts where the encryption/decryption keys are insufficient for
+    /// permission verification to produce new messages, such as in groups where non-admins need to
+    /// be able to decrypt group data, but are not permitted to push new group data.  In such a case
+    /// only the admins have the secret key with which messages can be signed; regular users can
+    /// only read, but cannot write, config messages.
+    ///
+    /// When a signature public key (with or without a secret key) is set the config object enters
+    /// a "signing-required" mode, which has some implications worth noting:
+    /// - incoming messages must contain a signature that verifies with the public key; messages
+    ///   without such a signature will be dropped as invalid.
+    /// - because of the above, a config object cannot push config updates without the secret key:
+    ///   thus any attempt to modify the config message with a pubkey-only config object will raise
+    ///   an exception.
+    ///
+    /// Inputs:
+    /// - `secret` -- the 64-byte sodium-style Ed25519 "secret key" (actually the seed+pubkey
+    ///   concatenated together) that sets both the secret key and public key.
+    void set_sig_keys(ustring_view secret);
+
+    /// API: base/ConfigBase::set_sig_pubkey
+    ///
+    /// Sets a Ed25519 signing pubkey which incoming messages must be signed by to be acceptable.
+    /// This is intended for use when the secret key is not known (see `set_sig_keys()` to set both
+    /// secret and pubkey keys together).
+    ///
+    /// Inputs:
+    /// - `pubkey` -- the 32 byte Ed25519 pubkey that must have signed incoming messages
+    void set_sig_pubkey(ustring_view pubkey);
+
+    /// API: base/ConfigBase::get_sig_pubkey
+    ///
+    /// Returns a const reference to the 32-byte Ed25519 signing pubkey, if set.
+    ///
+    /// Outputs:
+    /// - reference to the 32-byte pubkey, or `std::nullopt` if not set.
+    const std::optional<std::array<unsigned char, 32>>& get_sig_pubkey() const { return _sign_pk; }
+
+    /// API: base/ConfigBase::clear_sig_keys
+    ///
+    /// Drops the signature pubkey and/or secret key, if the object has them.
+    ///
+    /// Inputs: none.
+    void clear_sig_keys();
 };
 
 // The C++ struct we hold opaquely inside the C internals struct.  This is designed so that any

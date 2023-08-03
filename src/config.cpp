@@ -593,9 +593,12 @@ ConfigMessage::ConfigMessage(
             if (sig.empty()) {
                 if (!signature_optional)
                     throw missing_signature{"Config signature is missing"};
-            } else if (verified_signature_ = verifier(to_verify, sig); !verified_signature_) {
+            } else if (sig.size() != 64)
+                throw signature_error{"Config signature is invalid (not 64B)"};
+            else if (!verifier(to_verify, sig))
                 throw signature_error{"Config signature failed verification"};
-            }
+            else
+                std::memcpy(verified_signature_.emplace().data(), sig.data(), 64);
         }
     } catch (const oxenc::bt_deserialize_invalid& err) {
         throw config_parse_error{"Failed to parse config file: "s + err.what()};
@@ -657,7 +660,7 @@ ConfigMessage::ConfigMessage(
     assert(curr_confs >= 1);
 
     if (curr_confs == 1) {
-        // We have just one config left after all that, so we become it directly as-is
+        // We have just one non-redundant config left after all that, so we become it directly as-is
         for (int i = 0; i < configs.size(); i++) {
             if (!configs[i].second) {
                 *this = std::move(configs[i].first);
@@ -665,12 +668,32 @@ ConfigMessage::ConfigMessage(
                 return;
             }
         }
-        assert(false);
+        assert(!"we counted one good config but couldn't find it?!");
     }
+
+    // Otherwise we have more than one valid config, so have to merge them.
+
+    // ... Unless we require signature verification but can't sign, in which case  we can't actually
+    // produce a proper merge, so we will just keep the highest (highest seqno, hash) config and use
+    // that, dropping the rest.  Someone else (with signing power) will have to merge and push the
+    // merge out to us.
+    if (verifier && !signer && !signature_optional) {
+        auto best_it =
+                std::max_element(configs.begin(), configs.end(), [](const auto& a, const auto& b) {
+                    if (a.second != b.second)  // Exactly one of the two is redundant
+                        return a.second;       // a < b iff a is redundant
+                    return a.first.seqno_hash_ < b.first.seqno_hash_;
+                });
+        *this = std::move(best_it->first);
+        unmerged_ = std::distance(configs.begin(), best_it);
+        return;
+    }
+
 
     unmerged_ = -1;
 
-    // Clear any redundant messages
+    // Clear any redundant messages. (we do it *here* rather than above because, in the
+    // single-good-config case, above, we need the index of the good config for `unmerged_`).
     configs.erase(
             std::remove_if(configs.begin(), configs.end(), [](const auto& c) { return c.second; }),
             configs.end());
@@ -750,6 +773,7 @@ const oxenc::bt_dict& ConfigMessage::diff() {
 }
 
 const oxenc::bt_dict& MutableConfigMessage::diff() {
+    verified_signature_.reset();
     prune();
     diff_ = diff_impl(orig_data_, data_).value_or(oxenc::bt_dict{});
     return diff_;
@@ -792,7 +816,15 @@ ustring ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enab
     unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "~");
     assert(unknown_it == unknown_.end());
 
-    if (signer && enable_signing) {
+    if (verified_signature_) {
+        // We have the signature attached to the current message, so use it.  (This will get cleared
+        // if we do anything that changes the config).
+        outer.append(
+                "~",
+                std::string_view{
+                        reinterpret_cast<const char*>(verified_signature_->data()),
+                        verified_signature_->size()});
+    } else if (signer && enable_signing) {
         auto to_sign = to_unsigned_sv(outer.view());
         // The view contains the trailing "e", but we don't sign it (we are going to append the
         // signature there instead):
