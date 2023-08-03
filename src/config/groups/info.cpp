@@ -24,7 +24,7 @@ Info::Info(
         std::optional<ustring_view> dumped) :
         ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey} {
     for (const auto& k : keys)
-        add_key(k);
+        add_key(k, false);
 }
 
 std::optional<std::string_view> Info::get_name() const {

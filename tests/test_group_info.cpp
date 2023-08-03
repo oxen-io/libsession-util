@@ -30,10 +30,17 @@ TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
     CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
-    std::vector<ustring> enc_keys;
-    enc_keys.push_back("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes);
+    std::vector<ustring> enc_keys1;
+    enc_keys1.push_back(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes);
+    std::vector<ustring> enc_keys2;
+    enc_keys2.push_back(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
+    enc_keys2.push_back(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes);
+
     // This Info object has only the public key, not the priv key, and so cannot modify things:
-    groups::Info ginfo{view_vec(enc_keys), to_usv(ed_pk), std::nullopt, std::nullopt};
+    groups::Info ginfo{view_vec(enc_keys1), to_usv(ed_pk), std::nullopt, std::nullopt};
 
     REQUIRE_THROWS_WITH(
             ginfo.set_name("Super Group!"), "Unable to make changes to a read-only config object");
@@ -42,7 +49,7 @@ TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
     CHECK(!ginfo.is_dirty());
 
     // This one is good and has the right signature:
-    groups::Info ginfo_rw{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+    groups::Info ginfo_rw{view_vec(enc_keys1), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
     ginfo_rw.set_name("Super Group!!");
     CHECK(ginfo_rw.is_dirty());
@@ -62,7 +69,7 @@ TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
     CHECK(ginfo.merge(merge_configs) == 1);
     CHECK_FALSE(ginfo.needs_push());
 
-    groups::Info ginfo_rw2{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+    groups::Info ginfo_rw2{view_vec(enc_keys1), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
     CHECK(ginfo_rw2.merge(merge_configs) == 1);
     CHECK_FALSE(ginfo.needs_push());
 
@@ -85,7 +92,7 @@ TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
             ed_sk_bad1.data(),
             reinterpret_cast<const unsigned char*>(seed_bad1.data()));
 
-    groups::Info ginfo_bad1{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+    groups::Info ginfo_bad1{view_vec(enc_keys1), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
     ginfo_bad1.merge(merge_configs);
     ginfo_bad1.set_sig_keys(to_usv(ed_sk_bad1));
     ginfo_bad1.set_name("Bad name, BAD!");
@@ -158,20 +165,13 @@ TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
         REQUIRE(et);
         CHECK(*et == 365 * 24h);
     };
-    SECTION("read-only group info") {
-        test(ginfo);
-    }
-    SECTION("group writer 1") {
-        test(ginfo_rw);
-    }
-    SECTION("group writer 2") {
-        test(ginfo_rw2);
-    }
-
+    test(ginfo);
+    test(ginfo_rw);
+    test(ginfo_rw2);
 
     CHECK(ginfo.needs_dump());
     auto dump = ginfo.dump();
-    groups::Info ginfo2{view_vec(enc_keys), to_usv(ed_pk), std::nullopt, dump};
+    groups::Info ginfo2{view_vec(enc_keys1), to_usv(ed_pk), std::nullopt, dump};
 
     CHECK(!ginfo.needs_dump());
     CHECK(!ginfo2.needs_dump());
@@ -184,4 +184,41 @@ TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
     CHECK(t4 == t5);
     CHECK(o4.empty());
     CHECK(o5.empty());
+
+    // This account has a different primary decryption key
+    groups::Info ginfo_rw3{view_vec(enc_keys2), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+    CHECK(ginfo_rw3.merge(merge_configs) == 1);
+    CHECK(ginfo_rw3.get_name() == "Super Group 2");
+
+    auto [s6, t6, o6] = ginfo_rw3.push();
+    CHECK(to_hex(ginfo_rw3.key(0)) ==
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    REQUIRE(ginfo_rw3.key_count() == 2);
+    CHECK(to_hex(ginfo_rw3.key(1)) ==
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    CHECK(s6 == s5);
+    CHECK(t6.size() == t23.size());
+    CHECK(t6 != t23);
+
+    ginfo_rw3.set_profile_pic(
+            "http://example.com/12345",
+            "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
+    CHECK(ginfo_rw3.needs_push());
+    auto [s7, t7, o7] = ginfo_rw3.push();
+    CHECK(s7 == s6 + 1);
+    CHECK(t7 != t6);
+    CHECK(o7 == std::vector{{"fakehash23"s}});
+
+    merge_configs.clear();
+    merge_configs.emplace_back("fakehash7", t7);
+    // If we don't have the new "bbb" key loaded yet, this will fail:
+    CHECK(ginfo.merge(merge_configs) == 0);
+
+    ginfo.add_key(enc_keys2.front());
+    CHECK(ginfo.merge(merge_configs) == 1);
+
+    auto pic = ginfo.get_profile_pic();
+    CHECK_FALSE(pic.empty());
+    CHECK(pic.url == "http://example.com/12345");
+    CHECK(pic.key == "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
 }
