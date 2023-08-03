@@ -92,11 +92,6 @@ struct legacy_group_info : base_group_info {
     /// Accesses the session ids (in hex) of members of this group.  The key is the hex session_id;
     /// the value indicates whether the member is an admin (true) or not (false).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// const std::map<std::string, bool>& members() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -110,11 +105,6 @@ struct legacy_group_info : base_group_info {
     ///
     /// Returns a pair of the number of admins, and regular members of this group.  (If all you want
     /// is the overall number just use `.members().size()` instead).
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::pair<size_t, size_t> counts() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -131,11 +121,6 @@ struct legacy_group_info : base_group_info {
     /// was inserted or changed admin status, false if the member already existed.  Throws
     /// std::invalid_argument if the given session id is invalid.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool insert(std::string session_id, bool admin);
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- Hex string of the Session ID
     /// - `admin` -- boolean if the user is to have admin powers
@@ -148,11 +133,6 @@ struct legacy_group_info : base_group_info {
     ///
     /// Removes a member (by session id) from this group.  Returns true if the member was
     /// removed, false if the member was not present.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase(const std::string& session_id);
-    /// ```
     ///
     /// Inputs:
     /// - `session_id` -- Hex string of the Session ID
@@ -215,11 +195,6 @@ class UserGroups : public ConfigBase {
     /// secret key for generating the data encryption key.  To construct a blank list (i.e. with no
     /// pre-existing dumped data to load) pass `std::nullopt` as the second argument.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
-    /// ```
-    ///
     /// Inputs:
     /// - `ed25519_secretkey` -- contains the libsodium secret key used to encrypt/decrypt the
     /// data when pushing/pulling from the swarm.  This can either be the full 64-byte value (which
@@ -236,11 +211,6 @@ class UserGroups : public ConfigBase {
     ///
     /// Returns the Contacts namespace. Is constant, will always return 5
     ///
-    /// Declaration:
-    /// ```cpp
-    /// Namespace storage_namespace() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -250,11 +220,6 @@ class UserGroups : public ConfigBase {
     /// API: user_groups/UserGroups::encryption_domain
     ///
     /// Returns the domain. Is constant, will always return "Contacts"
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// const char* encryption_domain() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -269,13 +234,6 @@ class UserGroups : public ConfigBase {
     /// filled out `community_info`.  Note that the `room` argument here is case-insensitive, but
     /// the returned value will be the room as stored in the object (i.e. it may have a different
     /// case from the requested `room` value).
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<community_info> get_community(
-    ///         std::string_view base_url, std::string_view room) const;
-    /// std::optional<community_info> get_community(std::string_view partial_url) const;
-    /// ```
     ///
     /// Inputs:
     /// - First Function:
@@ -298,17 +256,12 @@ class UserGroups : public ConfigBase {
     /// Looks up and returns a legacy group by group ID (hex, looks like a Session ID).  Returns
     /// nullopt if the group was not found, otherwise returns a filled out `legacy_group_info`.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<legacy_group_info> get_legacy_group(std::string_view pubkey_hex) const;
-    /// ```
-    ///
     /// Inputs:
     /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
     ///
     /// Outputs:
     /// - `std::optional<legacy_group_info>` - Returns the filled out legacy_group_info struct if
-    /// found
+    ///   found
     std::optional<legacy_group_info> get_legacy_group(std::string_view pubkey_hex) const;
 
     /// API: user_groups/UserGroups::get_or_construct_community
@@ -353,11 +306,6 @@ class UserGroups : public ConfigBase {
     /// Shortcut to pass the url through community::parse_full_url, then call the above
     /// `get_or_construct_community`.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// community_info get_or_construct_community(std::string_view full_url) const;
-    /// ```
-    ///
     /// Inputs:
     /// - `full_url` -- text string containing the full URL including pubkey
     ///
@@ -368,11 +316,6 @@ class UserGroups : public ConfigBase {
     /// API: user_groups/UserGroups::get_or_construct_legacy_group
     ///
     /// Gets or constructs a blank legacy_group_info for the given group id.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// legacy_group_info get_or_construct_legacy_group(std::string_view pubkey_hex) const;
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
@@ -399,9 +342,6 @@ class UserGroups : public ConfigBase {
     ///
     /// Inputs:
     /// - `info` -- group info struct to insert. Can be either community_info or legacy_group_info
-    ///
-    /// Outputs:
-    /// - `void` - Returns nothing
     void set(const community_info& info);
     void set(const legacy_group_info& info);
 
@@ -418,11 +358,6 @@ class UserGroups : public ConfigBase {
     /// Removes a community group.  Returns true if found and removed, false if not present.
     /// Arguments are the same as `get_community`.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase_community(std::string_view base_url, std::string_view room);
-    /// ```
-    ///
     /// Inputs:
     /// - `base_url` -- text string containing the base URL
     /// - `room` -- room token to lookup
@@ -435,11 +370,6 @@ class UserGroups : public ConfigBase {
     ///
     /// Removes a legacy group conversation.  Returns true if found and removed, false if not
     /// present.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase_legacy_group(std::string_view pubkey_hex);
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
@@ -473,11 +403,6 @@ class UserGroups : public ConfigBase {
     ///
     /// Returns the number of groups (of any type).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// size_t size() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -487,11 +412,6 @@ class UserGroups : public ConfigBase {
     /// API: user_groups/UserGroups::size_communities
     ///
     /// Returns the number of communities
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// size_t size_communities() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -503,11 +423,6 @@ class UserGroups : public ConfigBase {
     ///
     /// Returns the number of legacy groups
     ///
-    /// Declaration:
-    /// ```cpp
-    /// size_t size_legacy_groups() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -517,11 +432,6 @@ class UserGroups : public ConfigBase {
     /// API: user_groups/UserGroups::empty
     ///
     /// Returns true if the group list is empty.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool empty() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -551,11 +461,6 @@ class UserGroups : public ConfigBase {
     /// be done in two passes: once to collect the modifications, then a loop applying the collected
     /// modifications.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator begin() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -565,11 +470,6 @@ class UserGroups : public ConfigBase {
     /// API: user_groups/UserGroups::end
     ///
     /// Iterator for passing the end of the groups
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator end() const;
-    /// ```
     ///
     /// Inputs: None
     ///

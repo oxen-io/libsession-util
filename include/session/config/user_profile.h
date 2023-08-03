@@ -206,9 +206,6 @@ LIBSESSION_EXPORT int user_profile_get_nts_expiry(const config_object* conf);
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `expiry` -- [in] Integer of the expiry timer in seconds
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void user_profile_set_nts_expiry(config_object* conf, int expiry);
 
 #ifdef __cplusplus

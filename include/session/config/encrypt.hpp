@@ -27,11 +27,6 @@ namespace session::config {
 ///
 /// Throw std::invalid_argument on bad input (i.e. from invalid key_base or domain).
 ///
-/// Declaration:
-/// ```cpp
-/// ustring encrypt(ustring_view message, ustring_view key_base, std::string_view domain);
-/// ```
-///
 /// Inputs:
 /// - `message` -- message to encrypt
 /// - `key_base` -- Fixed key that all clients, must be 32 bytes.
@@ -46,18 +41,10 @@ ustring encrypt(ustring_view message, ustring_view key_base, std::string_view do
 /// Same as above `encrypt`, but modifies `message` in place.  `message` gets encrypted plus has the
 /// extra data and nonce appended.
 ///
-/// Declaration:
-/// ```cpp
-/// void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain);
-/// ```
-///
 /// Inputs:
 /// - `message` -- message to encrypt
 /// - `key_base` -- Fixed key that all clients, must be 32 bytes.
 /// - `domain` -- short string for the keyed hash
-///
-/// Outputs:
-/// - `void` -- Returns nothing
 void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain);
 
 /// Constant amount of extra bytes required to be appended when encrypting.
@@ -74,11 +61,6 @@ struct decrypt_error : std::runtime_error {
 /// given to encrypt or else decryption fails.  Upon decryption failure a `decrypt_error` exception
 /// is thrown.
 ///
-/// Declaration:
-/// ```cpp
-/// ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view domain);
-/// ```
-///
 /// Inputs:
 /// - `ciphertext` -- message to decrypt
 /// - `key_base` -- Fixed key that all clients, must be 32 bytes.
@@ -93,18 +75,10 @@ ustring decrypt(ustring_view ciphertext, ustring_view key_base, std::string_view
 /// Same as above `decrypt()`, but does in in-place.  The string gets shortend to the plaintext
 /// after this call.
 ///
-/// Declaration:
-/// ```cpp
-/// void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_view domain);
-/// ```
-///
 /// Inputs:
 /// - `ciphertext` -- message to decrypt
 /// - `key_base` -- Fixed key that all clients, must be 32 bytes.
 /// - `domain` -- short string for the keyed hash
-///
-/// Outputs:
-/// - `void` -- Returns nothing
 void decrypt_inplace(ustring& ciphertext, ustring_view key_base, std::string_view domain);
 
 /// Returns the target size of the message with padding, assuming an additional `overhead` bytes of
@@ -127,18 +101,10 @@ inline constexpr size_t padded_size(size_t s, size_t overhead = ENCRYPT_DATA_OVE
 /// \param data - the data; this is modified in place.
 /// \param overhead -
 ///
-/// Declaration:
-/// ```cpp
-/// void pad_message(ustring& data, size_t overhead = ENCRYPT_DATA_OVERHEAD);
-/// ```
-///
 /// Inputs:
 /// - `data` -- the data; this is modified in place
 /// - `overhead` -- encryption overhead to account for to reach the desired padded size.  The
 /// default, if omitted, is the space used by the `encrypt()` function defined above.
-///
-/// Outputs:
-/// - `void` -- Returns nothing
 void pad_message(ustring& data, size_t overhead = ENCRYPT_DATA_OVERHEAD);
 
 }  // namespace session::config

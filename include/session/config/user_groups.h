@@ -236,9 +236,6 @@ LIBSESSION_EXPORT ugroups_legacy_group_info* user_groups_get_or_construct_legacy
 ///
 /// Inputs:
 /// - `group` -- [in] Pointer to ugroups_legacy_group_info
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void ugroups_legacy_group_free(ugroups_legacy_group_info* group);
 
 /// API: user_groups/user_groups_set_community
@@ -256,9 +253,6 @@ LIBSESSION_EXPORT void ugroups_legacy_group_free(ugroups_legacy_group_info* grou
 /// Inputs:
 /// - `conf` -- [in] Pointer to config_object object
 /// - `group` -- [in] Pointer to a community group info object
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void user_groups_set_community(
         config_object* conf, const ugroups_community_info* group);
 
@@ -280,9 +274,6 @@ LIBSESSION_EXPORT void user_groups_set_community(
 /// Inputs:
 /// - `conf` -- [in] Pointer to config_object object
 /// - `group` -- [in] Pointer to a legacy group info object
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void user_groups_set_legacy_group(
         config_object* conf, const ugroups_legacy_group_info* group);
 
@@ -303,9 +294,6 @@ LIBSESSION_EXPORT void user_groups_set_legacy_group(
 /// Inputs:
 /// - `conf` -- [in] Pointer to config_object object
 /// - `group` -- [in] Pointer to a legacy group info object
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void user_groups_set_free_legacy_group(
         config_object* conf, ugroups_legacy_group_info* group);
 
@@ -433,9 +421,6 @@ LIBSESSION_EXPORT bool ugroups_legacy_members_next(
 ///
 /// Inputs:
 /// - `it` -- [in] The ugroups_legacy_members iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it);
 
 /// API: user_groups/ugroups_legacy_members_erase
@@ -460,9 +445,6 @@ LIBSESSION_EXPORT void ugroups_legacy_members_free(ugroups_legacy_members_iterat
 ///
 /// Inputs:
 /// - `it` -- [in] The ugroups_legacy_members iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void ugroups_legacy_members_erase(ugroups_legacy_members_iterator* it);
 
 /// API: user_groups/ugroups_legacy_members_add
@@ -688,9 +670,6 @@ LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_legacy_groups(
 ///
 /// Inputs:
 /// - `it` -- [in, out] The Iterator
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void user_groups_iterator_free(user_groups_iterator* it);
 
 /// API: user_groups/user_groups_iterator_done
@@ -724,9 +703,6 @@ LIBSESSION_EXPORT bool user_groups_iterator_done(user_groups_iterator* it);
 ///
 /// Inputs:
 /// - `it` -- [in, out] The Iterator
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
 LIBSESSION_EXPORT void user_groups_iterator_advance(user_groups_iterator* it);
 
 /// API: user_groups/user_groups_it_is_community

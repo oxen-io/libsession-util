@@ -35,11 +35,6 @@ struct profile_pic {
     ///
     /// Returns true if either url or key are empty (or invalid)
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool empty() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -51,15 +46,7 @@ struct profile_pic {
     /// Clears the current url/key, if set.  This is just a shortcut for calling `.clear()` on each
     /// of them.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void clear();
-    /// ```
-    ///
     /// Inputs: None
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     void clear() {
         url.clear();
         key.clear();
@@ -75,16 +62,8 @@ struct profile_pic {
     /// just setting `.key` directly, except that it will throw if the provided key is invalid (i.e.
     /// neither empty nor 32 bytes).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_key(ustring new_key);
-    /// ```
-    ///
     /// Inputs:
     /// - `new_key` -- binary data of a new key to be set. Must be 32 bytes
-    ///
-    /// Outputs:
-    /// - `void` -- Returns Nothing
     void set_key(ustring new_key) {
         check_key(new_key);
         key = std::move(new_key);

@@ -40,9 +40,6 @@ typedef struct config_object {
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to config_object object
-///
-/// Outputs:
-/// - `void` -- nothing returned
 LIBSESSION_EXPORT void config_free(config_object* conf);
 
 typedef enum config_log_level {
@@ -80,9 +77,6 @@ typedef enum config_log_level {
 /// - `conf` -- [in] Pointer to config_object object
 /// - `callback` -- [in] Callback function
 /// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
-///
-/// Outputs:
-/// - `void` -- Nothing returned
 LIBSESSION_EXPORT void config_set_logger(
         config_object* conf, void (*callback)(config_log_level, const char*, void*), void* ctx);
 
@@ -208,9 +202,6 @@ LIBSESSION_EXPORT config_push_data* config_push(config_object* conf);
 /// - `conf` -- [in] Pointer to config_object object
 /// - `seqno` -- [out] Value returned by config_push call
 /// - `msg_hash` -- [out] Value returned by config_push call
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_confirm_pushed(
         config_object* conf, seqno_t seqno, const char* msg_hash);
 
@@ -238,9 +229,6 @@ LIBSESSION_EXPORT void config_confirm_pushed(
 /// - `conf` -- [in] Pointer to config_object object
 /// - `out` -- [out] Pointer to the output location
 /// - `outlen` -- [out] Length of output
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_dump(config_object* conf, unsigned char** out, size_t* outlen);
 
 /// API: base/config_needs_dump
@@ -316,9 +304,6 @@ LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object*
 /// Inputs:
 /// - `conf` -- [in, out] Pointer to config_object object
 /// - `key` -- [in] Pointer to the binary key object, must be 32 bytes
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key);
 
 /// API: base/config_add_key_low_prio
@@ -338,9 +323,6 @@ LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* 
 /// Inputs:
 /// - `conf` -- [in, out] Pointer to config_object object
 /// - `key` -- [in] Pointer to the binary key object, must be 32 bytes
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void config_add_key_low_prio(config_object* conf, const unsigned char* key);
 
 /// API: base/config_clear_keys

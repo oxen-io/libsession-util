@@ -7,11 +7,16 @@ if [ "$(basename $(pwd))" != "api" ]; then
     exit 1
 fi
 
-rm -rf api
+destdir="$1"
+shift
 
-docsify init --local api
+if [ -d "$destdir" ]; then
+    rm -rf "$destdir"
+fi
 
-rm -f api/README.md
+docsify init --local "$destdir"
+
+rm -f "$destdir"/README.md
 
 if [ -n "$NPM_PACKAGES" ]; then
     npm_dir="$NPM_PACKAGES/lib/node_modules"
@@ -26,11 +31,11 @@ else
     exit 1
 fi
 
-cp $npm_dir/docsify/node_modules/prismjs/components/prism-{json,python}.min.js api/vendor
+cp $npm_dir/docsify/node_modules/prismjs/components/prism-{json,python}.min.js "$destdir"/vendor
 
-./api-to-markdown.py "$@"
+./api-to-markdown.py --out="$destdir" "$@"
 
-perl -ni.bak -e '
+perl -ni -e '
 BEGIN { $first = 0; }
 if (m{^\s*<script>\s*$} .. m{^\s*</script>\s*$}) {
     if (not $first) {
@@ -55,4 +60,4 @@ if (m{^\s*<script>\s*$} .. m{^\s*</script>\s*$}) {
   <script src="vendor/prism-python.min.js"></script>\n};
     }
     print;
-}' api/index.html
+}' "$destdir"/index.html

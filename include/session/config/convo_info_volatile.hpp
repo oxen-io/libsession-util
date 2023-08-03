@@ -76,9 +76,6 @@ namespace convo {
         ///
         /// Inputs:
         /// - `session_id` -- Hex string of the session id
-        ///
-        /// Outputs:
-        /// - `one_to_one` -- Constructor for one_to_one
         explicit one_to_one(std::string&& session_id);
         explicit one_to_one(std::string_view session_id);
 
@@ -97,16 +94,8 @@ namespace convo {
         ///
         /// Internal ctor/method for C API implementations:
         ///
-        /// Declaration:
-        /// ```cpp
-        /// community(const convo_info_volatile_community& c);
-        /// ```
-        ///
         /// Inputs:
         /// - `c` -- From  c struct
-        ///
-        /// Outputs:
-        /// - `community` -- Constructor for community
         community(const convo_info_volatile_community& c);  // From c struct
         void into(convo_info_volatile_community& c) const;  // Into c struct
 
@@ -129,9 +118,6 @@ namespace convo {
         ///
         /// Inputs:
         /// - `group_id` -- hex string of group_id, similar to a session_id
-        ///
-        /// Outputs:
-        /// - `legacy_group` -- Constructor for legacy_group
         explicit legacy_group(std::string&& group_id);
         explicit legacy_group(std::string_view group_id);
 
@@ -158,11 +144,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// secret key for generating the data encryption key.  To construct a blank list (i.e. with no
     /// pre-existing dumped data to load) pass `std::nullopt` as the second argument.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// ConvoInfoVolatile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
-    /// ```
-    ///
     /// Inputs:
     /// - `ed25519_secretkey` -- contains the libsodium secret key used to encrypt/decrypt the
     /// data when pushing/pulling from the swarm.  This can either be the full 64-byte value (which
@@ -170,19 +151,11 @@ class ConvoInfoVolatile : public ConfigBase {
     /// the secret key.
     /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     /// that was previously dumped from an instance of this class by calling `dump()`.
-    ///
-    /// Outputs:
-    /// - `ConvoInfoVolatile` - Constructor for ConvoInfoVolatile
     ConvoInfoVolatile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
 
     /// API: convo_info_volatile/ConvoInfoVolatile::storage_namespace
     ///
     /// Returns the ConvoInfoVolatile namespace. Is constant, will always return 4
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// Namespace storage_namespace() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -193,11 +166,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// API: convo_info_volatile/ConvoInfoVolatile::encryption_domain
     ///
     /// Returns the domain. Is constant, will always return "ConvoInfoVolatile"
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// const char* encryption_domain() const;
-    /// ```
     ///
     /// Inputs: None
     ///
@@ -233,11 +201,6 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// Overrides push() to prune stale last-read values before we do the push.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::tuple<seqno_t, ustring, std::vector<std::string>> push();
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -252,11 +215,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Looks up and returns a contact by session ID (hex).  Returns nullopt if the session ID was
     /// not found, otherwise returns a filled out `convo::one_to_one`.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<convo::one_to_one> get_1to1(std::string_view session_id) const;
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- Hex string of the Session ID
     ///
@@ -269,12 +227,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Looks up and returns a community conversation.  Takes the base URL and room name (case
     /// insensitive).  Retuns nullopt if the community was not found, otherwise a filled out
     /// `convo::community`.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<convo::community> get_community(
-    ///         std::string_view base_url, std::string_view room) const;
-    /// ```
     ///
     /// Inputs:
     /// - `base_url` -- String of the base URL
@@ -290,11 +242,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Shortcut for calling community::parse_partial_url then calling the above with the base url
     /// and room.  The URL is not required to contain the pubkey (if present it will be ignored).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<convo::community> get_community(std::string_view partial_url) const;
-    /// ```
-    ///
     /// Inputs:
     /// - `partial_url` -- String of the partial URL
     ///
@@ -307,11 +254,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Looks up and returns a legacy group conversation by ID.  The ID looks like a hex Session ID,
     /// but isn't really a Session ID.  Returns nullopt if there is no record of the group
     /// conversation.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// std::optional<convo::legacy_group> get_legacy_group(std::string_view pubkey_hex) const;
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- Hex string of the legacy group Session ID
@@ -326,11 +268,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// that when the conversation doesn't exist a new one is created, prefilled with the
     /// pubkey/url/etc.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// convo::one_to_one get_or_construct_1to1(std::string_view session_id) const;
-    /// ```
-    ///
     /// Inputs:
     /// - `session_id` -- Hex string Session ID
     ///
@@ -343,11 +280,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// These are the same as the above `get` methods (without "_or_construct" in the name), except
     /// that when the conversation doesn't exist a new one is created, prefilled with the
     /// pubkey/url/etc.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// convo::legacy_group get_or_construct_legacy_group(std::string_view pubkey_hex) const;
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- Hex string pubkey
@@ -394,11 +326,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Shortcut for calling community::parse_full_url then calling the above
     /// get_or_construct_community`
     ///
-    /// Declaration:
-    /// ```cpp
-    /// convo::community get_or_construct_community(std::string_view full_url) const;
-    /// ```
-    ///
     /// Inputs:
     /// - `full_url` -- String of the full URL
     ///
@@ -427,9 +354,6 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// Inputs:
     /// - `c` -- struct containing any contact, community or group
-    ///
-    /// Outputs:
-    /// - `void` - Returns Nothing
     void set(const convo::one_to_one& c);
     void set(const convo::legacy_group& c);
     void set(const convo::community& c);
@@ -448,11 +372,6 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// Removes a one-to-one conversation.  Returns true if found and removed, false if not present.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase_1to1(std::string_view pubkey);
-    /// ```
-    ///
     /// Inputs:
     /// - `pubkey` -- hex session id
     ///
@@ -464,11 +383,6 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// Removes a community conversation record.  Returns true if found and removed, false if not
     /// present.  Arguments are the same as `get_community`.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase_community(std::string_view base_url, std::string_view room);
-    /// ```
     ///
     /// Inputs:
     /// - `base_url` -- String of the base URL
@@ -482,11 +396,6 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// Removes a legacy group conversation.  Returns true if found and removed, false if not
     /// present.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// bool erase_legacy_group(std::string_view pubkey_hex);
-    /// ```
     ///
     /// Inputs:
     /// - `pubkey_hex` -- String of the legacy groups pubkey
@@ -547,11 +456,6 @@ class ConvoInfoVolatile : public ConfigBase {
     ///
     /// Returns true if the conversation list is empty.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// bool empty() const;
-    /// ```
-    ///
     /// Inputs: None
     ///
     /// Outputs:
@@ -586,9 +490,9 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Declaration:
     /// ```cpp
     /// iterator begin() const;
-    /// subtype_iterator<convo::one_to_one> begin_1to1() const { return {data}; }
-    /// subtype_iterator<convo::community> begin_communities() const { return {data}; }
-    /// subtype_iterator<convo::legacy_group> begin_legacy_groups() const { return {data}; }
+    /// subtype_iterator<convo::one_to_one> begin_1to1() const;
+    /// subtype_iterator<convo::community> begin_communities() const;
+    /// subtype_iterator<convo::legacy_group> begin_legacy_groups() const;
     /// ```
     ///
     /// Inputs: None
@@ -600,11 +504,6 @@ class ConvoInfoVolatile : public ConfigBase {
     /// API: convo_info_volatile/ConvoInfoVolatile::end
     ///
     /// Iterator for passing the end of the conversations
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// iterator end() const;
-    /// ```
     ///
     /// Inputs: None
     ///

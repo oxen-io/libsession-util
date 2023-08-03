@@ -288,9 +288,6 @@ LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_legacy_group(
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `convo` -- [in] Pointer to conversation info structure
-///
-/// Outputs:
-/// - `void` - Returns Nothing
 LIBSESSION_EXPORT void convo_info_volatile_set_1to1(
         config_object* conf, const convo_info_volatile_1to1* convo);
 
@@ -309,9 +306,6 @@ LIBSESSION_EXPORT void convo_info_volatile_set_1to1(
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `convo` -- [in] Pointer to community info structure
-///
-/// Outputs:
-/// - `void` - Returns Nothing
 LIBSESSION_EXPORT void convo_info_volatile_set_community(
         config_object* conf, const convo_info_volatile_community* convo);
 
@@ -330,9 +324,6 @@ LIBSESSION_EXPORT void convo_info_volatile_set_community(
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `convo` -- [in] Pointer to community info structure
-///
-/// Outputs:
-/// - `void` - Returns Nothing
 LIBSESSION_EXPORT void convo_info_volatile_set_legacy_group(
         config_object* conf, const convo_info_volatile_legacy_group* convo);
 
@@ -602,9 +593,6 @@ LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new
 ///
 /// Inputs:
 /// - `it` -- [in] The convo_info_volatile_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void convo_info_volatile_iterator_free(convo_info_volatile_iterator* it);
 
 /// API: convo_info_volatile/convo_info_volatile_iterator_done
@@ -638,9 +626,6 @@ LIBSESSION_EXPORT bool convo_info_volatile_iterator_done(convo_info_volatile_ite
 ///
 /// Inputs:
 /// - `it` -- [in] The convo_info_volatile_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void convo_info_volatile_iterator_advance(convo_info_volatile_iterator* it);
 
 /// API: convo_info_volatile/convo_info_volatile_it_is_1to1

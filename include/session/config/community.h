@@ -105,9 +105,6 @@ LIBSESSION_EXPORT bool community_parse_partial_url(
 /// - `room` -- [in] Text of the the token
 /// - `pubkey` -- [in] Binary of the pubkey, 32 bytes
 /// - `full_url` -- [out] Text of the url
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void community_make_full_url(
         const char* base_url, const char* room, const unsigned char* pubkey, char* full_url);
 

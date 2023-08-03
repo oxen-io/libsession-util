@@ -77,7 +77,7 @@ MD_INPUT_HEADER = f"{hdr}# Parameters"
 MD_OUTPUT_HEADER = f"{hdr}# Returns"
 
 MD_EXAMPLES_HEADER = f"{hdr}# Examples"
-MD_SYNTAX_HEADER = f"{hdr}# Declaration"
+MD_DECL_HEADER = f"{hdr}# Declaration"
 MD_EXAMPLE_IN_HDR = f"{hdr}## Input"
 MD_EXAMPLE_OUT_HDR = f"{hdr}## Output"
 
@@ -91,7 +91,7 @@ RPC_START = re.compile(r"^API:\s*([\w/:&\\\[\]=,\(\)\<\>]+)(.*)$")
 DEV_RPC_START = re.compile(r"^Dev-API:\s*([\w/:]+)(.*)$")
 IN_NONE = re.compile(r"^Inputs?: *[nN]one\.?$")
 IN_SOME = re.compile(r"^Inputs?:\s*$")
-SYNTAX_SOME = re.compile(r"^Declaration?:\s*$")
+DECL_SOME = re.compile(r"^Declaration?:\s*$")
 OUT_SOME = re.compile(r"^Outputs?:\s*$")
 EXAMPLE_IN = re.compile(r"^Example [iI]nputs?:\s*$")
 EXAMPLE_OUT = re.compile(r"^Example [oO]utputs?:\s*$")
@@ -121,7 +121,7 @@ def error(msg):
 class Parsing(Enum):
     DESC = auto()
     INPUTS = auto()
-    SYNTAX = auto()
+    DECL = auto()
     OUTPUTS = auto()
     EX_IN = auto()
     EX_OUT = auto()
@@ -156,7 +156,7 @@ while True:
     cat, rpc_name = m[1].split('/')
     if args.no_group:
         cat = ''
-    description, syntax, inputs, outputs = "", "", "", ""
+    description, decl, inputs, outputs = "", "", "", ""
     done_desc = False
     no_inputs = False
     examples = []
@@ -169,6 +169,24 @@ while True:
         line = input.readline()
         line, removed_comment = re.subn(RPC_COMMENT, "", line, count=1)
         if not removed_comment:
+            if not decl:
+                decl_lines = []
+                decl_prefix = 1000
+                while line and line.lstrip(' ')[0:2] not in ('//', '/*'):
+                    decl_lines.append(line.rstrip())
+                    indent = len(line) - len(line.lstrip(' '))
+                    if indent < decl_prefix:
+                        decl_prefix = indent
+                    if ';' in line or '{' in line:
+                        break
+
+                    line = input.readline()
+
+                if decl_lines:
+                    if decl_prefix > 0:
+                        decl_lines = [x[decl_prefix:] for x in decl_lines]
+                    decl = '```cpp\n' + '\n'.join(decl_lines) + '\n```'
+
             break
 
         if re.search(IN_NONE, line):
@@ -176,10 +194,10 @@ while True:
                 error("found multiple Inputs:")
             inputs, no_inputs, mode = MD_NO_INPUT, True, Parsing.NONE
 
-        elif re.search(SYNTAX_SOME, line):
+        elif re.search(DECL_SOME, line):
             if inputs:
                 error("found multiple Syntax:")
-            mode = Parsing.SYNTAX
+            mode = Parsing.DECL
 
         elif re.search(IN_SOME, line):
             if inputs:
@@ -248,8 +266,8 @@ while True:
         elif mode == Parsing.DESC:
             description += line
 
-        elif mode == Parsing.SYNTAX:
-            syntax += line
+        elif mode == Parsing.DECL:
+            decl += line
 
         elif mode == Parsing.INPUTS:
             inputs += line
@@ -271,8 +289,8 @@ while True:
         problems.append(
             "endpoint has no inputs description; perhaps you need to add 'Inputs: none.'?"
         )
-    if not outputs or outputs.isspace():
-        problems.append("endpoint has no outputs description")
+#    if not outputs or outputs.isspace():
+#        problems.append("endpoint has no outputs description")
     if cur_ex_in is not None:
         problems.append(
             "endpoint has a trailing example input without a following example output"
@@ -300,9 +318,9 @@ while True:
 
 {description}
 
-{MD_SYNTAX_HEADER}
+{MD_DECL_HEADER}
 
-{syntax}
+{decl}
 
 {MD_INPUT_HEADER}
 

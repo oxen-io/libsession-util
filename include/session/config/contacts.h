@@ -252,9 +252,6 @@ LIBSESSION_EXPORT contacts_iterator* contacts_iterator_new(const config_object* 
 ///
 /// Inputs:
 /// - `it` -- [in] Pointer to the contacts_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void contacts_iterator_free(contacts_iterator* it);
 
 /// API: contacts/contacts_iterator_done
@@ -291,9 +288,6 @@ LIBSESSION_EXPORT bool contacts_iterator_done(contacts_iterator* it, contacts_co
 ///
 /// Inputs:
 /// - `it` -- [in] Pointer to the contacts_iterator
-///
-/// Outputs:
-/// - `void` -- Nothing Returned
 LIBSESSION_EXPORT void contacts_iterator_advance(contacts_iterator* it);
 
 #ifdef __cplusplus
