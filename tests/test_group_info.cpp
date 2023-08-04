@@ -17,7 +17,108 @@ static constexpr int64_t created_ts = 1680064059;
 
 using namespace session::config;
 
-TEST_CASE("Verify-only Group Info", "[config][verify-only]") {
+TEST_CASE("Group Info settings", "[config][groups]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
+    std::array<unsigned char, 32> ed_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "cbd569f56fb13ea95a3f0c05c331cc24139c0090feb412069dc49fab34406ece");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    std::vector<ustring> enc_keys{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes};
+
+    groups::Info ginfo1{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+
+    enc_keys.insert(enc_keys.begin(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
+    enc_keys.push_back("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes);
+    enc_keys.push_back("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hexbytes);
+    groups::Info ginfo2{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+
+    ginfo1.set_name("GROUP Name");
+    CHECK(ginfo1.is_dirty());
+    CHECK(ginfo1.needs_push());
+    CHECK(ginfo1.needs_dump());
+
+    auto [s1, p1, o1] = ginfo1.push();
+
+    CHECK(s1 == 1);
+    CHECK(p1.size() == 256);
+    CHECK(o1.empty());
+
+    ginfo1.confirm_pushed(s1, "fakehash1");
+    CHECK(ginfo1.needs_dump());
+    CHECK_FALSE(ginfo1.needs_push());
+
+    std::vector<std::pair<std::string, ustring_view>> merge_configs;
+    merge_configs.emplace_back("fakehash1", p1);
+    CHECK(ginfo2.merge(merge_configs) == 1);
+    CHECK_FALSE(ginfo2.needs_push());
+
+    CHECK(ginfo2.get_name() == "GROUP Name");
+
+    ginfo2.set_profile_pic(
+            "http://example.com/12345",
+            "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
+    ginfo2.set_expiry_timer(1h);
+    constexpr int64_t create_time{1682529839};
+    ginfo2.set_created(create_time);
+    ginfo2.set_delete_before(create_time + 50*86400);
+    ginfo2.set_delete_attach_before(create_time + 70*86400);
+    ginfo2.destroy_group();
+
+    auto [s2, p2, o2] = ginfo2.push();
+    CHECK(s2 == 2);
+    CHECK(p2.size() == 512);
+    CHECK(o2 == std::vector{"fakehash1"s});
+
+    ginfo2.confirm_pushed(s2, "fakehash2");
+
+    ginfo1.set_name("Better name!");
+
+    merge_configs.clear();
+    merge_configs.emplace_back("fakehash2", p2);
+
+    // This fails because ginfo1 doesn't yet have the new key that ginfo2 used (bbb...)
+    CHECK(ginfo1.merge(merge_configs) == 0);
+
+    ginfo1.add_key("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
+    ginfo1.add_key("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes, /*prepend=*/ false);
+
+    CHECK(ginfo1.merge(merge_configs) == 1);
+
+    CHECK(ginfo1.needs_push());
+    auto [s3, p3, o3] = ginfo1.push();
+
+    CHECK(ginfo1.get_name() == "Better name!");
+    CHECK(ginfo1.get_profile_pic().url == "http://example.com/12345");
+    CHECK(ginfo1.get_profile_pic().key == "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
+    CHECK(ginfo1.get_expiry_timer() == 1h);
+    CHECK(ginfo1.get_created() == create_time);
+    CHECK(ginfo1.get_delete_before() == create_time + 50*86400);
+    CHECK(ginfo1.get_delete_attach_before() == create_time + 70*86400);
+    CHECK(ginfo1.is_destroyed());
+
+    ginfo1.confirm_pushed(s3, "fakehash3");
+
+    merge_configs.clear();
+    merge_configs.emplace_back("fakehash3", p3);
+    CHECK(ginfo2.merge(merge_configs) == 1);
+    CHECK(ginfo2.get_name() == "Better name!");
+    CHECK(ginfo2.get_profile_pic().url == "http://example.com/12345");
+    CHECK(ginfo2.get_profile_pic().key == "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
+    CHECK(ginfo2.get_expiry_timer() == 1h);
+    CHECK(ginfo2.get_created() == create_time);
+    CHECK(ginfo2.get_delete_before() == create_time + 50*86400);
+    CHECK(ginfo2.get_delete_attach_before() == create_time + 70*86400);
+    CHECK(ginfo2.is_destroyed());
+}
+
+TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
 
     const auto seed = "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
     std::array<unsigned char, 32> ed_pk;
