@@ -1,0 +1,240 @@
+#include <oxenc/endian.h>
+#include <oxenc/hex.h>
+#include <session/config/contacts.h>
+#include <sodium/crypto_sign_ed25519.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <iostream>
+#include <session/config/groups/members.hpp>
+#include <string_view>
+
+#include "utils.hpp"
+
+using namespace std::literals;
+using namespace oxenc::literals;
+
+static constexpr int64_t created_ts = 1680064059;
+
+using namespace session::config;
+
+constexpr bool is_prime100(int i) {
+    constexpr std::array p100 = {2,  3,  5,  7,  11, 13, 17, 19, 23, 29, 31, 37, 41,
+                                 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97};
+    for (auto p : p100)
+        if (p >= i)
+            return p == i;
+    return false;
+}
+
+TEST_CASE("Group Members", "[config][groups][members]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
+    std::array<unsigned char, 32> ed_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "cbd569f56fb13ea95a3f0c05c331cc24139c0090feb412069dc49fab34406ece");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    std::vector<ustring> enc_keys{
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes};
+
+    groups::Members gmem1{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+
+    enc_keys.insert(
+            enc_keys.begin(),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
+    enc_keys.push_back("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes);
+    enc_keys.push_back("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hexbytes);
+    groups::Members gmem2{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+
+    std::vector<std::string> sids;
+    while (sids.size() < 256) {
+        std::array<unsigned char, 33> sid;
+        for (auto& s : sid)
+            s = sids.size();
+        sid[0] = 0x05;
+        sids.push_back(oxenc::to_hex(sid.begin(), sid.end()));
+    }
+
+    // 10 admins:
+    for (int i = 0; i < 10; i++) {
+        auto m = gmem1.get_or_construct(sids[i]);
+        m.admin = true;
+        m.name = "Admin " + std::to_string(i);
+        m.profile_picture.url = "http://example.com/" + std::to_string(i);
+        m.profile_picture.key =
+                "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes;
+        gmem1.set(m);
+    }
+    // 10 members:
+    for (int i = 10; i < 20; i++) {
+        auto m = gmem1.get_or_construct(sids[i]);
+        m.name = "Member " + std::to_string(i);
+        m.profile_picture.url = "http://example.com/" + std::to_string(i);
+        m.profile_picture.key =
+                "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes;
+        gmem1.set(m);
+    }
+    // 5 members with no attributes (not even a name):
+    for (int i = 20; i < 25; i++) {
+        auto m = gmem1.get_or_construct(sids[i]);
+        gmem1.set(m);
+    }
+
+    CHECK(gmem1.needs_push());
+    auto [s1, p1, o1] = gmem1.push();
+    CHECK(p1.size() == 768);
+
+    gmem1.confirm_pushed(s1, "fakehash1");
+    CHECK(gmem1.needs_dump());
+    CHECK_FALSE(gmem1.needs_push());
+
+    std::vector<std::pair<std::string, ustring_view>> merge_configs;
+    merge_configs.emplace_back("fakehash1", p1);
+    CHECK(gmem2.merge(merge_configs) == 1);
+    CHECK_FALSE(gmem2.needs_push());
+
+    for (int i = 0; i < 25; i++)
+        CHECK(gmem2.get(sids[i]).has_value());
+
+    {
+        int i = 0;
+        for (auto& m : gmem2) {
+            CHECK(m.session_id == sids[i]);
+            CHECK_FALSE(m.invite_pending());
+            CHECK_FALSE(m.invite_failed());
+            CHECK_FALSE(m.promotion_pending());
+            CHECK_FALSE(m.promotion_failed());
+            if (i < 10) {
+                CHECK(m.admin);
+                CHECK(m.name == "Admin " + std::to_string(i));
+                CHECK_FALSE(m.profile_picture.empty());
+                CHECK(m.promoted());
+            } else {
+                CHECK_FALSE(m.admin);
+                CHECK_FALSE(m.promoted());
+                if (i < 20) {
+                    CHECK(m.name == "Member " + std::to_string(i));
+                    CHECK_FALSE(m.profile_picture.empty());
+                } else {
+                    CHECK(m.name.empty());
+                    CHECK(m.profile_picture.empty());
+                }
+            }
+            i++;
+        }
+        CHECK(i == 25);
+    }
+
+    for (int i = 22; i < 50; i++) {
+        auto m = gmem2.get_or_construct(sids[i]);
+        m.name = "Member " + std::to_string(i);
+        gmem2.set(m);
+    }
+    for (int i = 50; i < 55; i++) {
+        auto m = gmem2.get_or_construct(sids[i]);
+        m.set_invited();
+        gmem2.set(m);
+    }
+    for (int i = 55; i < 58; i++) {
+        auto m = gmem2.get_or_construct(sids[i]);
+        m.set_invited(true);
+        gmem2.set(m);
+    }
+    for (int i = 58; i < 62; i++) {
+        auto m = gmem2.get_or_construct(sids[i]);
+        m.set_promoted(i >= 60);
+        gmem2.set(m);
+    }
+
+    CHECK(gmem2.get(sids[23]).value().name == "Member 23");
+
+    auto [s2, p2, o2] = gmem2.push();
+    gmem2.confirm_pushed(s2, "fakehash2");
+    merge_configs.emplace_back("fakehash2", p2);  // not clearing it first!
+    CHECK(gmem1.merge(merge_configs) == 1);
+    gmem1.add_key("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
+    CHECK(gmem1.merge(merge_configs) == 2);
+
+    CHECK(gmem1.get(sids[23]).value().name == "Member 23");
+
+    {
+        int i = 0;
+        for (auto& m : gmem1) {
+            CHECK(m.session_id == sids[i]);
+            CHECK(m.admin == i < 10);
+            CHECK(m.name == ((i == 20 || i == 21 || i >= 50) ? ""
+                             : i < 10                        ? "Admin " + std::to_string(i)
+                                                             : "Member " + std::to_string(i)));
+            CHECK(m.profile_picture.key ==
+                  (i < 20 ? "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes
+                          : ""_hexbytes));
+            CHECK(m.profile_picture.url ==
+                  (i < 20 ? "http://example.com/" + std::to_string(i) : ""));
+            CHECK(m.invite_pending() == (50 <= i && i < 58));
+            CHECK(m.invite_failed() == (55 <= i && i < 58));
+            CHECK(m.promoted() == (i < 10 || (i >= 58 && i < 62)));
+            CHECK(m.promotion_pending() == (i >= 58 && i < 62));
+            CHECK(m.promotion_failed() == (i >= 60 && i < 62));
+            i++;
+        }
+        CHECK(i == 62);
+    }
+
+    for (int i = 0; i < 100; i++) {
+        if (is_prime100(i))
+            gmem1.erase(sids[i]);
+        else if (i >= 50 && i <= 56) {
+            auto m = gmem1.get(sids[i]).value();
+            if (i >= 55)
+                m.set_invited();
+            else
+                m.set_accepted();
+            gmem1.set(m);
+        } else if (i == 58) {
+            auto m = gmem1.get(sids[i]).value();
+            m.admin = true;
+            gmem1.set(m);
+        } else if (i == 59) {
+            auto m = gmem1.get(sids[i]).value();
+            m.set_promoted();
+            gmem1.set(m);
+        }
+    }
+
+    auto [s3, p3, o3] = gmem1.push();
+    gmem1.confirm_pushed(s3, "fakehash3");
+    merge_configs.clear();
+    merge_configs.emplace_back("fakehash3", p3);
+    CHECK(gmem2.merge(merge_configs) == 1);
+
+    {
+        int i = 0;
+        for (auto& m : gmem2) {
+            CHECK(m.session_id == sids[i]);
+            CHECK(m.admin == (i < 10 || i == 58));
+            CHECK(m.name == ((i == 20 || i == 21 || i >= 50) ? ""
+                             : i < 10                        ? "Admin " + std::to_string(i)
+                                                             : "Member " + std::to_string(i)));
+            CHECK(m.profile_picture.key ==
+                  (i < 20 ? "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes
+                          : ""_hexbytes));
+            CHECK(m.profile_picture.url ==
+                  (i < 20 ? "http://example.com/" + std::to_string(i) : ""));
+            CHECK(m.invite_pending() == (55 <= i && i < 58));
+            CHECK(m.invite_failed() == (i == 57));
+            CHECK(m.promoted() == (i < 10 || (i >= 58 && i < 62)));
+            CHECK(m.promotion_pending() == (i >= 59 && i <= 61));
+            CHECK(m.promotion_failed() == (i >= 60 && i <= 61));
+            do
+                i++;
+            while (is_prime100(i));
+        }
+        CHECK(i == 62);
+    }
+}

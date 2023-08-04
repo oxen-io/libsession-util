@@ -356,6 +356,9 @@ bool Contacts::iterator::operator==(const iterator& other) const {
     if (!other._contacts)
         // other is an "end" tombstone: return whether we are at the end
         return _it == _contacts->end();
+    if (!_contacts)
+        // we are an "end" tombstone: return whether the other one is at the end
+        return other._it == other._contacts->end();
     return _it == other._it;
 }
 

@@ -17,7 +17,7 @@ static constexpr int64_t created_ts = 1680064059;
 
 using namespace session::config;
 
-TEST_CASE("Group Info settings", "[config][groups]") {
+TEST_CASE("Group Info settings", "[config][groups][info]") {
 
     const auto seed = "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
     std::array<unsigned char, 32> ed_pk;
