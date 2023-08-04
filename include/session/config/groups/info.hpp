@@ -228,7 +228,7 @@ class Info final : public ConfigBase {
     ///   (or negative) to disable the delete-attachment-before timestamp.
     void set_delete_attach_before(int64_t timestamp);
 
-    /// API: groups/Info::get_delete_before
+    /// API: groups/Info::get_delete_attach_before
     ///
     /// Returns the delete-before unix timestamp (seconds) for the group; clients should delete all
     /// messages from the closed group with timestamps earlier than this value, if set.
