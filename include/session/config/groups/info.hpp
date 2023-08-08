@@ -241,7 +241,7 @@ class Info final : public ConfigBase {
     /// - `int64_t` -- the unix timestamp for which all older messages shall be delete
     std::optional<int64_t> get_delete_attach_before() const;
 
-    /// API: groups/Info::destroy_group()
+    /// API: groups/Info::destroy_group
     ///
     /// Sets the group as permanently deleted, and set this status in the group's config.  Receiving
     /// clients are supposed to remove the conversation from their conversation list when this
@@ -254,7 +254,7 @@ class Info final : public ConfigBase {
     /// None: this call is destructive and permanent.  Be careful!
     void destroy_group();
 
-    /// API: groups/Info::is_destroyed()
+    /// API: groups/Info::is_destroyed
     ///
     /// Returns true if this group has been marked destroyed; the receiving client is expected to
     /// delete it.
