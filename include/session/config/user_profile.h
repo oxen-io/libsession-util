@@ -225,7 +225,7 @@ LIBSESSION_EXPORT void user_profile_set_nts_expiry(config_object* conf, int expi
 ///
 /// Outputs:
 /// - `bool` -- Returns true if blinded message requests are enabled, false otherwise.
-LIBSESSION_EXPORT int user_profile_get_blinded_msgreqs(const config_object* conf);
+LIBSESSION_EXPORT bool user_profile_get_blinded_msgreqs(const config_object* conf);
 
 /// API: user_profile/user_profile_set_blinded_msgreqs
 ///

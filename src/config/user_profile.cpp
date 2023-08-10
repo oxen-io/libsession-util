@@ -137,7 +137,7 @@ bool UserProfile::get_blinded_msgreqs() const {
     return true;
 }
 
-LIBSESSION_C_API int user_profile_get_blinded_msgreqs(const config_object* conf) {
+LIBSESSION_C_API bool user_profile_get_blinded_msgreqs(const config_object* conf) {
     return unbox<UserProfile>(conf)->get_blinded_msgreqs();
 }
 
