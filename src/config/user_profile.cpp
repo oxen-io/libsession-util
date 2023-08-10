@@ -126,3 +126,21 @@ LIBSESSION_C_API int user_profile_get_nts_expiry(const config_object* conf) {
 LIBSESSION_C_API void user_profile_set_nts_expiry(config_object* conf, int expiry) {
     unbox<UserProfile>(conf)->set_nts_expiry(std::max(0, expiry) * 1s);
 }
+
+void UserProfile::set_blinded_msgreqs(bool enabled) {
+    set_flag(data["M"], !enabled);
+}
+
+bool UserProfile::get_blinded_msgreqs() const {
+    if (auto* M = data["M"].integer(); M && *M > 0)
+        return false;
+    return true;
+}
+
+LIBSESSION_C_API int user_profile_get_blinded_msgreqs(const config_object* conf) {
+    return unbox<UserProfile>(conf)->get_blinded_msgreqs();
+}
+
+LIBSESSION_C_API void user_profile_set_blinded_msgreqs(config_object* conf, bool enabled) {
+    unbox<UserProfile>(conf)->set_blinded_msgreqs(enabled);
+}

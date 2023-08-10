@@ -245,6 +245,10 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     user_profile_set_nts_expiry(conf2, 86400);
     CHECK(user_profile_get_nts_expiry(conf2) == 86400);
 
+    CHECK(user_profile_get_blinded_msgreqs(conf2));
+    user_profile_set_blinded_msgreqs(conf2, false);
+    CHECK_FALSE(user_profile_get_blinded_msgreqs(conf2));
+
     // Both have changes, so push need a push
     CHECK(config_needs_push(conf));
     CHECK(config_needs_push(conf2));
@@ -318,6 +322,8 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(user_profile_get_nts_priority(conf2) == 9);
     CHECK(user_profile_get_nts_expiry(conf) == 86400);
     CHECK(user_profile_get_nts_expiry(conf2) == 86400);
+    CHECK_FALSE(user_profile_get_blinded_msgreqs(conf));
+    CHECK_FALSE(user_profile_get_blinded_msgreqs(conf2));
 
     config_confirm_pushed(conf, to_push->seqno, "fakehash4");
     config_confirm_pushed(conf2, to_push2->seqno, "fakehash4");

@@ -20,6 +20,7 @@ using namespace std::literals;
 /// + - the priority value for the "Note to Self" pseudo-conversation (higher = higher in the
 ///     conversation list).  Omitted when 0.  -1 means hidden.
 /// e - the expiry timer (in seconds) for the "Note to Self" pseudo-conversation.  Omitted when 0.
+/// M - set to 1 if blinded message request retrieval is *disabled*, omitted if enabled.
 
 class UserProfile final : public ConfigBase {
 
@@ -154,6 +155,27 @@ class UserProfile final : public ConfigBase {
     /// Inputs:
     /// - `timer` -- Default to 0 seconds, will set the expiry timer
     void set_nts_expiry(std::chrono::seconds timer = 0s);
+
+    /// API: user_profile/UserProfile::get_blinded_msgreqs
+    ///
+    /// Returns true if blinded message requests (i.e. from SOGS servers you are connected to) are
+    /// enabled; if disabled then the Session client should not poll for such incoming message
+    /// requests.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `bool` - true if blinded message requests are enabled, false otherwise.
+    bool get_blinded_msgreqs() const;
+
+    /// API: user_profile/UserProfile::set_blinded_msgreqs
+    ///
+    /// Sets whether blinded message requests (i.e. from SOGS servers you are connected to) should
+    /// be enabled or not.
+    ///
+    /// Inputs:
+    /// - `enabled` -- true if blinded message requests should be retrieved, false otherwise.
+    void set_blinded_msgreqs(bool enabled);
 };
 
 }  // namespace session::config
