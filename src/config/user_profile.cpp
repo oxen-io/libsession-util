@@ -127,20 +127,28 @@ LIBSESSION_C_API void user_profile_set_nts_expiry(config_object* conf, int expir
     unbox<UserProfile>(conf)->set_nts_expiry(std::max(0, expiry) * 1s);
 }
 
-void UserProfile::set_blinded_msgreqs(bool enabled) {
-    set_flag(data["M"], !enabled);
+void UserProfile::set_blinded_msgreqs(std::optional<bool> value) {
+    if (!value)
+        data["M"].erase();
+    else
+        data["M"] = static_cast<int>(*value);
 }
 
-bool UserProfile::get_blinded_msgreqs() const {
-    if (auto* M = data["M"].integer(); M && *M > 0)
-        return false;
-    return true;
+std::optional<bool> UserProfile::get_blinded_msgreqs() const {
+    if (auto* M = data["M"].integer(); M)
+        return static_cast<bool>(*M);
+    return std::nullopt;
 }
 
-LIBSESSION_C_API bool user_profile_get_blinded_msgreqs(const config_object* conf) {
-    return unbox<UserProfile>(conf)->get_blinded_msgreqs();
+LIBSESSION_C_API int user_profile_get_blinded_msgreqs(const config_object* conf) {
+    if (auto opt = unbox<UserProfile>(conf)->get_blinded_msgreqs())
+        return static_cast<int>(*opt);
+    return -1;
 }
 
-LIBSESSION_C_API void user_profile_set_blinded_msgreqs(config_object* conf, bool enabled) {
-    unbox<UserProfile>(conf)->set_blinded_msgreqs(enabled);
+LIBSESSION_C_API void user_profile_set_blinded_msgreqs(config_object* conf, int enabled) {
+    std::optional<bool> val;
+    if (enabled >= 0)
+        val = static_cast<bool>(enabled);
+    unbox<UserProfile>(conf)->set_blinded_msgreqs(std::move(val));
 }
