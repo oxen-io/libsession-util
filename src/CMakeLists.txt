@@ -24,10 +24,12 @@ add_library(config
     config/error.c
     config/groups/info.cpp
     config/groups/members.cpp
+    config/groups/keys.cpp
     config/internal.cpp
     config/user_groups.cpp
     config/user_profile.cpp
     fields.cpp
+    util.cpp
 )
 set_target_properties(
     config

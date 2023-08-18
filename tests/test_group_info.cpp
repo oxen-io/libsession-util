@@ -30,11 +30,14 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
     CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
-    std::vector<ustring> enc_keys{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes};
+    std::vector<ustring> enc_keys{
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes};
 
     groups::Info ginfo1{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    enc_keys.insert(enc_keys.begin(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
+    enc_keys.insert(
+            enc_keys.begin(),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
     enc_keys.push_back("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes);
     enc_keys.push_back("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hexbytes);
     groups::Info ginfo2{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
@@ -67,8 +70,8 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
     ginfo2.set_expiry_timer(1h);
     constexpr int64_t create_time{1682529839};
     ginfo2.set_created(create_time);
-    ginfo2.set_delete_before(create_time + 50*86400);
-    ginfo2.set_delete_attach_before(create_time + 70*86400);
+    ginfo2.set_delete_before(create_time + 50 * 86400);
+    ginfo2.set_delete_attach_before(create_time + 70 * 86400);
     ginfo2.destroy_group();
 
     auto [s2, p2, o2] = ginfo2.push();
@@ -87,7 +90,9 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
     CHECK(ginfo1.merge(merge_configs) == 0);
 
     ginfo1.add_key("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
-    ginfo1.add_key("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes, /*prepend=*/ false);
+    ginfo1.add_key(
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes,
+            /*prepend=*/false);
 
     CHECK(ginfo1.merge(merge_configs) == 1);
 
@@ -96,11 +101,12 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
 
     CHECK(ginfo1.get_name() == "Better name!");
     CHECK(ginfo1.get_profile_pic().url == "http://example.com/12345");
-    CHECK(ginfo1.get_profile_pic().key == "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
+    CHECK(ginfo1.get_profile_pic().key ==
+          "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
     CHECK(ginfo1.get_expiry_timer() == 1h);
     CHECK(ginfo1.get_created() == create_time);
-    CHECK(ginfo1.get_delete_before() == create_time + 50*86400);
-    CHECK(ginfo1.get_delete_attach_before() == create_time + 70*86400);
+    CHECK(ginfo1.get_delete_before() == create_time + 50 * 86400);
+    CHECK(ginfo1.get_delete_attach_before() == create_time + 70 * 86400);
     CHECK(ginfo1.is_destroyed());
 
     ginfo1.confirm_pushed(s3, "fakehash3");
@@ -110,11 +116,12 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
     CHECK(ginfo2.merge(merge_configs) == 1);
     CHECK(ginfo2.get_name() == "Better name!");
     CHECK(ginfo2.get_profile_pic().url == "http://example.com/12345");
-    CHECK(ginfo2.get_profile_pic().key == "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
+    CHECK(ginfo2.get_profile_pic().key ==
+          "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes);
     CHECK(ginfo2.get_expiry_timer() == 1h);
     CHECK(ginfo2.get_created() == create_time);
-    CHECK(ginfo2.get_delete_before() == create_time + 50*86400);
-    CHECK(ginfo2.get_delete_attach_before() == create_time + 70*86400);
+    CHECK(ginfo2.get_delete_before() == create_time + 50 * 86400);
+    CHECK(ginfo2.get_delete_attach_before() == create_time + 70 * 86400);
     CHECK(ginfo2.is_destroyed());
 }
 

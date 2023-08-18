@@ -2,6 +2,7 @@
 
 #include <oxenc/base32z.h>
 #include <oxenc/base64.h>
+#include <oxenc/bt_value_producer.h>
 #include <oxenc/hex.h>
 
 #include <iterator>
@@ -20,6 +21,13 @@ void check_session_id(std::string_view session_id) {
 std::string session_id_to_bytes(std::string_view session_id) {
     check_session_id(session_id);
     return oxenc::from_hex(session_id);
+}
+
+std::array<unsigned char, 32> session_id_xpk(std::string_view session_id) {
+    check_session_id(session_id);
+    std::array<unsigned char, 32> xpk;
+    oxenc::from_hex(session_id.begin(), session_id.end(), xpk.begin());
+    return xpk;
 }
 
 void check_encoded_pubkey(std::string_view pk) {
@@ -123,6 +131,46 @@ void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string_view val) 
         field = val;
     else
         field.erase();
+}
+
+/// Writes all the dict elements in `[it, E)` into `out`; E is whichever of `end` or an element with
+/// a key >= `until` comes first.
+oxenc::bt_dict::iterator append_unknown(
+        oxenc::bt_dict_producer& out,
+        oxenc::bt_dict::iterator it,
+        oxenc::bt_dict::iterator end,
+        std::string_view until) {
+    for (; it != end && it->first < until; ++it)
+        out.append_bt(it->first, it->second);
+
+    assert(!(it != end && it->first == until));
+    return it;
+}
+
+/// Extracts and unknown keys in the top-level dict into `unknown` that have keys (strictly)
+/// between previous and until.
+void load_unknowns(
+        oxenc::bt_dict& unknown,
+        oxenc::bt_dict_consumer& in,
+        std::string_view previous,
+        std::string_view until) {
+    while (!in.is_finished() && in.key() < until) {
+        std::string key{in.key()};
+        if (key <= previous || (!unknown.empty() && key <= unknown.rbegin()->first))
+            throw oxenc::bt_deserialize_invalid{"top-level keys are out of order"};
+        if (in.is_string())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_string());
+        else if (in.is_negative_integer())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_integer<int64_t>());
+        else if (in.is_integer())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_integer<uint64_t>());
+        else if (in.is_list())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_list());
+        else if (in.is_dict())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_dict());
+        else
+            throw oxenc::bt_deserialize_invalid{"invalid bencoded value type"};
+    }
 }
 
 }  // namespace session::config

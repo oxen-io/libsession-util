@@ -1,7 +1,10 @@
 #pragma once
 
+#include <oxenc/bt_producer.h>
+
 #include <cassert>
 #include <memory>
+#include <string_view>
 
 #include "session/config/base.hpp"
 #include "session/config/error.h"
@@ -55,6 +58,10 @@ void check_session_id(std::string_view session_id);
 
 // Checks the session_id (throwing if invalid) then returns it as bytes
 std::string session_id_to_bytes(std::string_view session_id);
+
+// Checks the session_id (throwing if invalid) then returns it as bytes, omitting the 05 prefix
+// (which is the x25519 pubkey).
+std::array<unsigned char, 32> session_id_xpk(std::string_view session_id);
 
 // Validates an open group pubkey; we accept it in hex, base32z, or base64 (padded or unpadded).
 // Throws std::invalid_argument if invalid.
@@ -112,5 +119,19 @@ void set_pair_if(
         f2.erase();
     }
 }
+
+oxenc::bt_dict::iterator append_unknown(
+        oxenc::bt_dict_producer& out,
+        oxenc::bt_dict::iterator it,
+        oxenc::bt_dict::iterator end,
+        std::string_view until);
+
+/// Extracts and unknown keys in the top-level dict into `unknown` that have keys (strictly)
+/// between previous and until.
+void load_unknowns(
+        oxenc::bt_dict& unknown,
+        oxenc::bt_dict_consumer& in,
+        std::string_view previous,
+        std::string_view until);
 
 }  // namespace session::config

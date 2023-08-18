@@ -60,6 +60,11 @@ struct missing_signature : signature_error {
 struct config_parse_error : config_error {
     using config_error::config_error;
 };
+/// Type thrown for some bad value in a config (e.g. missing required key, or key with an
+/// unexpected/unhandled value).
+struct config_value_error : config_parse_error {
+    using config_parse_error::config_parse_error;
+};
 
 /// Class for a parsed, read-only config message; also serves as the base class of a
 /// MutableConfigMessage which allows setting values.
@@ -341,6 +346,48 @@ class MutableConfigMessage : public ConfigMessage {
     const hash_t& hash(ustring_view serialized);
     void increment_impl();
 };
+
+/// API: base/verify_config_sig
+///
+/// Verifies a config message signature, throwing a missing_signature or signature_error exception
+/// if the signature is missing or invalid.
+///
+/// A config message signature is always in the "~" key of a config message, which must be the
+/// very last key of the message, and signs the config value up to (but not including) the ~
+/// key-value pair in the serialized config message.
+///
+/// For instance, for a config message of:
+///
+///     d[...configdata...]1:~64:[sigdata]e
+///
+/// the signature signs the value `d[...configdata...]` (i.e. the `1:~64:[sigdata]` signature
+/// pair, and the final closing `e` of the config message, are not included).  No keys may
+/// follow the signature key/value.
+///
+/// Inputs:
+/// - `dict` -- a `bt_dict_consumer` positioned at or before the "~" key where the signature is
+///   expected.  (If the bt_dict_consumer has already consumed the "~" key then this call will fail
+///   as if the signature was missing).
+/// - `config_msg` -- the full config message; this must be a view of the same data in memory that
+///   `dict` is parsing (i.e. it cannot be a copy).
+/// - `verifier` -- a callback to invoke to verify the signature of the message.  If the callback is
+///   empty then the signature will be ignored (it is neither required nor verified).
+/// - `signature_optional` -- true if the message is allowed to omit a signature; in such a case a
+///   message will be accepted with no signature, or with a valid signature, but not with an invalid
+///   signature.  (Ignored if `verifier` is empty)
+/// - `verified_signature` is a pointer to a std::optional array of signature data; if this is
+///   specified and not nullptr then the optional with be emplaced with the signature bytes if the
+///   signature successfully validates.
+///
+/// Outputs:
+/// - returns with no value on success
+/// - throws on failure
+void verify_config_sig(
+        oxenc::bt_dict_consumer dict,
+        ustring_view config_msg,
+        const ConfigMessage::verify_callable& verifier,
+        bool signature_optional,
+        std::optional<std::array<unsigned char, 64>>* verified_signature = nullptr);
 
 }  // namespace session::config
 

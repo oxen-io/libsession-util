@@ -80,6 +80,15 @@ class Info final : public ConfigBase {
     /// - `const char*` - Will return "groups::Info"
     const char* encryption_domain() const override { return "groups::Info"; }
 
+    /// Returns the subaccount masking value.  This is based on the group's seed and thus is only
+    /// obtainable by an admin account.
+    ///
+    /// Inputs: none
+    ///
+    /// Outputs:
+    /// - `ustring_view` - the 32-byte masking value.
+    std::array<unsigned char, 32> subaccount_mask() const;
+
     /// API: groups/Info::get_name
     ///
     /// Returns the group name, or std::nullopt if there is no group name set.

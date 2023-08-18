@@ -6,7 +6,6 @@
 #include <variant>
 
 #include "../internal.hpp"
-//#include "session/config/groups/info.h"
 #include "session/config/error.h"
 #include "session/export.h"
 #include "session/types.hpp"
@@ -25,6 +24,10 @@ Info::Info(
         ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey} {
     for (const auto& k : keys)
         add_key(k, false);
+}
+
+std::array<unsigned char, 32> Info::subaccount_mask() const {
+    return seed_hash("SessionGroupSubaccountMask");
 }
 
 std::optional<std::string_view> Info::get_name() const {

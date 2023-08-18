@@ -13,6 +13,7 @@ enum class Namespace : std::int16_t {
     // Groups namespaces (i.e. for config of the group itself, not one user's group settings)
     GroupInfo = 11,
     GroupMembers = 12,
+    GroupKeys = 13,
 };
 
 }  // namespace session::config

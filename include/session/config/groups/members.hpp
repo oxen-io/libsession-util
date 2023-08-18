@@ -189,13 +189,13 @@ class Members final : public ConfigBase {
     ///
     /// Inputs:
     /// - `keys` -- contains the possible 32-byte en/decryption keys that may be used for incoming
-    ///   messages.  These are *not* Ed25519 secret keys, but rather symmetric encryption keys used
-    ///   for encryption (generally generated using a cryptographically secure random generator).
-    ///   The *first* key in this list will be used to encrypt outgoing config messages (and so, in
-    ///   general, should be the most current key).  There must always be at least one key present
-    ///   (either provided at construction or via add_keys) before you can push a config.
-    ///   Post-construction you can add or remove keys via add_key/remove_key/clear_keys from
-    ///   ConfigBase.
+    ///   messages (both config messages and group messages).  These are *not* Ed25519 secret keys,
+    ///   but rather symmetric encryption keys used for encryption (generally generated using a
+    ///   cryptographically secure random generator).  The *first* key in this list will be used to
+    ///   encrypt outgoing config messages (and so, in general, should be the most current key).
+    ///   There must always be at least one key present (either provided at construction or via
+    ///   add_keys) before you can push a config.  Post-construction you can add or remove keys via
+    ///   add_key/remove_key/clear_keys from ConfigBase.
     /// - `ed25519_pubkey` is the public key of this group, used to validate config messages.
     ///   Config messages not signed with this key will be rejected.
     /// - `ed25519_secretkey` is the secret key of the group, used to sign pushed config messages.
@@ -276,6 +276,23 @@ class Members final : public ConfigBase {
     /// API: groups/Members::erase
     ///
     /// Removes a session ID from the member list, if present.
+    ///
+    /// Typically this call should be coupled with a re-key of the group's encryption key so that
+    /// the removed member cannot read the group.  For example:
+    ///
+    ///     bool removed = members.erase("050123456789abcdef...");
+    ///     // You can remove more than one at a time, if needed:
+    ///     removed |= members.erase("050000111122223333...");
+    ///
+    ///     if (removed) {
+    ///         auto new_keys_conf = keys.rekey(members);
+    ///         members.add_key(*keys.pending_key(), true);
+    ///         auto [seqno, new_memb_conf, obs] = members.push();
+    ///
+    ///         // Send the two new configs to the swarm (via a seqence of two `store`s):
+    ///         // - new_keys_conf goes into the keys namespace
+    ///         // - new_memb_conf goes into the members namespace
+    ///     }
     ///
     /// Inputs:
     /// - `session_id` the hex session ID of the member to remove

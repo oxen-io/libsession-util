@@ -1,4 +1,5 @@
 #include "session/config/groups/members.hpp"
+
 #include <oxenc/hex.h>
 
 #include "../internal.hpp"
@@ -120,7 +121,6 @@ bool Members::erase(std::string_view session_id) {
     info.erase();
     return ret;
 }
-
 
 member::member(std::string sid) : session_id{std::move(sid)} {
     check_session_id(session_id);
