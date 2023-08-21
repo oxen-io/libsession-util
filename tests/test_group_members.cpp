@@ -1,6 +1,5 @@
 #include <oxenc/endian.h>
 #include <oxenc/hex.h>
-#include <session/config/contacts.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -43,14 +42,22 @@ TEST_CASE("Group Members", "[config][groups][members]") {
     std::vector<ustring> enc_keys{
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hexbytes};
 
-    groups::Members gmem1{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+    groups::Members gmem1{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+
+    // This is just for testing: normally you don't load keys manually but just make a groups::Keys
+    // object that loads the keys into the Members object for you.
+    for (const auto& k : enc_keys)
+        gmem1.add_key(k, false);
 
     enc_keys.insert(
             enc_keys.begin(),
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
     enc_keys.push_back("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes);
     enc_keys.push_back("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hexbytes);
-    groups::Members gmem2{view_vec(enc_keys), to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+    groups::Members gmem2{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
+
+    for (const auto& k : enc_keys) // Just for testing, as above.
+        gmem2.add_key(k, false);
 
     std::vector<std::string> sids;
     while (sids.size() < 256) {

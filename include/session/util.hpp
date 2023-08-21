@@ -30,6 +30,14 @@ inline ustring_view to_unsigned_sv(std::string_view v) {
 inline std::string_view from_unsigned_sv(ustring_view v) {
     return {from_unsigned(v.data()), v.size()};
 }
+template <size_t N>
+inline std::string_view from_unsigned_sv(const std::array<unsigned char, N>& v) {
+    return {from_unsigned(v.data()), v.size()};
+}
+template <typename T, typename A>
+inline std::string_view from_unsigned_sv(const std::vector<T, A>& v) {
+    return {from_unsigned(v.data()), v.size()};
+}
 
 /// Returns true if the first string is equal to the second string, compared case-insensitively.
 inline bool string_iequal(std::string_view s1, std::string_view s2) {

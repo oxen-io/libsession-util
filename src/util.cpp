@@ -13,4 +13,10 @@ void sodium_buffer_deallocate(void* p) {
     if (p)
         sodium_free(p);
 }
+
+void sodium_zero_buffer(void* ptr, size_t size) {
+    if (ptr)
+        sodium_memzero(ptr, size);
+}
+
 }  // namespace session

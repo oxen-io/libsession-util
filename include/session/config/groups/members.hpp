@@ -185,17 +185,12 @@ class Members final : public ConfigBase {
     /// list of encryption keys for encrypting new and decrypting existing messages.
     ///
     /// To construct a blank info object (i.e. with no pre-existing dumped data to load) pass
-    /// `std::nullopt` as the second argument.
+    /// `std::nullopt` as the third argument.
+    ///
+    /// Encryption keys must be loaded before the Info object can be modified or parse other Info
+    /// messages, and are typically loaded by providing the `Info` object to the `Keys` class.
     ///
     /// Inputs:
-    /// - `keys` -- contains the possible 32-byte en/decryption keys that may be used for incoming
-    ///   messages (both config messages and group messages).  These are *not* Ed25519 secret keys,
-    ///   but rather symmetric encryption keys used for encryption (generally generated using a
-    ///   cryptographically secure random generator).  The *first* key in this list will be used to
-    ///   encrypt outgoing config messages (and so, in general, should be the most current key).
-    ///   There must always be at least one key present (either provided at construction or via
-    ///   add_keys) before you can push a config.  Post-construction you can add or remove keys via
-    ///   add_key/remove_key/clear_keys from ConfigBase.
     /// - `ed25519_pubkey` is the public key of this group, used to validate config messages.
     ///   Config messages not signed with this key will be rejected.
     /// - `ed25519_secretkey` is the secret key of the group, used to sign pushed config messages.
@@ -203,8 +198,7 @@ class Members final : public ConfigBase {
     ///   push config changes.
     /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     ///   that was previously dumped from an instance of this class by calling `dump()`.
-    Members(const std::vector<ustring_view>& keys,
-            ustring_view ed25519_pubkey,
+    Members(ustring_view ed25519_pubkey,
             std::optional<ustring_view> ed25519_secretkey,
             std::optional<ustring_view> dumped);
 

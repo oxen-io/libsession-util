@@ -63,13 +63,16 @@ class Keys final : public ConfigSig {
 
     struct key_info {
         std::array<unsigned char, 32> key;
-        std::chrono::system_clock::time_point timestamp;
+        std::chrono::system_clock::time_point timestamp; // millisecond precision
         int64_t generation;
 
         auto cmpval() const { return std::tie(generation, timestamp, key); }
         bool operator<(const key_info& b) const { return cmpval() < b.cmpval(); }
+        bool operator>(const key_info& b) const { return cmpval() > b.cmpval(); }
+        bool operator<=(const key_info& b) const { return cmpval() <= b.cmpval(); }
+        bool operator>=(const key_info& b) const { return cmpval() >= b.cmpval(); }
         bool operator==(const key_info& b) const { return cmpval() == b.cmpval(); }
-        bool operator!=(const key_info& b) const { return !(*this == b); }
+        bool operator!=(const key_info& b) const { return cmpval() != b.cmpval(); }
     };
 
     /// Vector of keys that is kept sorted by generation/timestamp/key.  This gets pruned as keys
@@ -80,6 +83,8 @@ class Keys final : public ConfigSig {
     sodium_vector<unsigned char> pending_key_config_;
     int64_t pending_gen_ = -1;
 
+    bool needs_dump_ = false;
+
     ConfigMessage::verify_callable verifier_;
     ConfigMessage::sign_callable signer_;
 
@@ -88,6 +93,9 @@ class Keys final : public ConfigSig {
 
     // Checks for and drops expired keys.
     void remove_expired();
+
+    // Loads existing state from a previous dump of keys data
+    void load_dump(ustring_view dump);
 
   public:
     /// The multiple of members keys we include in the message; we add junk entries to the key list
@@ -123,22 +131,29 @@ class Keys final : public ConfigSig {
     /// list of encryption keys for encrypting new and decrypting existing messages.
     ///
     /// To construct a blank info object (i.e. with no pre-existing dumped data to load) pass
-    /// `std::nullopt` as the second argument.
+    /// `std::nullopt` as the last argument.
     ///
     /// Inputs:
     /// - `user_ed25519_secretkey` is the ed25519 secret key backing the current user's session ID,
     ///   and is used to decrypt incoming keys.  It is required.
     /// - `group_ed25519_pubkey` is the public key of the group, used to verify message signatures
-    ///   on key updates.  It is required.
+    ///   on key updates.  Required.  Should not include the `03` prefix.
     /// - `group_ed25519_secretkey` is the secret key of the group, used to encrypt, decrypt, and
     ///   sign config messages.  This is only possessed by the group admin(s), and must be provided
     ///   in order to make and push config changes.
     /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     ///   that was previously dumped from an instance of this class by calling `dump()`.
+    /// - `info` and `members` -- will be loaded with the group keys, if present in the dump.
+    ///   Otherwise, if this is an admin Keys object, with a new one constructed for the initial
+    ///   Keys object; or with no keys loaded at all if this is a non-admin, non-dump construction.
+    ///   (Keys will also be loaded later into this and the info/members objects, when rekey()ing or
+    ///   loading keys via received config messages).
     Keys(ustring_view user_ed25519_secretkey,
          ustring_view group_ed25519_pubkey,
          std::optional<ustring_view> group_ed25519_secretkey,
-         std::optional<ustring_view> dumped);
+         std::optional<ustring_view> dumped,
+         Info& info,
+         Members& members);
 
     /// API: groups/Keys::storage_namespace
     ///
@@ -166,6 +181,9 @@ class Keys final : public ConfigSig {
     /// from most-recent to least-recent (and so the first one is meant to be used as the encryption
     /// key), including a pending key if this object is in the process of pushing a new keys
     /// message.
+    ///
+    /// This isn't typically directly needed: this object manages the key lists in the `info` and
+    /// `members` objects itself.
     ///
     /// Outputs:
     /// - `std::vector<ustring_view>` - vector of encryption keys.
@@ -247,7 +265,8 @@ class Keys final : public ConfigSig {
     /// would typically not change the keys, but are allowed anyway.
     ///
     /// This method should always be wrapped in a `try/catch`: if the given configuration data is
-    /// malformed or is not properly signed an exception will be raised.
+    /// malformed or is not properly signed an exception will be raised (but the Keys object remains
+    /// usable).
     ///
     /// Inputs:
     /// - `msg` - the full stored config message value
@@ -265,8 +284,8 @@ class Keys final : public ConfigSig {
             ustring_view data,
             ustring_view msgid,
             int64_t timestamp_ms,
-            Members& members,
-            Info& info);
+            Info& info,
+            Members& members);
 
     /// API: groups/Keys::needs_rekey
     ///
@@ -293,6 +312,33 @@ class Keys final : public ConfigSig {
     /// Outputs:
     /// - `true` if a rekey is needed, `false` otherwise.
     bool needs_rekey() const;
+
+    /// API: groups/Keys::needs_dump
+    ///
+    /// Returns true if this Keys config has changes, either made directly or from incoming configs,
+    /// that need to be dumped to the database (made since the last call to `dump()`), false if no
+    /// changes have been made.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `true` if state needs to be dumped, `false` if state hasn't changed since the last
+    ///   call to `dump()`.
+    bool needs_dump() const;
+
+    /// API: groups/Keys::dump
+    ///
+    /// Returns a dump of the current state of this keys config that allows the Keys object to be
+    /// reinstantiated from scratch.
+    ///
+    /// Although this can be called at any time, it is recommended to only do so when
+    /// `needs_dump()` returns true.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs: opaque binary data containing the group keys and other Keys config data that can be
+    /// passed to the `Keys` constructor to reinitialize a Keys object with the current state.
+    ustring dump();
 };
 
 }  // namespace session::config::groups

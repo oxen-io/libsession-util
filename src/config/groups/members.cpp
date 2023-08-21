@@ -7,14 +7,10 @@
 namespace session::config::groups {
 
 Members::Members(
-        const std::vector<ustring_view>& keys,
         ustring_view ed25519_pubkey,
         std::optional<ustring_view> ed25519_secretkey,
         std::optional<ustring_view> dumped) :
-        ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey} {
-    for (const auto& k : keys)
-        add_key(k, false);
-}
+        ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey} {}
 
 std::optional<member> Members::get(std::string_view pubkey_hex) const {
     std::string pubkey = session_id_to_bytes(pubkey_hex);

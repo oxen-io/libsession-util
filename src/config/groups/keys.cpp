@@ -6,6 +6,7 @@
 #include <sodium/randombytes.h>
 #include <sodium/utils.h>
 
+#include <chrono>
 #include <session/config/groups/info.hpp>
 #include <session/config/groups/keys.hpp>
 #include <session/config/groups/members.hpp>
@@ -15,11 +16,17 @@
 
 namespace session::config::groups {
 
+static auto sys_time_from_ms(int64_t milliseconds_since_epoch) {
+    return std::chrono::system_clock::time_point{milliseconds_since_epoch * 1ms};
+}
+
 Keys::Keys(
         ustring_view user_ed25519_secretkey,
         ustring_view group_ed25519_pubkey,
         std::optional<ustring_view> group_ed25519_secretkey,
-        std::optional<ustring_view> dumped) {
+        std::optional<ustring_view> dumped,
+        Info& info,
+        Members& members) {
 
     if (sodium_init() == -1)
         throw std::runtime_error{"libsodium initialization failed!"};
@@ -34,6 +41,103 @@ Keys::Keys(
     init_sig_keys(group_ed25519_pubkey, group_ed25519_secretkey);
 
     user_ed25519_sk.load(user_ed25519_secretkey.data(), 64);
+
+    if (dumped) {
+        load_dump(*dumped);
+    } else if (_sign_sk) {
+        rekey(info, members);
+    }
+}
+
+bool Keys::needs_dump() const {
+    return needs_dump_;
+}
+
+ustring Keys::dump() {
+    oxenc::bt_dict_producer d;
+    {
+        auto keys = d.append_list("keys");
+        for (auto& k : keys_) {
+            auto ki = keys.append_dict();
+            // NB: Keys must be in sorted order
+            ki.append("g", k.generation);
+            ki.append("k", from_unsigned_sv(k.key));
+            ki.append(
+                    "t",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                            k.timestamp.time_since_epoch())
+                            .count());
+        }
+    }
+
+    if (!pending_key_config_.empty()) {
+        auto pending = d.append_dict("pending");
+        // NB: Keys must be in sorted order
+        pending.append("c", from_unsigned_sv(pending_key_config_));
+        pending.append("g", pending_gen_);
+        pending.append("k", from_unsigned_sv(pending_key_));
+    }
+
+    needs_dump_ = false;
+    return ustring{to_unsigned_sv(d.view())};
+}
+
+void Keys::load_dump(ustring_view dump) {
+    oxenc::bt_dict_consumer d{from_unsigned_sv(dump)};
+
+    if (d.skip_until("keys")) {
+        auto keys = d.consume_list_consumer();
+        while (!keys.is_finished()) {
+            auto kd = keys.consume_dict_consumer();
+            auto& key = keys_.emplace_back();
+
+            if (!kd.skip_until("g"))
+                throw config_value_error{"Invalid Keys dump: found key without generation (g)"};
+            key.generation = kd.consume_integer<int64_t>();
+
+            if (!kd.skip_until("k"))
+                throw config_value_error{"Invalid Keys dump: found key without key bytes (k)"};
+            auto key_bytes = kd.consume_string_view();
+            if (key_bytes.size() != key.key.size())
+                throw config_value_error{
+                        "Invalid Keys dump: found key with invalid size (" +
+                        std::to_string(key_bytes.size()) + ")"};
+            std::memcpy(key.key.data(), key_bytes.data(), key.key.size());
+
+            if (!kd.skip_until("t"))
+                throw config_value_error{"Invalid Keys dump: found key without timestamp (t)"};
+            key.timestamp = sys_time_from_ms(kd.consume_integer<int64_t>());
+
+            if (keys_.size() > 1 && *std::prev(keys_.end(), 2) >= key)
+                throw config_value_error{"Invalid Keys dump: keys are not in proper sorted order"};
+        }
+    } else {
+        throw config_value_error{"Invalid Keys dump: `keys` not found"};
+    }
+
+    if (d.skip_until("pending")) {
+        auto pending = d.consume_dict_consumer();
+
+        if (!pending.skip_until("c"))
+            throw config_value_error{"Invalid Keys dump: found pending without config (c)"};
+        auto pc = pending.consume_string_view();
+        pending_key_config_.clear();
+        pending_key_config_.resize(pc.size());
+        std::memcpy(pending_key_config_.data(), pc.data(), pc.size());
+
+        if (!pending.skip_until("g"))
+            throw config_value_error{"Invalid Keys dump: found pending without generation (g)"};
+        pending_gen_ = pending.consume_integer<int64_t>();
+
+        if (!pending.skip_until("k"))
+            throw config_value_error{"Invalid Keys dump: found pending without key (k)"};
+        auto pk = pending.consume_string_view();
+        if (pk.size() != pending_key_.size())
+            throw config_value_error{
+                    "Invalid Keys dump: found pending key (k) with invalid size (" +
+                    std::to_string(pk.size()) + ")"};
+        std::memcpy(pending_key_.data(), pk.data(), pending_key_.size());
+    }
 }
 
 std::vector<ustring_view> Keys::group_keys() const {
@@ -237,6 +341,8 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     members.replace_keys(new_key_list, /*dirty=*/true);
     info.replace_keys(new_key_list, /*dirty=*/true);
 
+    needs_dump_ = true;
+
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
 
@@ -247,7 +353,7 @@ std::optional<ustring_view> Keys::pending_config() const {
 }
 
 void Keys::load_key_message(
-        ustring_view data, ustring_view msgid, int64_t timestamp_ms, Members& members, Info& info) {
+        ustring_view data, ustring_view msgid, int64_t timestamp_ms, Info& info, Members& members) {
 
     oxenc::bt_dict_consumer d{from_unsigned_sv(data)};
 
@@ -272,8 +378,7 @@ void Keys::load_key_message(
 
     bool found_key = false;
     sodium_cleared<key_info> new_key{};
-    new_key.timestamp = std::chrono::system_clock::from_time_t(timestamp_ms / 1000) +
-                        1ms * (timestamp_ms % 1000);
+    new_key.timestamp = sys_time_from_ms(timestamp_ms);
 
     if (!d.skip_until("G"))
         throw config_value_error{"Key message missing required generation (G) field"};
@@ -380,14 +485,18 @@ void Keys::load_key_message(
             keys_.insert(it, new_key);
 
             remove_expired();
+
+            needs_dump_ = true;
         }
     }
 
     // If this is our pending config or this has a later generation than our pending config then
     // drop our pending status.
     if (!pending_key_config_.empty() &&
-        (new_key.generation > pending_gen_ || new_key.key == pending_key_))
+        (new_key.generation > pending_gen_ || new_key.key == pending_key_)) {
         pending_key_config_.clear();
+        needs_dump_ = true;
+    }
 
     auto new_key_list = group_keys();
     members.replace_keys(new_key_list, /*dirty=*/false);

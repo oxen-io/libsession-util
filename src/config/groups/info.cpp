@@ -17,14 +17,10 @@ using namespace std::literals;
 using session::ustring_view;
 
 Info::Info(
-        const std::vector<ustring_view>& keys,
         ustring_view ed25519_pubkey,
         std::optional<ustring_view> ed25519_secretkey,
         std::optional<ustring_view> dumped) :
-        ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey} {
-    for (const auto& k : keys)
-        add_key(k, false);
-}
+        ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey} {}
 
 std::array<unsigned char, 32> Info::subaccount_mask() const {
     return seed_hash("SessionGroupSubaccountMask");
