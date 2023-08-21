@@ -221,7 +221,8 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
             /* do nothing */
         } else {
             _config = std::move(new_conf);
-            assert(_config->unmerged_index() >= 1 && _config->unmerged_index() < all_hashes.size());
+            assert(((old_seqno == 0 && mine.empty()) || _config->unmerged_index() >= 1) &&
+                   _config->unmerged_index() < all_hashes.size());
             set_state(ConfigState::Clean);
             _curr_hash = all_hashes[_config->unmerged_index()];
         }
