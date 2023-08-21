@@ -433,7 +433,6 @@ void verify_config_sig(
         oxenc::bt_dict_consumer dict,
         ustring_view config_msg,
         const ConfigMessage::verify_callable& verifier,
-        bool signature_optional,
         std::optional<std::array<unsigned char, 64>>* verified_signature) {
     ustring_view to_verify, sig;
     dict.skip_until("~");
@@ -458,10 +457,9 @@ void verify_config_sig(
         throw config_parse_error{"Invalid config: dict has invalid key(s) after \"~\""};
 
     if (verifier) {
-        if (sig.empty()) {
-            if (!signature_optional)
-                throw missing_signature{"Config signature is missing"};
-        } else if (sig.size() != 64)
+        if (sig.empty())
+            throw missing_signature{"Config signature is missing"};
+        else if (sig.size() != 64)
             throw signature_error{"Config signature is invalid (not 64B)"};
         else if (!verifier(to_verify, sig))
             throw signature_error{"Config signature failed verification"};
@@ -547,8 +545,7 @@ ConfigMessage::ConfigMessage(
         ustring_view serialized,
         verify_callable verifier_,
         sign_callable signer_,
-        int lag,
-        bool signature_optional) :
+        int lag) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     oxenc::bt_dict_consumer dict{from_unsigned_sv(serialized)};
@@ -575,7 +572,7 @@ ConfigMessage::ConfigMessage(
 
         load_unknowns(unknown_, dict, "=", "~");
 
-        verify_config_sig(dict, serialized, verifier, signature_optional, &verified_signature_);
+        verify_config_sig(dict, serialized, verifier, &verified_signature_);
     } catch (const oxenc::bt_deserialize_invalid& err) {
         throw config_parse_error{"Failed to parse config file: "s + err.what()};
     }
@@ -586,7 +583,6 @@ ConfigMessage::ConfigMessage(
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
-        bool signature_optional,
         std::function<void(size_t, const config_error&)> error_handler) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
@@ -594,7 +590,7 @@ ConfigMessage::ConfigMessage(
     for (size_t i = 0; i < serialized_confs.size(); i++) {
         const auto& data = serialized_confs[i];
         try {
-            ConfigMessage m{data, verifier, signer, lag, signature_optional};
+            ConfigMessage m{data, verifier, signer, lag};
             configs.emplace_back(std::move(m), false);
         } catch (const config_error& e) {
             if (error_handler)
@@ -653,7 +649,7 @@ ConfigMessage::ConfigMessage(
     // produce a proper merge, so we will just keep the highest (highest seqno, hash) config and use
     // that, dropping the rest.  Someone else (with signing power) will have to merge and push the
     // merge out to us.
-    if (verifier && !signer && !signature_optional) {
+    if (verifier && !signer) {
         auto best_it =
                 std::max_element(configs.begin(), configs.end(), [](const auto& a, const auto& b) {
                     if (a.second != b.second)  // Exactly one of the two is redundant
@@ -716,14 +712,12 @@ MutableConfigMessage::MutableConfigMessage(
         verify_callable verifier,
         sign_callable signer,
         int lag,
-        bool signature_optional,
         std::function<void(size_t, const config_error&)> error_handler) :
         ConfigMessage{
                 serialized_confs,
                 std::move(verifier),
                 std::move(signer),
                 lag,
-                signature_optional,
                 std::move(error_handler)} {
     if (!merged())
         increment_impl();
@@ -733,14 +727,12 @@ MutableConfigMessage::MutableConfigMessage(
         ustring_view config,
         verify_callable verifier,
         sign_callable signer,
-        int lag,
-        bool signature_optional) :
+        int lag) :
         MutableConfigMessage{
                 std::vector{{config}},
                 std::move(verifier),
                 std::move(signer),
                 lag,
-                signature_optional,
                 [](size_t, const config_error& e) { throw e; }} {}
 
 const oxenc::bt_dict& ConfigMessage::diff() {

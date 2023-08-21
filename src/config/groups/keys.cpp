@@ -369,7 +369,7 @@ void Keys::load_key_message(
     if (!supplemental && member_key_count % MESSAGE_KEY_MULTIPLE != 0)
         throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};
 
-    verify_config_sig(d, data, verifier_, false);
+    verify_config_sig(d, data, verifier_);
 
     if (found_key) {
         auto it = std::lower_bound(keys_.begin(), keys_.end(), new_key);

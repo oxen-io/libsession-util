@@ -127,8 +127,7 @@ class ConfigMessage {
             ustring_view serialized,
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
-            int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false);
+            int lag = DEFAULT_DIFF_LAGS);
 
     /// Constructs a new ConfigMessage by loading and potentially merging multiple serialized
     /// ConfigMessages together, according to the config conflict resolution rules.  The result
@@ -152,10 +151,6 @@ class ConfigMessage {
     /// diffs that exceeding this lag value will have those early lagged diffs dropping during
     /// loading.
     ///
-    /// signature_optional - if true then accept a message with no signature even when a verifier is
-    /// set, thus allowing unsigned messages (though messages with an invalid signature are still
-    /// not allowed).  This option is ignored when verifier is not set.
-    ///
     /// error_handler - if set then any config message parsing error will be passed to this function
     /// for handling with the index of `configs` that failed and the error exception: the callback
     /// typically warns and, if the overall construction should abort, rethrows the error.  If this
@@ -168,7 +163,6 @@ class ConfigMessage {
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
             int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false,
             std::function<void(size_t, const config_error&)> error_handler = nullptr);
 
     /// Returns a read-only reference to the contained data.  (To get a mutable config object use
@@ -288,7 +282,6 @@ class MutableConfigMessage : public ConfigMessage {
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
             int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false,
             std::function<void(size_t, const config_error&)> error_handler = nullptr);
 
     /// Wrapper around the above that takes a single string view to load a single message, doesn't
@@ -298,8 +291,7 @@ class MutableConfigMessage : public ConfigMessage {
             ustring_view config,
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
-            int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false);
+            int lag = DEFAULT_DIFF_LAGS);
 
     /// Does the same as the base incrementing, but also records any diff info from the current
     /// MutableConfigMessage.  *this* object gets pruned and signed as part of this call.  If the
@@ -372,9 +364,6 @@ class MutableConfigMessage : public ConfigMessage {
 ///   `dict` is parsing (i.e. it cannot be a copy).
 /// - `verifier` -- a callback to invoke to verify the signature of the message.  If the callback is
 ///   empty then the signature will be ignored (it is neither required nor verified).
-/// - `signature_optional` -- true if the message is allowed to omit a signature; in such a case a
-///   message will be accepted with no signature, or with a valid signature, but not with an invalid
-///   signature.  (Ignored if `verifier` is empty)
 /// - `verified_signature` is a pointer to a std::optional array of signature data; if this is
 ///   specified and not nullptr then the optional with be emplaced with the signature bytes if the
 ///   signature successfully validates.
@@ -386,7 +375,6 @@ void verify_config_sig(
         oxenc::bt_dict_consumer dict,
         ustring_view config_msg,
         const ConfigMessage::verify_callable& verifier,
-        bool signature_optional,
         std::optional<std::array<unsigned char, 64>>* verified_signature = nullptr);
 
 }  // namespace session::config

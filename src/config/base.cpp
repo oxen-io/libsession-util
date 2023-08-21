@@ -181,7 +181,6 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
             _config->verifier,
             _config->signer,
             config_lags(),
-            false, /* signature not optional (if we have a verifier) */
             [&](size_t i, const config_error& e) {
                 log(LogLevel::warning, e.what());
                 assert(i > 0);  // i == 0 means we can't deserialize our own serialization
@@ -372,13 +371,12 @@ void ConfigBase::init_from_dump(std::string_view dump) {
         // could store a dump.
         _config = std::make_unique<MutableConfigMessage>(
                 to_unsigned_sv(d.consume_string_view()),
-                nullptr,  // verifier, set later
-                nullptr,  // signer, set later
-                config_lags(),
-                true /* signature optional because we don't sign the dump */);
+                nullptr,  // We omit verifier and signer for now because we don't want this dump to
+                nullptr,  // be signed (since it's just a dump).
+                config_lags());
     else
         _config = std::make_unique<ConfigMessage>(
-                to_unsigned_sv(d.consume_string_view()), nullptr, nullptr, config_lags(), true);
+                to_unsigned_sv(d.consume_string_view()), nullptr, nullptr, config_lags());
 
     if (d.skip_until("(")) {
         _curr_hash = d.consume_string();
