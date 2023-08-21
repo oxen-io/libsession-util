@@ -20,7 +20,7 @@ if [ -d "$destdir" ]; then
     rm -rf "$destdir"
 fi
 
-docsify init --local "$destdir"
+npx docsify init --local "$destdir"
 
 rm -Rf "$destdir"/vendor/themes
 rm -f "$destdir"/README.md
