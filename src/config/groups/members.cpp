@@ -80,7 +80,6 @@ void Members::iterator::_load_info() {
         if (_it->first.size() == 33) {
             if (auto* info_dict = std::get_if<dict>(&_it->second)) {
                 _val = std::make_shared<member>(oxenc::to_hex(_it->first));
-                auto hex = oxenc::to_hex(_it->first);
                 _val->load(*info_dict);
                 return;
             }

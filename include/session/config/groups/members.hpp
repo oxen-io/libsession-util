@@ -150,11 +150,11 @@ struct member {
 
     /// API: groups/member::info
     ///
-    /// converts the member info into a c struct
+    /// Converts the member info into a C struct.
     ///
     /// Inputs:
-    /// - `c` -- Return Parameter that will be filled with data in contact_info
-    void into(config_group_member& c) const;
+    /// - `m` -- Reference to C struct to fill with group member info.
+    void into(config_group_member& m) const;
 
     /// API: groups/member::set_name
     ///
@@ -265,8 +265,8 @@ class Members final : public ConfigBase {
     ///
     /// ```cpp
     ///     auto m = members.get_or_construct(pubkey);
-    ///     c.name = "Session User 42";
-    ///     members.set(c);
+    ///     m.name = "Session User 42";
+    ///     members.set(m);
     /// ```
     ///
     /// Inputs:

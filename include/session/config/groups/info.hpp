@@ -239,15 +239,15 @@ class Info final : public ConfigBase {
 
     /// API: groups/Info::get_delete_attach_before
     ///
-    /// Returns the delete-before unix timestamp (seconds) for the group; clients should delete all
-    /// messages from the closed group with timestamps earlier than this value, if set.
+    /// Returns the delete-attachments-before unix timestamp (seconds) for the group; clients should
+    /// delete all messages from the closed group with timestamps earlier than this value, if set.
     ///
-    /// Returns std::nullopt if no delete-before timestamp is set.
+    /// Returns std::nullopt if no delete-attachments-before timestamp is set.
     ///
     /// Inputs: none.
     ///
     /// Outputs:
-    /// - `int64_t` -- the unix timestamp for which all older messages shall be delete
+    /// - `int64_t` -- the unix timestamp for which all older message attachments shall be deleted
     std::optional<int64_t> get_delete_attach_before() const;
 
     /// API: groups/Info::destroy_group
