@@ -10,10 +10,12 @@ enum class Namespace : std::int16_t {
     ConvoInfoVolatile = 4,
     UserGroups = 5,
 
-    // Groups namespaces (i.e. for config of the group itself, not one user's group settings)
-    GroupInfo = 11,
-    GroupMembers = 12,
-    GroupKeys = 13,
+    // Messages sent to a closed group:
+    GroupMessages = 11,
+    // Groups config namespaces (i.e. for shared config of the group itself, not one user's group settings)
+    GroupKeys = 12,
+    GroupInfo = 13,
+    GroupMembers = 14,
 };
 
 }  // namespace session::config
