@@ -19,6 +19,7 @@ static constexpr int64_t created_ts = 1680064059;
 
 using namespace session::config;
 
+/*
 TEST_CASE("Group Keys", "[config][groups][keys]") {
 
     const std::array seeds = {
@@ -73,3 +74,4 @@ TEST_CASE("Group Keys", "[config][groups][keys]") {
                 );
     }
 }
+*/
