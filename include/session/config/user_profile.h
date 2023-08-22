@@ -208,6 +208,47 @@ LIBSESSION_EXPORT int user_profile_get_nts_expiry(const config_object* conf);
 /// - `expiry` -- [in] Integer of the expiry timer in seconds
 LIBSESSION_EXPORT void user_profile_set_nts_expiry(config_object* conf, int expiry);
 
+/// API: user_profile/user_profile_get_blinded_msgreqs
+///
+/// Returns true if blinded message requests should be retrieved (from SOGS servers), false if they
+/// should be ignored.
+///
+/// Declaration:
+/// ```cpp
+/// INT user_profile_get_blinded_msgreqs(
+///     [in]    const config_object*    conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `int` -- Will be -1 if the config does not have the value explicitly set, 0 if the setting is
+///   explicitly disabled, and 1 if the setting is explicitly enabled.
+LIBSESSION_EXPORT int user_profile_get_blinded_msgreqs(const config_object* conf);
+
+/// API: user_profile/user_profile_set_blinded_msgreqs
+///
+/// Sets whether blinded message requests should be retrieved from SOGS servers.  Set to 1 (or any
+/// positive value) to enable; 0 to disable; and -1 to clear the setting.
+///
+/// Declaration:
+/// ```cpp
+/// VOID user_profile_set_blinded_msgreqs(
+///     [in]    config_object*      conf,
+///     [in]    int                 enabled
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `enabled` -- [in] true if they should be enabled, false if disabled
+///
+/// Outputs:
+/// - `void` -- Returns Nothing
+LIBSESSION_EXPORT void user_profile_set_blinded_msgreqs(config_object* conf, int enabled);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

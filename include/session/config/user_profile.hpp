@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <session/config.hpp>
 
 #include "base.hpp"
@@ -20,6 +21,9 @@ using namespace std::literals;
 /// + - the priority value for the "Note to Self" pseudo-conversation (higher = higher in the
 ///     conversation list).  Omitted when 0.  -1 means hidden.
 /// e - the expiry timer (in seconds) for the "Note to Self" pseudo-conversation.  Omitted when 0.
+/// M - set to 1 if blinded message request retrieval is enabled, 0 if retrieval is *disabled*, and
+///     omitted if the setting has not been explicitly set (or has been explicitly cleared for some
+///     reason).
 
 class UserProfile final : public ConfigBase {
 
@@ -154,6 +158,35 @@ class UserProfile final : public ConfigBase {
     /// Inputs:
     /// - `timer` -- Default to 0 seconds, will set the expiry timer
     void set_nts_expiry(std::chrono::seconds timer = 0s);
+
+    /// API: user_profile/UserProfile::get_blinded_msgreqs
+    ///
+    /// Accesses whether or not blinded message requests are enabled for the client.  Can have three
+    /// values:
+    ///
+    /// - std::nullopt -- the value has not been given an explicit value so the client should use
+    ///   its default.
+    /// - true -- the value is explicitly enabled (i.e. user wants blinded message requests)
+    /// - false -- the value is explicitly disabled (i.e. user disabled blinded message requests)
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::optional<bool>` - true/false if blinded message requests are enabled or disabled;
+    ///   `std::nullopt` if the option has not been set either way.
+    std::optional<bool> get_blinded_msgreqs() const;
+
+    /// API: user_profile/UserProfile::set_blinded_msgreqs
+    ///
+    /// Sets whether blinded message requests (i.e. from SOGS servers you are connected to) should
+    /// be enabled or not.  This is typically invoked with either `true` or `false`, but can also be
+    /// called with `std::nullopt` to explicitly clear the value.
+    ///
+    /// Inputs:
+    /// - `enabled` -- true if blinded message requests should be retrieved, false if they should
+    ///   not, and `std::nullopt` to drop the setting from the config (and thus use the client's
+    ///   default).
+    void set_blinded_msgreqs(std::optional<bool> enabled);
 };
 
 }  // namespace session::config
