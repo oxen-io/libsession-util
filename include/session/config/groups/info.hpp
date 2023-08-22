@@ -261,6 +261,8 @@ class Info final : public ConfigBase {
     /// Returns true if this group has been marked destroyed; the receiving client is expected to
     /// delete it.
     ///
+    /// Inputs: none.
+    ///
     /// Outputs:
     /// - `true` if the group has been destroyed, `false` otherwise.
     bool is_destroyed() const;

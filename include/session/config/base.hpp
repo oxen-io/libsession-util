@@ -119,6 +119,8 @@ class ConfigSig {
     ///
     /// Returns a const reference to the 32-byte Ed25519 signing pubkey, if set.
     ///
+    /// Inputs: none.
+    ///
     /// Outputs:
     /// - reference to the 32-byte pubkey, or `std::nullopt` if not set.
     const std::optional<std::array<unsigned char, 32>>& get_sig_pubkey() const { return _sign_pk; }

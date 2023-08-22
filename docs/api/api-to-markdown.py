@@ -47,6 +47,7 @@ for f in args.filename:
 #
 # "Inputs: none."
 # "Outputs: none."
+# "Member variable."
 # "Inputs:" followed by markdown (typically an unordered list) until the next match from this list.
 # "Outputs:" followed by markdown
 # "Example input:" followed by a code block (i.e. containing json)
@@ -91,6 +92,7 @@ RPC_START = re.compile(r"^API:\s*([\w/:&\\\[\]=,\(\)\<\>]+)(.*)$")
 DEV_RPC_START = re.compile(r"^Dev-API:\s*([\w/:]+)(.*)$")
 IN_NONE = re.compile(r"^Inputs?: *[nN]one\.?$")
 IN_SOME = re.compile(r"^Inputs?:\s*$")
+MEMBER_VAR = re.compile(r"^Member +[vV]ar(?:iable)?\.?$")
 DECL_SOME = re.compile(r"^Declaration?:\s*$")
 OUT_SOME = re.compile(r"^Outputs?:\s*$")
 EXAMPLE_IN = re.compile(r"^Example [iI]nputs?:\s*$")
@@ -159,6 +161,7 @@ while True:
     description, decl, inputs, outputs = "", "", "", ""
     done_desc = False
     no_inputs = False
+    member_var = False
     examples = []
     cur_ex_in = None
     old_names = []
@@ -193,6 +196,9 @@ while True:
             if inputs:
                 error("found multiple Inputs:")
             inputs, no_inputs, mode = MD_NO_INPUT, True, Parsing.NONE
+
+        elif re.search(MEMBER_VAR, line):
+            member_var, no_inputs, mode = True, True, Parsing.DESC
 
         elif re.search(DECL_SOME, line):
             if inputs:
@@ -285,7 +291,7 @@ while True:
     # We hit the end of the commented section
     if not description or inputs.isspace():
         problems.append("endpoint has no description")
-    if not inputs or inputs.isspace():
+    if (not inputs or inputs.isspace()) and not member_var:
         problems.append(
             "endpoint has no inputs description; perhaps you need to add 'Inputs: none.'?"
         )
@@ -321,7 +327,9 @@ while True:
 {MD_DECL_HEADER}
 
 {decl}
-
+"""
+    if not member_var:
+        md = md + f"""
 {MD_INPUT_HEADER}
 
 {inputs}

@@ -185,6 +185,8 @@ class Keys final : public ConfigSig {
     /// This isn't typically directly needed: this object manages the key lists in the `info` and
     /// `members` objects itself.
     ///
+    /// Inputs: none.
+    ///
     /// Outputs:
     /// - `std::vector<ustring_view>` - vector of encryption keys.
     std::vector<ustring_view> group_keys() const;
@@ -336,8 +338,9 @@ class Keys final : public ConfigSig {
     ///
     /// Inputs: None
     ///
-    /// Outputs: opaque binary data containing the group keys and other Keys config data that can be
-    /// passed to the `Keys` constructor to reinitialize a Keys object with the current state.
+    /// Outputs:
+    /// - opaque binary data containing the group keys and other Keys config data that can be passed
+    ///   to the `Keys` constructor to reinitialize a Keys object with the current state.
     ustring dump();
 };
 

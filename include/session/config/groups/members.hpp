@@ -45,10 +45,14 @@ struct member {
 
     /// API: groups/member::session_id
     ///
+    /// Member variable
+    ///
     /// The member's session ID, in hex.
     std::string session_id;
 
     /// API: groups/member::name
+    ///
+    /// Member variable
     ///
     /// The member's human-readable name.  Optional.  This is used by other members of the group to
     /// display a member's details before having seen a message from that member.
@@ -56,12 +60,16 @@ struct member {
 
     /// API: groups/member::profile_picture
     ///
+    /// Member variable
+    ///
     /// The member's profile picture (URL & decryption key).  Optional.  This is used by other
     /// members of the group to display a member's details before having seen a message from that
     /// member.
     profile_pic profile_picture;
 
     /// API: groups/member::admin
+    ///
+    /// Member variable
     ///
     /// Flag that is set to indicate to the group that this member is an admin.
     ///
@@ -83,18 +91,26 @@ struct member {
     /// to the group.  The optional `failed` parameter can be specified as true if the invitation
     /// was issued but failed to send for some reason (this is intended as a signal to other clients
     /// that the invitation should be reissued).
+    ///
+    /// Inputs:
+    /// - `failed` can be specified and set to `true` to the invite status to "failed-to-send";
+    ///   otherwise omitting it or giving as `false` sets the invite status to "sent."
     void set_invited(bool failed = false) { invite_status = failed ? INVITE_FAILED : INVITE_SENT; }
 
     /// API: groups/members::set_accepted
     ///
     /// This clears the "invited" flag for this user, thus indicating that the user has accepted an
     /// invitation and is now a regular member of the group.
+    ///
+    /// Inputs: none
     void set_accepted() { invite_status = 0; }
 
     /// API: groups/member::invite_pending
     ///
     /// Returns whether the user currently has a pending invitation.  Returns true if so (whether or
     /// not that invitation has failed).
+    ///
+    /// Inputs: none
     ///
     /// Outputs:
     /// - `bool` -- true if the user has a pending invitation, false otherwise.
@@ -104,6 +120,8 @@ struct member {
     ///
     /// Returns true if the user has a pending invitation that is marked as failed (and thus should
     /// be re-sent).
+    ///
+    /// Inputs: none
     ///
     /// Outputs:
     /// - `bool` -- true if the user has a failed pending invitation
@@ -121,6 +139,10 @@ struct member {
     /// to other clients that the promotion should be reissued).
     ///
     /// Note that this flag is ignored when the `admin` field is set to true.
+    ///
+    /// Inputs:
+    /// - `failed`: can be specified as true to mark the promotion status as "failed-to-send".  If
+    ///   omitted or false then the promotion status is set to "sent".
     void set_promoted(bool failed = false) {
         promotion_status = failed ? INVITE_FAILED : INVITE_SENT;
     }
@@ -129,6 +151,8 @@ struct member {
     ///
     /// Returns whether the user currently has a pending invitation/promotion to admin status.
     /// Returns true if so (whether or not that invitation has failed).
+    ///
+    /// Inputs: None
     ///
     /// Outputs:
     /// - `bool` -- true if the user has a pending promotion, false otherwise.
@@ -139,6 +163,8 @@ struct member {
     /// Returns true if the user has a pending promotion-to-admin that is marked as failed (and thus
     /// should be re-sent).
     ///
+    /// Inputs: None
+    ///
     /// Outputs:
     /// - `bool` -- true if the user has a failed pending promotion
     bool promotion_failed() const { return !admin && promotion_status == INVITE_FAILED; }
@@ -146,6 +172,11 @@ struct member {
     /// API: groups/member::promoted
     ///
     /// Returns true if the user is already an admin *or* has a pending promotion to admin.
+    ///
+    /// Inputs: none.
+    ///
+    /// Outputs:
+    /// - `bool` -- true if the member is promoted (or promotion-in-progress)
     bool promoted() const { return admin || promotion_pending(); }
 
     /// API: groups/member::info

@@ -486,6 +486,8 @@ LIBSESSION_EXPORT void config_set_sig_pubkey(config_object* conf, const unsigned
 /// Returns a pointer to the 32-byte Ed25519 signing pubkey, if set.  Returns nullptr if there is no
 /// current signing pubkey.
 ///
+/// Inputs: none.
+///
 /// Outputs:
 /// - pointer to the 32-byte pubkey, or NULL if not set.
 LIBSESSION_EXPORT const unsigned char* config_get_sig_pubkey(const config_object* conf);
