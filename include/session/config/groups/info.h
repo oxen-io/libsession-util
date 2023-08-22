@@ -8,31 +8,18 @@ extern "C" {
 #include "../profile_pic.h"
 #include "../util.h"
 
-/// API: groups/group_info_init
+/// API: groups/groups_info_init
 ///
 /// Constructs a group info config object and sets a pointer to it in `conf`.
 ///
 /// When done with the object the `config_object` must be destroyed by passing the pointer to
 /// config_free() (in `session/config/base.h`).
 ///
-/// Declaration:
-/// ```cpp
-/// INT group_info_init(
-///     [out]   config_object**         conf,
-///     [in]    const unsigned char**   keys,
-///     [in]    size_t                  keylen,
-///     [in]    const unsigned char*    dump,
-///     [in]    size_t                  dumplen,
-///     [out]   char*                   error
-/// );
-/// ```
-///
 /// Inputs:
 /// - `conf` -- [out] Pointer to the config object
-/// - `keys` -- pointer to the beginning of an array of 32-byte encryption/decryption keys for this
-///   group info.  These should be specified in most-recent-to-least-recent order; the *first* key
-///   will be the one used for encryption when pushing an update.
-/// - `keylen` -- the number of the `keys` array
+/// - `ed25519_pubkey` -- [in] 32-byte pointer to the group's public key
+/// - `ed25519_secretkey` -- [in] optional 64-byte pointer to the group's secret key
+///   (libsodium-style 64 byte value).  Pass as NULL for a non-admin member.
 /// - `dump` -- [in] if non-NULL this restores the state from the dumped byte string produced by a
 /// past instantiation's call to `dump()`.  To construct a new, empty object this should be NULL.
 /// - `dumplen` -- [in] the length of `dump` when restoring from a dump, or 0 when `dump` is NULL.
@@ -43,226 +30,171 @@ extern "C" {
 /// Outputs:
 /// - `int` -- Returns 0 on success; returns a non-zero error code and write the exception message
 /// as a C-string into `error` (if not NULL) on failure.
-LIBSESSION_EXPORT int contacts_init(
+LIBSESSION_EXPORT int groups_info_init(
         config_object** conf,
+        const unsigned char* ed25519_pubkey,
         const unsigned char* ed25519_secretkey,
         const unsigned char* dump,
         size_t dumplen,
         char* error) __attribute__((warn_unused_result));
 
-/// API: contacts/contacts_get
+/// API: groups_info/groups_info_get_name
 ///
-/// Fills `contact` with the contact info given a session ID (specified as a null-terminated hex
-/// string), if the contact exists, and returns true.  If the contact does not exist then `contact`
-/// is left unchanged and false is returned.
-///
-/// Declaration:
-/// ```cpp
-/// BOOL contacts_get(
-///     [in]    config_object*      conf,
-///     [out]   contacts_contact*   contact,
-///     [in]    const char*         session_id
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in] Pointer to the config object
-/// - `contact` -- [out] the contact info data
-/// - `session_id` -- [in] null terminated hex string
-///
-/// Output:
-/// - `bool` -- Returns true if contact exsts
-LIBSESSION_EXPORT bool contacts_get(
-        config_object* conf, contacts_contact* contact, const char* session_id)
-        __attribute__((warn_unused_result));
-
-/// API: contacts/contacts_get_or_construct
-///
-/// Same as the above `contacts_get()` except that when the contact does not exist, this sets all
-/// the contact fields to defaults and loads it with the given session_id.
-///
-/// Returns true as long as it is given a valid session_id.  A false return is considered an error,
-/// and means the session_id was not a valid session_id.
-///
-/// This is the method that should usually be used to create or update a contact, followed by
-/// setting fields in the contact, and then giving it to contacts_set().
-///
-/// Declaration:
-/// ```cpp
-/// BOOL contacts_get_or_construct(
-///     [in]    config_object*      conf,
-///     [out]   contacts_contact*   contact,
-///     [in]    const char*         session_id
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in] Pointer to the config object
-/// - `contact` -- [out] the contact info data
-/// - `session_id` -- [in] null terminated hex string
-///
-/// Output:
-/// - `bool` -- Returns true if contact exsts
-LIBSESSION_EXPORT bool contacts_get_or_construct(
-        config_object* conf, contacts_contact* contact, const char* session_id)
-        __attribute__((warn_unused_result));
-
-/// API: contacts/contacts_set
-///
-/// Adds or updates a contact from the given contact info struct.
-///
-/// Declaration:
-/// ```cpp
-/// VOID contacts_set(
-///     [in, out]   config_object*              conf,
-///     [in]        const contacts_contact*     contact
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in, out] Pointer to the config object
-/// - `contact` -- [in] Pointer containing the contact info data
-///
-/// Output:
-/// - `void` -- Returns Nothing
-LIBSESSION_EXPORT void contacts_set(config_object* conf, const contacts_contact* contact);
-
-// NB: wrappers for set_name, set_nickname, etc. C++ methods are deliberately omitted as they would
-// save very little in actual calling code.  The procedure for updating a single field without them
-// is simple enough; for example to update `approved` and leave everything else unchanged:
-//
-// contacts_contact c;
-// if (contacts_get_or_construct(conf, &c, some_session_id)) {
-//     const char* new_nickname = "Joe";
-//     c.approved = new_nickname;
-//     contacts_set_or_create(conf, &c);
-// } else {
-//     // some_session_id was invalid!
-// }
-
-/// API: contacts/contacts_erase
-///
-/// Erases a contact from the contact list.  session_id is in hex.  Returns true if the contact was
-/// found and removed, false if the contact was not present.  You must not call this during
-/// iteration; see details below.
-///
-/// Declaration:
-/// ```cpp
-/// BOOL contacts_erase(
-///     [in, out]   config_object*  conf,
-///     [in]    const char*     session_id
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in, out] Pointer to the config object
-/// - `session_id` -- [in] Text containing null terminated hex string
-///
-/// Outputs:
-/// - `bool` -- True if erasing was successful
-LIBSESSION_EXPORT bool contacts_erase(config_object* conf, const char* session_id);
-
-/// API: contacts/contacts_size
-///
-/// Returns the number of contacts.
-///
-/// Declaration:
-/// ```cpp
-/// SIZE_T contacts_size(
-///     [in]   const config_object*  conf
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- input - Pointer to the config object
-///
-/// Outputs:
-/// - `size_t` -- number of contacts
-LIBSESSION_EXPORT size_t contacts_size(const config_object* conf);
-
-typedef struct contacts_iterator {
-    void* _internals;
-} contacts_iterator;
-
-/// API: contacts/contacts_iterator_new
-///
-/// Starts a new iterator.
-///
-/// Functions for iterating through the entire contact list, in sorted order.  Intended use is:
-///
-///     contacts_contact c;
-///     contacts_iterator *it = contacts_iterator_new(contacts);
-///     for (; !contacts_iterator_done(it, &c); contacts_iterator_advance(it)) {
-///         // c.session_id, c.nickname, etc. are loaded
-///     }
-///     contacts_iterator_free(it);
-///
-/// It is NOT permitted to add/remove/modify records while iterating.
-///
-/// Declaration:
-/// ```cpp
-/// CONTACTS_ITERATOR* contacts_iterator_new(
-///     [in]   const config_object*  conf
-/// );
-/// ```
+/// Returns a pointer to the currently-set name (null-terminated), or NULL if there is no name at
+/// all.  Should be copied right away as the pointer may not remain valid beyond other API calls.
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 ///
 /// Outputs:
-/// - `contacts_iterator*` -- pointer to the iterator
-LIBSESSION_EXPORT contacts_iterator* contacts_iterator_new(const config_object* conf);
+/// - `char*` -- Pointer to the currently-set name as a null-terminated string, or NULL if there is
+/// no name
+LIBSESSION_EXPORT const char* groups_info_get_name(const config_object* conf);
 
-/// API: contacts/contacts_iterator_free
+/// API: groups_info/groups_info_set_name
 ///
-/// Frees an iterator once no longer needed.
-///
-/// Declaration:
-/// ```cpp
-/// VOID contacts_iterator_free(
-///     [in]   contacts_iterator*   it
-/// );
-/// ```
+/// Sets the group's name to the null-terminated C string.  Returns 0 on success, non-zero on
+/// error (and sets the config_object's error string).
 ///
 /// Inputs:
-/// - `it` -- [in] Pointer to the contacts_iterator
-LIBSESSION_EXPORT void contacts_iterator_free(contacts_iterator* it);
-
-/// API: contacts/contacts_iterator_done
-///
-/// Returns true if iteration has reached the end.  Otherwise `c` is populated and false is
-/// returned.
-///
-/// Declaration:
-/// ```cpp
-/// BOOL contacts_iterator_done(
-///     [in]    contacts_iterator*  it,
-///     [out]   contacts_contact*   c
-/// );
-/// ```
-///
-/// Inputs:
-/// - `it` -- [in] Pointer to the contacts_iterator
-/// - `c` -- [out] Pointer to the contact, will be populated if false
+/// - `conf` -- [in] Pointer to the config object
+/// - `name` -- [in] Pointer to the name as a null-terminated C string
 ///
 /// Outputs:
-/// - `bool` -- True if iteration has reached the end
-LIBSESSION_EXPORT bool contacts_iterator_done(contacts_iterator* it, contacts_contact* c);
+/// - `int` -- Returns 0 on success, non-zero on error
+LIBSESSION_EXPORT int groups_info_set_name(config_object* conf, const char* name);
 
-/// API: contacts/contacts_iterator_advance
+/// API: groups_info/groups_info_get_pic
 ///
-/// Advances the iterator.
-///
-/// Declaration:
-/// ```cpp
-/// VOID contacts_iterator_advance(
-///     [in]    contacts_iterator*  it
-/// );
-/// ```
+/// Obtains the current profile pic.  The pointers in the returned struct will be NULL if a profile
+/// pic is not currently set, and otherwise should be copied right away (they will not be valid
+/// beyond other API calls on this config object).
 ///
 /// Inputs:
-/// - `it` -- [in] Pointer to the contacts_iterator
-LIBSESSION_EXPORT void contacts_iterator_advance(contacts_iterator* it);
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `user_profile_pic` -- Pointer to the currently-set profile pic (despite the "user_profile" in
+///   the struct name, this is the group's profile pic).
+LIBSESSION_EXPORT user_profile_pic groups_info_get_pic(const config_object* conf);
+
+/// API: groups_info/groups_info_set_pic
+///
+/// Sets a user profile
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `pic` -- [in] Pointer to the pic
+///
+/// Outputs:
+/// - `int` -- Returns 0 on success, non-zero on error
+LIBSESSION_EXPORT int groups_info_set_pic(config_object* conf, user_profile_pic pic);
+
+/// API: groups_info/groups_info_get_expiry_timer
+///
+/// Gets the group's message expiry timer (seconds).  Returns 0 if not set.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `int` -- Returns the expiry timer in seconds. Returns 0 if not set
+LIBSESSION_EXPORT int groups_info_get_expiry_timer(const config_object* conf);
+
+/// API: groups_info/groups_info_set_expiry_timer
+///
+/// Sets the group's message expiry timer (seconds).  Setting 0 (or negative) will clear the current
+/// timer.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `expiry` -- [in] Integer of the expiry timer in seconds
+LIBSESSION_EXPORT void groups_info_set_expiry_timer(config_object* conf, int expiry);
+
+/// API: groups_info/groups_info_get_created
+///
+/// Returns the timestamp (unix time, in seconds) when the group was created.  Returns 0 if unset.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `int64_t` -- Unix timestamp when the group was created (if set by an admin).
+LIBSESSION_EXPORT int64_t groups_info_get_created(const config_object* conf);
+
+/// API: groups_info/groups_info_set_created
+///
+/// Sets the creation time (unix timestamp, in seconds) when the group was created.  Setting 0
+/// clears the value.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `ts` -- [in] the unix timestamp, or 0 to clear a current value.
+LIBSESSION_EXPORT void groups_info_set_created(config_object* conf, int64_t ts);
+
+/// API: groups_info/groups_info_get_delete_before
+///
+/// Returns the delete-before timestamp (unix time, in seconds); clients should deleted all messages from the group
+/// with timestamps earlier than this value, if set.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `int64_t` -- Unix timestamp before which messages should be deleted.  Returns 0 if not set.
+LIBSESSION_EXPORT int64_t groups_info_get_delete_before(const config_object* conf);
+
+/// API: groups_info/groups_info_set_delete_before
+///
+/// Sets the delete-before time (unix timestamp, in seconds) before which messages should be delete.
+/// Setting 0 clears the value.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `ts` -- [in] the unix timestamp, or 0 to clear a current value.
+LIBSESSION_EXPORT void groups_info_set_delete_before(config_object* conf, int64_t ts);
+
+/// API: groups_info/groups_info_get_attach_delete_before
+///
+/// Returns the delete-before timestamp (unix time, in seconds) for attachments; clients should drop
+/// all attachments from messages from the group with timestamps earlier than this value, if set.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `int64_t` -- Unix timestamp before which messages should be deleted.  Returns 0 if not set.
+LIBSESSION_EXPORT int64_t groups_info_get_attach_delete_before(const config_object* conf);
+
+/// API: groups_info/groups_info_set_attach_delete_before
+///
+/// Sets the delete-before time (unix timestamp, in seconds) for attachments; attachments should be dropped
+/// from messages older than this value.  Setting 0 clears the value.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `ts` -- [in] the unix timestamp, or 0 to clear a current value.
+LIBSESSION_EXPORT void groups_info_set_attach_delete_before(config_object* conf, int64_t ts);
+
+/// API: groups_info/groups_info_is_destroyed(const config_object* conf);
+///
+/// Returns true if this group has been marked destroyed by an admin, which indicates to a receiving
+/// client that they should destroy it locally.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `true` if the group has been nuked, `false` otherwise.
+LIBSESSION_EXPORT bool groups_info_is_destroyed(const config_object* conf);
+
+/// API: groups_info/groups_info_destroy_group(const config_object* conf);
+///
+/// Nukes a group from orbit.  This is permanent (i.e. there is no removing this setting once set).
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+LIBSESSION_EXPORT void groups_info_destroy_group(config_object* conf);
 
 #ifdef __cplusplus
 }  // extern "C"
