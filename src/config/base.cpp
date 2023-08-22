@@ -5,12 +5,12 @@
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/crypto_sign_ed25519.h>
 #include <sodium/utils.h>
-#include <zstd.h>
 
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "internal.hpp"
 #include "session/config/base.h"
 #include "session/config/encrypt.hpp"
 #include "session/export.h"
@@ -133,33 +133,13 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
 
         // 'z' prefix indicates zstd-compressed data:
         if (plain[0] == 'z') {
-            struct zstd_decomp_freer {
-                void operator()(ZSTD_DStream* z) const { ZSTD_freeDStream(z); }
-            };
-            std::unique_ptr<ZSTD_DStream, zstd_decomp_freer> z_decompressor{ZSTD_createDStream()};
-            auto* zds = z_decompressor.get();
-
-            ZSTD_initDStream(zds);
-            ZSTD_inBuffer input{/*.src=*/plain.data() + 1, /*.size=*/plain.size() - 1, /*.pos=*/0};
-            unsigned char out_buf[4096];
-            ZSTD_outBuffer output{/*.dst=*/out_buf, /*.size=*/sizeof(out_buf)};
-            bool failed = false;
-            size_t ret;
-            ustring decompressed;
-            do {
-                output.pos = 0;
-                ret = ZSTD_decompressStream(zds, &output, &input);
-                if (ZSTD_isError(ret)) {
-                    failed = true;
-                    break;
-                }
-                decompressed += ustring_view{out_buf, output.pos};
-            } while (ret > 0 || input.pos < input.size);
-            if (failed || decompressed.empty()) {
+            if (auto decompressed = zstd_decompress(ustring_view{plain.data() + 1, plain.size() - 1});
+                    decompressed && !decompressed->empty())
+                plain = std::move(*decompressed);
+            else {
                 log(LogLevel::warning, "Invalid config message: decompression failed");
                 continue;
             }
-            plain = std::move(decompressed);
         }
 
         if (plain[0] != 'd')
@@ -252,15 +232,8 @@ bool ConfigBase::needs_push() const {
 void compress_message(ustring& msg, int level) {
     if (!level)
         return;
-    ustring compressed;
-    compressed.resize(1 + ZSTD_compressBound(msg.size()));
-    compressed[0] = 'z';  // our zstd compression marker prefix byte
-    auto size = ZSTD_compress(
-            compressed.data() + 1, compressed.size() - 1, msg.data(), msg.size(), level);
-    if (ZSTD_isError(size))
-        throw std::runtime_error{
-                "Unable to compress message: " + std::string{ZSTD_getErrorName(size)}};
-    compressed.resize(size + 1);
+    // "z" is our zstd compression marker prefix byte
+    ustring compressed = zstd_compress(msg, level, to_unsigned_sv("z"sv));
     if (compressed.size() < msg.size())
         msg = std::move(compressed);
 }

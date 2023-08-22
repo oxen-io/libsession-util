@@ -191,6 +191,20 @@ class Keys final : public ConfigSig {
     /// - `std::vector<ustring_view>` - vector of encryption keys.
     std::vector<ustring_view> group_keys() const;
 
+    /// API: groups/Keys::encryption_key
+    ///
+    /// Accesses the current encryption key: that is, the most current group decryption key.  Throws
+    /// if there are no encryption keys at all.  (This is essentially the same as `group_keys()[0]`,
+    /// except for the throwing and avoiding needing to constructor a vector).
+    ///
+    /// You normally don't need to call this; you can just use encrypt_message() instead.
+    ///
+    /// Inputs: none.
+    ///
+    /// Outputs:
+    /// - `ustring_view` of the most current group encryption key.
+    ustring_view group_enc_key() const;
+
     /// API: groups/Keys::rekey
     ///
     /// Generate a new encryption key for the group and returns an encrypted key message to be
@@ -342,6 +356,54 @@ class Keys final : public ConfigSig {
     /// - opaque binary data containing the group keys and other Keys config data that can be passed
     ///   to the `Keys` constructor to reinitialize a Keys object with the current state.
     ustring dump();
+
+    /// API: groups/Keys::encrypt_message
+    ///
+    /// Encrypts group message content; this is passed a binary value to encrypt and
+    /// encodes/encrypts it for the group using the latest encryption key this object knows about.
+    /// Such encrypted messages are intended to be passed to `decrypt_message` to decrypt them.
+    ///
+    /// The current implementation uses XChaCha20-Poly1305 and returns an encoded value where the
+    /// first byte indicates the encryption type ('x', or 'X' currently for uncompressed or
+    /// compressed XChaCha20), the next 24 bytes are the encryption nonce, and the remainder is the
+    /// ciphertext.  The returned value will be 41 bytes larger than the plaintext, at most
+    /// (potentially less if compression is permitted).
+    ///
+    /// When compression is enabled (by omitting the `compress` argument or specifying it as true)
+    /// then ZSTD compression will be *attempted* on the plaintext message and will be used if the
+    /// compressed data is smaller than the uncompressed data.  If disabled, or if compression does
+    /// not reduce the size (i.e. because it is not compressible), then the message will not be
+    /// compressed.
+    ///
+    /// Future versions may change this to support other encryption algorithms.
+    ///
+    /// This method will throw if there no encryption keys are available at all (which should not
+    /// occur in normal use).
+    ///
+    /// Inputs:
+    /// - `plaintext` -- the binary message to encrypt.
+    /// - `compress` -- can be specified as `false` to forcibly disable compression.  Normally
+    ///   omitted, to use compression if and only if it reduces the size.
+    ///
+    /// Outputs:
+    /// - `ciphertext` -- the encrypted ciphertext of the message
+    ustring encrypt_message(ustring_view plaintext, bool compress = true) const;
+
+    /// API: groups/Keys::decrypt_message
+    ///
+    /// Decrypts group message content that was presumably encrypted with `encrypt_message`.  This
+    /// will attempt decryption using *all* of the known group encryption keys and, if necessary,
+    /// decompressing the message.
+    ///
+    /// Inputs:
+    /// - `ciphertext` -- a encoded, encrypted, (possibly) compressed message as produced by
+    ///   `encrypt_message()`.
+    ///
+    /// Outputs:
+    /// - `std::optional<ustring>` -- the decrypted, decompressed plaintext message if encryption
+    ///   and decompression succeeds; otherwise returns `std::nullopt` if parsing, decryption, or
+    ///   decompression fails.
+    std::optional<ustring> decrypt_message(ustring_view ciphertext) const;
 };
 
 }  // namespace session::config::groups

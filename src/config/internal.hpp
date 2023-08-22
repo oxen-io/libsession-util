@@ -134,4 +134,11 @@ void load_unknowns(
         std::string_view previous,
         std::string_view until);
 
+/// ZSTD-compresses a value.  `prefix` can be prepended on the returned value, if needed.  Throws on
+/// serious error.
+ustring zstd_compress(ustring_view data, int level = 1, ustring_view prefix = {});
+
+/// ZSTD-decompresses a value.  Returns nullopt if decompression fails.
+std::optional<ustring> zstd_decompress(ustring_view data);
+
 }  // namespace session::config

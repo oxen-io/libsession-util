@@ -4,6 +4,7 @@
 #include <oxenc/base64.h>
 #include <oxenc/bt_value_producer.h>
 #include <oxenc/hex.h>
+#include <zstd.h>
 
 #include <iterator>
 #include <optional>
@@ -171,6 +172,58 @@ void load_unknowns(
         else
             throw oxenc::bt_deserialize_invalid{"invalid bencoded value type"};
     }
+}
+
+namespace {
+    struct zstd_decomp_freer {
+        void operator()(ZSTD_DStream* z) const { ZSTD_freeDStream(z); }
+    };
+
+    using zstd_decomp_ptr = std::unique_ptr<ZSTD_DStream, zstd_decomp_freer>;
+}  // namespace
+
+ustring zstd_compress(ustring_view data, int level, ustring_view prefix) {
+    ustring compressed;
+    if (prefix.empty())
+        compressed.resize(ZSTD_compressBound(data.size()));
+    else {
+        compressed.resize(prefix.size() + ZSTD_compressBound(data.size()));
+        compressed.replace(0, prefix.size(), prefix);
+    }
+    auto size = ZSTD_compress(
+            compressed.data() + prefix.size(),
+            compressed.size() - prefix.size(),
+            data.data(),
+            data.size(),
+            level);
+    if (ZSTD_isError(size))
+        throw std::runtime_error{"Compression failed: " + std::string{ZSTD_getErrorName(size)}};
+
+    compressed.resize(prefix.size() + size);
+    return compressed;
+}
+
+std::optional<ustring> zstd_decompress(ustring_view data) {
+    zstd_decomp_ptr z_decompressor{ZSTD_createDStream()};
+    auto* zds = z_decompressor.get();
+
+    ZSTD_initDStream(zds);
+    ZSTD_inBuffer input{/*.src=*/data.data(), /*.size=*/data.size(), /*.pos=*/0};
+    std::array<unsigned char, 4096> out_buf;
+    ZSTD_outBuffer output{/*.dst=*/out_buf.data(), /*.size=*/out_buf.size()};
+
+    ustring decompressed;
+
+    size_t ret;
+    do {
+        output.pos = 0;
+        if (ret = ZSTD_decompressStream(zds, &output, &input); ZSTD_isError(ret))
+            return std::nullopt;
+
+        decompressed.append(out_buf.data(), output.pos);
+    } while (ret > 0 || input.pos < input.size);
+
+    return decompressed;
 }
 
 }  // namespace session::config

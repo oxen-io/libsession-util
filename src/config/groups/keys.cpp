@@ -153,6 +153,14 @@ std::vector<ustring_view> Keys::group_keys() const {
     return ret;
 }
 
+ustring_view Keys::group_enc_key() const {
+    if (keys_.empty())
+        throw std::runtime_error{"group_enc_key failed: Keys object has no keys at all!"};
+
+    auto& key = keys_.back().key;
+    return {key.data(), key.size()};
+}
+
 static std::array<unsigned char, 32> compute_xpk(const unsigned char* ed25519_pk) {
     std::array<unsigned char, 32> xpk;
     if (0 != crypto_sign_ed25519_pk_to_curve25519(xpk.data(), ed25519_pk))
@@ -555,6 +563,95 @@ std::optional<ustring_view> Keys::pending_key() const {
     if (!pending_key_config_.empty())
         return ustring_view{pending_key_.data(), pending_key_.size()};
     return std::nullopt;
+}
+
+static constexpr size_t OVERHEAD = 1  // encryption type indicator
+                                 + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES +
+                                   crypto_aead_xchacha20poly1305_ietf_ABYTES;
+
+ustring Keys::encrypt_message(ustring_view plaintext, bool compress) const {
+    ustring _compressed;
+    if (compress) {
+        _compressed = zstd_compress(plaintext);
+        if (_compressed.size() < plaintext.size())
+            plaintext = _compressed;
+        else {
+            _compressed.clear();
+            compress = false;
+        }
+    }
+
+    ustring ciphertext;
+    ciphertext.resize(OVERHEAD + plaintext.size());
+    ciphertext[0] = compress ? 'X' : 'x';
+    randombytes_buf(ciphertext.data() + 1, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    ustring_view nonce{ciphertext.data() + 1, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES};
+    if (0 != crypto_aead_xchacha20poly1305_ietf_encrypt(
+                ciphertext.data() + 1 + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
+                nullptr,
+                plaintext.data(),
+                plaintext.size(),
+                nullptr,
+                0,
+                nullptr,
+                nonce.data(),
+                group_enc_key().data()))
+        throw std::runtime_error{"Encryption failed"};
+
+    return ciphertext;
+}
+
+std::optional<ustring> Keys::decrypt_message(ustring_view ciphertext) const {
+    if (ciphertext.size() < OVERHEAD)
+        return std::nullopt;
+
+    ustring plain;
+
+    bool success = false;
+    bool compressed = false;
+    char type = static_cast<char>(ciphertext[0]);
+    ciphertext.remove_prefix(1);
+    switch (type) {
+        case 'X': compressed = true; [[fallthrough]];
+        case 'x': {
+            auto nonce = ciphertext.substr(0, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+            ciphertext.remove_prefix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+            plain.resize(ciphertext.size() - OVERHEAD);
+            for (auto& k : keys_) {
+                if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
+                                 plain.data(),
+                                 nullptr,
+                                 nullptr,
+                                 ciphertext.data(),
+                                 ciphertext.size(),
+                                 nullptr,
+                                 0,
+                                 nonce.data(),
+                                 k.key.data())) {
+                    success = true;
+                    break;
+                }
+            }
+            break;
+        }
+
+        default:
+            // Don't know how to handle this type (or it's garbage)
+            return std::nullopt;
+    }
+
+    if (!success)  // none of the keys worked
+        return std::nullopt;
+
+    if (compressed) {
+        if (auto decomp = zstd_decompress(plain))
+            plain = std::move(*decomp);
+        else
+            // Decompression failed
+            return std::nullopt;
+    }
+
+    return std::move(plain);
 }
 
 }  // namespace session::config::groups
