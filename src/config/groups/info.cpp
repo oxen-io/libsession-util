@@ -115,7 +115,8 @@ LIBSESSION_C_API int groups_info_init(
         const unsigned char* dump,
         size_t dumplen,
         char* error) {
-    return c_group_wrapper_init<groups::Info>(conf, ed25519_pubkey, ed25519_secretkey, dump, dumplen, error);
+    return c_group_wrapper_init<groups::Info>(
+            conf, ed25519_pubkey, ed25519_secretkey, dump, dumplen, error);
 }
 
 /// API: groups_info/groups_info_get_name

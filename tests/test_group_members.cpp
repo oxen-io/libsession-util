@@ -56,7 +56,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
     enc_keys.push_back("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hexbytes);
     groups::Members gmem2{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    for (const auto& k : enc_keys) // Just for testing, as above.
+    for (const auto& k : enc_keys)  // Just for testing, as above.
         gmem2.add_key(k, false);
 
     std::vector<std::string> sids;

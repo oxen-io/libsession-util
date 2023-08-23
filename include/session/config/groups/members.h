@@ -5,13 +5,10 @@ extern "C" {
 #endif
 
 #include "../base.h"
-#include "../util.h"
 #include "../profile_pic.h"
+#include "../util.h"
 
-enum groups_members_invite_status {
-    INVITE_SENT = 1,
-    INVITE_FAILED = 2
-};
+enum groups_members_invite_status { INVITE_SENT = 1, INVITE_FAILED = 2 };
 
 typedef struct config_group_member {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
@@ -21,8 +18,8 @@ typedef struct config_group_member {
     user_profile_pic profile_pic;
 
     bool admin;
-    int invited; // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
-    int promoted; // same value as `invited`, but for promotion-to-admin
+    int invited;   // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
+    int promoted;  // same value as `invited`, but for promotion-to-admin
 
 } config_group_member;
 
@@ -96,8 +93,6 @@ LIBSESSION_EXPORT bool groups_members_get_or_construct(
         config_object* conf, config_group_member* member, const char* session_id)
         __attribute__((warn_unused_result));
 
-
-
 /// API: groups/groups_members_set
 ///
 /// Adds or updates a member from the given member info struct.
@@ -105,9 +100,7 @@ LIBSESSION_EXPORT bool groups_members_get_or_construct(
 /// Inputs:
 /// - `conf` -- [in, out] Pointer to the config object
 /// - `member` -- [in] Pointer containing the member info data
-LIBSESSION_EXPORT void groups_members_set(
-        config_object* conf, const config_group_member* member);
-
+LIBSESSION_EXPORT void groups_members_set(config_object* conf, const config_group_member* member);
 
 /// API: groups/groups_members_erase
 ///
@@ -136,7 +129,6 @@ LIBSESSION_EXPORT bool groups_members_erase(config_object* conf, const char* ses
 /// Outputs:
 /// - `size_t` -- number of contacts
 LIBSESSION_EXPORT size_t contacts_size(const config_object* conf);
-
 
 typedef struct groups_members_iterator {
     void* _internals;
@@ -183,7 +175,8 @@ LIBSESSION_EXPORT void groups_members_iterator_free(groups_members_iterator* it)
 ///
 /// Outputs:
 /// - `bool` -- True if iteration has reached the end
-LIBSESSION_EXPORT bool groups_members_iterator_done(groups_members_iterator* it, config_group_member* m);
+LIBSESSION_EXPORT bool groups_members_iterator_done(
+        groups_members_iterator* it, config_group_member* m);
 
 /// API: groups/groups_members_iterator_advance
 ///
@@ -192,7 +185,6 @@ LIBSESSION_EXPORT bool groups_members_iterator_done(groups_members_iterator* it,
 /// Inputs:
 /// - `it` -- [in] Pointer to the groups_members_iterator
 LIBSESSION_EXPORT void groups_members_iterator_advance(groups_members_iterator* it);
-
 
 #ifdef __cplusplus
 }  // extern "C"

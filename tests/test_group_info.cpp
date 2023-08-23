@@ -47,7 +47,7 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
     enc_keys.push_back("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hexbytes);
     groups::Info ginfo2{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    for (const auto& k : enc_keys) // Just for testing, as above.
+    for (const auto& k : enc_keys)  // Just for testing, as above.
         ginfo2.add_key(k, false);
 
     ginfo1.set_name("GROUP Name");
@@ -158,7 +158,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     // This Info object has only the public key, not the priv key, and so cannot modify things:
     groups::Info ginfo{to_usv(ed_pk), std::nullopt, std::nullopt};
 
-    for (const auto& k : enc_keys1) // Just for testing, as above.
+    for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo.add_key(k, false);
 
     REQUIRE_THROWS_WITH(
@@ -170,7 +170,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     // This one is good and has the right signature:
     groups::Info ginfo_rw{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    for (const auto& k : enc_keys1) // Just for testing, as above.
+    for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo_rw.add_key(k, false);
 
     ginfo_rw.set_name("Super Group!!");
@@ -193,7 +193,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
 
     groups::Info ginfo_rw2{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    for (const auto& k : enc_keys1) // Just for testing, as above.
+    for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo_rw2.add_key(k, false);
 
     CHECK(ginfo_rw2.merge(merge_configs) == 1);
@@ -220,7 +220,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
 
     groups::Info ginfo_bad1{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    for (const auto& k : enc_keys1) // Just for testing, as above.
+    for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo_bad1.add_key(k, false);
 
     ginfo_bad1.merge(merge_configs);
@@ -303,7 +303,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     auto dump = ginfo.dump();
     groups::Info ginfo2{to_usv(ed_pk), std::nullopt, dump};
 
-    for (const auto& k : enc_keys1) // Just for testing, as above.
+    for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo2.add_key(k, false);
 
     CHECK(!ginfo.needs_dump());
@@ -321,7 +321,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     // This account has a different primary decryption key
     groups::Info ginfo_rw3{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
 
-    for (const auto& k : enc_keys2) // Just for testing, as above.
+    for (const auto& k : enc_keys2)  // Just for testing, as above.
         ginfo_rw3.add_key(k, false);
 
     CHECK(ginfo_rw3.merge(merge_configs) == 1);

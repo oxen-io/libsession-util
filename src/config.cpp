@@ -542,10 +542,7 @@ ConfigMessage::ConfigMessage() {
 }
 
 ConfigMessage::ConfigMessage(
-        ustring_view serialized,
-        verify_callable verifier_,
-        sign_callable signer_,
-        int lag) :
+        ustring_view serialized, verify_callable verifier_, sign_callable signer_, int lag) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     oxenc::bt_dict_consumer dict{from_unsigned_sv(serialized)};
@@ -724,10 +721,7 @@ MutableConfigMessage::MutableConfigMessage(
 }
 
 MutableConfigMessage::MutableConfigMessage(
-        ustring_view config,
-        verify_callable verifier,
-        sign_callable signer,
-        int lag) :
+        ustring_view config, verify_callable verifier, sign_callable signer, int lag) :
         MutableConfigMessage{
                 std::vector{{config}},
                 std::move(verifier),

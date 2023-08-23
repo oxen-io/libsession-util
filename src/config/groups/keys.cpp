@@ -13,6 +13,7 @@
 
 #include "../internal.hpp"
 #include "session/config/groups/info.hpp"
+#include "session/config/groups/keys.h"
 #include "session/config/groups/members.hpp"
 
 namespace session::config::groups {
@@ -361,8 +362,7 @@ std::optional<ustring_view> Keys::pending_config() const {
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
 
-void Keys::load_key_message(
-        ustring_view data, ustring_view msgid, int64_t timestamp_ms, Info& info, Members& members) {
+void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members) {
 
     oxenc::bt_dict_consumer d{from_unsigned_sv(data)};
 
@@ -590,15 +590,15 @@ ustring Keys::encrypt_message(ustring_view plaintext, bool compress) const {
     randombytes_buf(ciphertext.data() + 1, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     ustring_view nonce{ciphertext.data() + 1, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES};
     if (0 != crypto_aead_xchacha20poly1305_ietf_encrypt(
-                ciphertext.data() + 1 + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
-                nullptr,
-                plaintext.data(),
-                plaintext.size(),
-                nullptr,
-                0,
-                nullptr,
-                nonce.data(),
-                group_enc_key().data()))
+                     ciphertext.data() + 1 + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
+                     nullptr,
+                     plaintext.data(),
+                     plaintext.size(),
+                     nullptr,
+                     0,
+                     nullptr,
+                     nonce.data(),
+                     group_enc_key().data()))
         throw std::runtime_error{"Encryption failed"};
 
     return ciphertext;
@@ -658,3 +658,175 @@ std::optional<ustring> Keys::decrypt_message(ustring_view ciphertext) const {
 }
 
 }  // namespace session::config::groups
+
+using namespace session;
+using namespace session::config;
+
+namespace {
+groups::Keys& unbox(config_group_keys* conf) {
+    assert(conf && conf->internals);
+    return *static_cast<groups::Keys*>(conf->internals);
+}
+const groups::Keys& unbox(const config_group_keys* conf) {
+    assert(conf && conf->internals);
+    return *static_cast<const groups::Keys*>(conf->internals);
+}
+
+void set_error(config_group_keys* conf, std::string_view e) {
+    if (e.size() > 255)
+        e.remove_suffix(e.size() - 255);
+    std::memcpy(conf->_error_buf, e.data(), e.size());
+    conf->_error_buf[e.size()] = 0;
+    conf->last_error = conf->_error_buf;
+}
+}  // namespace
+
+LIBSESSION_C_API int groups_keys_init(
+        config_group_keys** conf,
+        const unsigned char* user_ed25519_secretkey,
+        const unsigned char* group_ed25519_pubkey,
+        const unsigned char* group_ed25519_secretkey,
+        config_object* cinfo,
+        config_object* cmembers,
+        const unsigned char* dump,
+        size_t dumplen,
+        char* error) {
+
+    assert(user_ed25519_secretkey && group_ed25519_pubkey && cinfo && cmembers);
+
+    ustring_view user_sk{user_ed25519_secretkey, 64};
+    ustring_view group_pk{group_ed25519_pubkey, 32};
+    std::optional<ustring_view> group_sk;
+    if (group_ed25519_secretkey)
+        group_sk.emplace(group_ed25519_secretkey, 64);
+    std::optional<ustring_view> dumped;
+    if (dump && dumplen)
+        dumped.emplace(dump, dumplen);
+
+    auto& info = *unbox<groups::Info>(cinfo);
+    auto& members = *unbox<groups::Members>(cmembers);
+    auto c_conf = std::make_unique<config_group_keys>();
+
+    try {
+        c_conf->internals = new groups::Keys{user_sk, group_pk, group_sk, dump, info, members};
+    } catch (const std::exception& e) {
+        if (error) {
+            std::string msg = e.what();
+            if (msg.size() > 255)
+                msg.resize(255);
+            std::memcpy(error, msg.c_str(), msg.size() + 1);
+        }
+        return SESSION_ERR_INVALID_DUMP;
+    }
+
+    c_conf->last_error = nullptr;
+    *conf = c_conf.release();
+    return SESSION_ERR_NONE;
+}
+
+LIBSESSION_C_API bool groups_keys_rekey(
+        config_group_keys* conf,
+        config_object* info,
+        config_object* members,
+        const unsigned char** out,
+        size_t* outlen) {
+    assert(info && members && out && outlen);
+    auto& keys = unbox(conf);
+    ustring_view to_push;
+    try {
+        to_push = keys.rekey(*unbox<groups::Info>(info), *unbox<groups::Members>(members));
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+    *out = to_push.data();
+    *outlen = to_push.size();
+    return true;
+}
+
+LIBSESSION_C_API bool groups_keys_pending_config(
+        const config_group_keys* conf, const unsigned char** out, size_t* outlen) {
+    assert(out && outlen);
+    if (auto pending = unbox(conf).pending_config()) {
+        *out = pending->data();
+        *outlen = pending->size();
+        return true;
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool groups_keys_load_message(
+        config_group_keys* conf,
+        const unsigned char* data,
+        size_t datalen,
+        int64_t timestamp_ms,
+        config_object* info,
+        config_object* members) {
+    assert(data && info && members);
+    try {
+        unbox(conf).load_key_message(
+                ustring_view{data, datalen},
+                timestamp_ms,
+                *unbox<groups::Info>(info),
+                *unbox<groups::Members>(members));
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+    return true;
+}
+
+LIBSESSION_C_API bool groups_keys_needs_rekey(const config_group_keys* conf) {
+    return unbox(conf).needs_rekey();
+}
+
+LIBSESSION_C_API bool groups_keys_needs_dump(const config_group_keys* conf) {
+    return unbox(conf).needs_dump();
+}
+
+LIBSESSION_C_API void groups_keys_dump(
+        config_group_keys* conf, unsigned char** out, size_t* outlen) {
+    assert(out && outlen);
+    auto dump = unbox(conf).dump();
+    *out = static_cast<unsigned char*>(std::malloc(dump.size()));
+    std::memcpy(*out, dump.data(), dump.size());
+    *outlen = dump.size();
+}
+
+LIBSESSION_C_API void groups_keys_encrypt_message(
+        const config_group_keys* conf,
+        const unsigned char* plaintext_in,
+        size_t plaintext_len,
+        unsigned char** ciphertext_out,
+        size_t* ciphertext_len) {
+    assert(plaintext_in && ciphertext_out && ciphertext_len);
+
+    ustring ciphertext;
+    try {
+        ciphertext = unbox(conf).encrypt_message(ustring_view{plaintext_in, plaintext_len});
+        *ciphertext_out = static_cast<unsigned char*>(std::malloc(ciphertext.size()));
+        std::memcpy(*ciphertext_out, ciphertext.data(), ciphertext.size());
+        *ciphertext_len = ciphertext.size();
+    } catch (...) {
+        *ciphertext_out = nullptr;
+        *ciphertext_len = 0;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_decrypt_message(
+        const config_group_keys* conf,
+        const unsigned char* ciphertext_in,
+        size_t ciphertext_len,
+        unsigned char** plaintext_out,
+        size_t* plaintext_len) {
+    assert(ciphertext_in && plaintext_out && plaintext_len);
+
+    auto plaintext = unbox(conf).decrypt_message(ustring_view{ciphertext_in, ciphertext_len});
+    if (!plaintext)
+        return false;
+
+    *plaintext_out = static_cast<unsigned char*>(std::malloc(plaintext->size()));
+    std::memcpy(*plaintext_out, plaintext->data(), plaintext->size());
+    *plaintext_len = plaintext->size();
+    return true;
+}

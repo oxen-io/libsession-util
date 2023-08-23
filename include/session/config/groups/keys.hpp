@@ -63,7 +63,7 @@ class Keys final : public ConfigSig {
 
     struct key_info {
         std::array<unsigned char, 32> key;
-        std::chrono::system_clock::time_point timestamp; // millisecond precision
+        std::chrono::system_clock::time_point timestamp;  // millisecond precision
         int64_t generation;
 
         auto cmpval() const { return std::tie(generation, timestamp, key); }
@@ -215,10 +215,13 @@ class Keys final : public ConfigSig {
     /// config::groups::Members object.  This can only be done by an admin account (i.e. we must
     /// have the group's private key).
     ///
-    /// This method is intended to be called in two situations:
+    /// This method is intended to be called in these situations:
     /// - potentially after loading new keys config messages (see `needs_rekey()`)
     /// - when removing a member to switch to a new encryption key for the group that excludes that
     ///   member.
+    /// - when adding a member *and* switching to a new encryption key (without making the old key
+    ///   available to the member) so that the new member cannot decipher pre-existing configs and
+    ///   messages.
     ///
     /// This method is closely coupled to the group's Info and Members configs: it updates their
     /// encryption keys and sets them as dirty, requiring a re-push to re-encrypt each of them.
@@ -241,7 +244,7 @@ class Keys final : public ConfigSig {
     ///   confirmed or superceded).
     ustring_view rekey(Info& info, Members& members);
 
-    /// API: groups/Keys::pending_push
+    /// API: groups/Keys::pending_config
     ///
     /// If a rekey has been performed but not yet confirmed then this will contain the config
     /// message to be pushed to the swarm.  If there is no push current pending then this returns
@@ -258,8 +261,8 @@ class Keys final : public ConfigSig {
     /// API: groups/Keys::pending_key
     ///
     /// After calling rekey() this contains the new group encryption key *before* it is confirmed
-    /// pushed into the swarm.  This is primarily used to allow a rekey + member list update using
-    /// the new key in the same swarm upload sequence.
+    /// pushed into the swarm.  This is primarily intended for internal use as this key is generally
+    /// already propagated to the member/info lists when rekeying occurs.
     ///
     /// The pending key is dropped when an incoming keys message is successfully loaded with either
     /// the pending key itself, or a keys message with a higher generation.
@@ -288,23 +291,17 @@ class Keys final : public ConfigSig {
     /// usable).
     ///
     /// Inputs:
-    /// - `msg` - the full stored config message value
-    /// - `hash` - the storage message hash (used to track current config messages)
-    /// - `timestamp` - the timestamp (from the swarm) when this message was stored (used to track
-    ///   when other keys expire).
-    /// - `members` - the given group::Members object's en/decryption key list will be updated to
-    ///   match this object's key list.
+    /// - `data` - the full stored config message value
+    /// - `timestamp_ms` - the timestamp (from the swarm) when this message was stored (used to
+    ///   track when other keys expire).
     /// - `info` - the given group::Info object's en/decryption key list will be updated to match
     ///   this object's key list.
+    /// - `members` - the given group::Members object's en/decryption key list will be updated to
+    ///   match this object's key list.
     ///
     /// Outputs:
     /// - throws `std::runtime_error` (typically a subclass thereof) on failure to parse.
-    void load_key_message(
-            ustring_view data,
-            ustring_view msgid,
-            int64_t timestamp_ms,
-            Info& info,
-            Members& members);
+    void load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members);
 
     /// API: groups/Keys::needs_rekey
     ///

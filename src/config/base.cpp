@@ -133,8 +133,9 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
 
         // 'z' prefix indicates zstd-compressed data:
         if (plain[0] == 'z') {
-            if (auto decompressed = zstd_decompress(ustring_view{plain.data() + 1, plain.size() - 1});
-                    decompressed && !decompressed->empty())
+            if (auto decompressed =
+                        zstd_decompress(ustring_view{plain.data() + 1, plain.size() - 1});
+                decompressed && !decompressed->empty())
                 plain = std::move(*decompressed);
             else {
                 log(LogLevel::warning, "Invalid config message: decompression failed");

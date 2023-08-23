@@ -228,7 +228,8 @@ LIBSESSION_C_API void groups_members_iterator_free(groups_members_iterator* it) 
     delete it;
 }
 
-LIBSESSION_C_API bool groups_members_iterator_done(groups_members_iterator* it, config_group_member* c) {
+LIBSESSION_C_API bool groups_members_iterator_done(
+        groups_members_iterator* it, config_group_member* c) {
     auto& real = *static_cast<groups::Members::iterator*>(it->_internals);
     if (real.done())
         return true;

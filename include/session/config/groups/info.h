@@ -134,8 +134,8 @@ LIBSESSION_EXPORT void groups_info_set_created(config_object* conf, int64_t ts);
 
 /// API: groups_info/groups_info_get_delete_before
 ///
-/// Returns the delete-before timestamp (unix time, in seconds); clients should deleted all messages from the group
-/// with timestamps earlier than this value, if set.
+/// Returns the delete-before timestamp (unix time, in seconds); clients should delete all messages
+/// from the group with timestamps earlier than this value, if set.
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
@@ -146,8 +146,8 @@ LIBSESSION_EXPORT int64_t groups_info_get_delete_before(const config_object* con
 
 /// API: groups_info/groups_info_set_delete_before
 ///
-/// Sets the delete-before time (unix timestamp, in seconds) before which messages should be delete.
-/// Setting 0 clears the value.
+/// Sets the delete-before time (unix timestamp, in seconds) before which messages should be
+/// deleted.  Setting 0 clears the value.
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
@@ -168,8 +168,8 @@ LIBSESSION_EXPORT int64_t groups_info_get_attach_delete_before(const config_obje
 
 /// API: groups_info/groups_info_set_attach_delete_before
 ///
-/// Sets the delete-before time (unix timestamp, in seconds) for attachments; attachments should be dropped
-/// from messages older than this value.  Setting 0 clears the value.
+/// Sets the delete-before time (unix timestamp, in seconds) for attachments; attachments should be
+/// dropped from messages older than this value.  Setting 0 clears the value.
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
