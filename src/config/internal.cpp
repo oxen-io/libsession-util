@@ -203,7 +203,7 @@ ustring zstd_compress(ustring_view data, int level, ustring_view prefix) {
     return compressed;
 }
 
-std::optional<ustring> zstd_decompress(ustring_view data) {
+std::optional<ustring> zstd_decompress(ustring_view data, size_t max_size) {
     zstd_decomp_ptr z_decompressor{ZSTD_createDStream()};
     auto* zds = z_decompressor.get();
 
@@ -218,6 +218,9 @@ std::optional<ustring> zstd_decompress(ustring_view data) {
     do {
         output.pos = 0;
         if (ret = ZSTD_decompressStream(zds, &output, &input); ZSTD_isError(ret))
+            return std::nullopt;
+
+        if (max_size > 0 && decompressed.size() + output.pos > max_size)
             return std::nullopt;
 
         decompressed.append(out_buf.data(), output.pos);

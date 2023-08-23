@@ -1,3 +1,5 @@
+#include "session/config/groups/keys.hpp"
+
 #include <sodium/core.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_generichash_blake2b.h>
@@ -7,12 +9,11 @@
 #include <sodium/utils.h>
 
 #include <chrono>
-#include <session/config/groups/info.hpp>
-#include <session/config/groups/keys.hpp>
-#include <session/config/groups/members.hpp>
 #include <stdexcept>
 
 #include "../internal.hpp"
+#include "session/config/groups/info.hpp"
+#include "session/config/groups/members.hpp"
 
 namespace session::config::groups {
 
@@ -570,6 +571,8 @@ static constexpr size_t OVERHEAD = 1  // encryption type indicator
                                    crypto_aead_xchacha20poly1305_ietf_ABYTES;
 
 ustring Keys::encrypt_message(ustring_view plaintext, bool compress) const {
+    if (plaintext.size() > MAX_PLAINTEXT_MESSAGE_SIZE)
+        throw std::runtime_error{"Cannot encrypt plaintext: message size is too large"};
     ustring _compressed;
     if (compress) {
         _compressed = zstd_compress(plaintext);
@@ -644,7 +647,7 @@ std::optional<ustring> Keys::decrypt_message(ustring_view ciphertext) const {
         return std::nullopt;
 
     if (compressed) {
-        if (auto decomp = zstd_decompress(plain))
+        if (auto decomp = zstd_decompress(plain, MAX_PLAINTEXT_MESSAGE_SIZE))
             plain = std::move(*decomp);
         else
             // Decompression failed

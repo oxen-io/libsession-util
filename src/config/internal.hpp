@@ -165,7 +165,8 @@ void load_unknowns(
 /// serious error.
 ustring zstd_compress(ustring_view data, int level = 1, ustring_view prefix = {});
 
-/// ZSTD-decompresses a value.  Returns nullopt if decompression fails.
-std::optional<ustring> zstd_decompress(ustring_view data);
+/// ZSTD-decompresses a value.  Returns nullopt if decompression fails.  If max_size is non-zero
+/// then this returns nullopt if the decompressed size would exceed that limit.
+std::optional<ustring> zstd_decompress(ustring_view data, size_t max_size = 0);
 
 }  // namespace session::config

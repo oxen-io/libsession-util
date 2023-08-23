@@ -122,6 +122,9 @@ class Keys final : public ConfigSig {
     /// online.
     static constexpr auto KEY_EXPIRY = 2 * 30 * 24h;
 
+    /// The maximum uncompressed message size we allow in message decryption/encryption.
+    static constexpr size_t MAX_PLAINTEXT_MESSAGE_SIZE = 1'000'000;
+
     // No default constructor
     Keys() = delete;
 
@@ -377,8 +380,12 @@ class Keys final : public ConfigSig {
     ///
     /// Future versions may change this to support other encryption algorithms.
     ///
-    /// This method will throw if there no encryption keys are available at all (which should not
-    /// occur in normal use).
+    /// This method will throw on failure, which can happen in two cases:
+    /// - if there no encryption keys are available at all (which should not occur in normal use).
+    /// - if given a plaintext buffer larger than 1MB (even if the compressed version would be much
+    ///   smaller).  It is recommended that clients impose their own limits much smaller than this;
+    ///   this limited is here to match the `decrypt_message` limit which is merely intended to
+    ///   guard against decompression memory exhaustion attacks.
     ///
     /// Inputs:
     /// - `plaintext` -- the binary message to encrypt.
@@ -394,6 +401,9 @@ class Keys final : public ConfigSig {
     /// Decrypts group message content that was presumably encrypted with `encrypt_message`.  This
     /// will attempt decryption using *all* of the known group encryption keys and, if necessary,
     /// decompressing the message.
+    ///
+    /// To prevent against memory exhaustion attacks, this method will fail if the value is
+    /// a compressed value that would decompress to a value larger than 1MB.
     ///
     /// Inputs:
     /// - `ciphertext` -- a encoded, encrypted, (possibly) compressed message as produced by
