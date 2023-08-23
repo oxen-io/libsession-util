@@ -8,6 +8,8 @@
 #include "../namespaces.hpp"
 #include "../profile_pic.hpp"
 
+struct config_group_member;
+
 namespace session::config::groups {
 
 using namespace std::literals;
@@ -41,7 +43,7 @@ struct member {
     explicit member(std::string sid);
 
     // Internal ctor/method for C API implementations:
-    member(const struct config_group_member& c);  // From c struct
+    explicit member(const config_group_member& c);  // From c struct
 
     /// API: groups/member::session_id
     ///
@@ -179,7 +181,7 @@ struct member {
     /// - `bool` -- true if the member is promoted (or promotion-in-progress)
     bool promoted() const { return admin || promotion_pending(); }
 
-    /// API: groups/member::info
+    /// API: groups/member::into
     ///
     /// Converts the member info into a C struct.
     ///
@@ -325,6 +327,16 @@ class Members final : public ConfigBase {
     /// Outputs:
     /// - true if the member was found (and removed); false if the member was not in the list.
     bool erase(std::string_view session_id);
+
+    /// API: groups/Members::size
+    ///
+    /// Returns the number of members in the group.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `size_t` - number of members
+    size_t size() const;
 
     struct iterator;
     /// API: groups/Members::begin

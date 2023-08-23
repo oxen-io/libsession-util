@@ -3,6 +3,7 @@
 #include <oxenc/hex.h>
 
 #include "../internal.hpp"
+#include "session/config/groups/members.h"
 
 namespace session::config::groups {
 
@@ -117,8 +118,124 @@ bool Members::erase(std::string_view session_id) {
     return ret;
 }
 
+size_t Members::size() const {
+    if (auto d = data["m"].dict())
+        return d->size();
+    return 0;
+}
+
 member::member(std::string sid) : session_id{std::move(sid)} {
     check_session_id(session_id);
 }
 
+member::member(const config_group_member& m) : session_id{m.session_id, 66} {
+    assert(std::strlen(m.name) <= MAX_NAME_LENGTH);
+    name = m.name;
+    assert(std::strlen(m.profile_pic.url) <= profile_pic::MAX_URL_LENGTH);
+    if (std::strlen(m.profile_pic.url)) {
+        profile_picture.url = m.profile_pic.url;
+        profile_picture.key = {m.profile_pic.key, 32};
+    }
+    admin = m.admin;
+    invite_status = (m.invited == INVITE_SENT || m.invited == INVITE_FAILED) ? m.invited : 0;
+    promotion_status = (m.promoted == INVITE_SENT || m.promoted == INVITE_FAILED) ? m.promoted : 0;
+}
+
+void member::into(config_group_member& m) const {
+    std::memcpy(m.session_id, session_id.data(), 67);
+    copy_c_str(m.name, name);
+    if (profile_picture) {
+        copy_c_str(m.profile_pic.url, profile_picture.url);
+        std::memcpy(m.profile_pic.key, profile_picture.key.data(), 32);
+    } else {
+        copy_c_str(m.profile_pic.url, "");
+    }
+    m.admin = admin;
+    static_assert(groups::INVITE_SENT == ::INVITE_SENT);
+    static_assert(groups::INVITE_FAILED == ::INVITE_FAILED);
+    m.invited = invite_status;
+    m.promoted = promotion_status;
+}
+
 }  // namespace session::config::groups
+
+using namespace session;
+using namespace session::config;
+
+LIBSESSION_C_API int groups_members_init(
+        config_object** conf,
+        const unsigned char* ed25519_pubkey,
+        const unsigned char* ed25519_secretkey,
+        const unsigned char* dump,
+        size_t dumplen,
+        char* error) {
+    return c_group_wrapper_init<groups::Members>(
+            conf, ed25519_pubkey, ed25519_secretkey, dump, dumplen, error);
+}
+
+LIBSESSION_C_API bool groups_members_get(
+        config_object* conf, config_group_member* member, const char* session_id) {
+    try {
+        conf->last_error = nullptr;
+        if (auto c = unbox<groups::Members>(conf)->get(session_id)) {
+            c->into(*member);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool groups_members_get_or_construct(
+        config_object* conf, config_group_member* member, const char* session_id) {
+    try {
+        conf->last_error = nullptr;
+        unbox<groups::Members>(conf)->get_or_construct(session_id).into(*member);
+        return true;
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
+        return false;
+    }
+}
+
+LIBSESSION_C_API void groups_members_set(config_object* conf, const config_group_member* member) {
+    unbox<groups::Members>(conf)->set(groups::member{*member});
+}
+
+LIBSESSION_C_API bool groups_members_erase(config_object* conf, const char* session_id) {
+    try {
+        return unbox<groups::Members>(conf)->erase(session_id);
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API size_t groups_members_size(const config_object* conf) {
+    return unbox<groups::Members>(conf)->size();
+}
+
+LIBSESSION_C_API groups_members_iterator* groups_members_iterator_new(const config_object* conf) {
+    auto* it = new groups_members_iterator{};
+    it->_internals = new groups::Members::iterator{unbox<groups::Members>(conf)->begin()};
+    return it;
+}
+
+LIBSESSION_C_API void groups_members_iterator_free(groups_members_iterator* it) {
+    delete static_cast<groups::Members::iterator*>(it->_internals);
+    delete it;
+}
+
+LIBSESSION_C_API bool groups_members_iterator_done(groups_members_iterator* it, config_group_member* c) {
+    auto& real = *static_cast<groups::Members::iterator*>(it->_internals);
+    if (real.done())
+        return true;
+    real->into(*c);
+    return false;
+}
+
+LIBSESSION_C_API void groups_members_iterator_advance(groups_members_iterator* it) {
+    ++*static_cast<groups::Members::iterator*>(it->_internals);
+}

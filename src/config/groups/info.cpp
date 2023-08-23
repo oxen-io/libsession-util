@@ -110,41 +110,12 @@ using namespace session::config;
 
 LIBSESSION_C_API int groups_info_init(
         config_object** conf,
-        const unsigned char* ed25519_pubkey_bytes,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dump_bytes,
+        const unsigned char* ed25519_pubkey,
+        const unsigned char* ed25519_secretkey,
+        const unsigned char* dump,
         size_t dumplen,
         char* error) {
-
-    assert(ed25519_pubkey_bytes);
-
-    ustring_view ed25519_pubkey{ed25519_pubkey_bytes, 32};
-    std::optional<ustring_view> ed25519_secretkey;
-    if (ed25519_secretkey_bytes)
-        ed25519_secretkey.emplace(ed25519_secretkey_bytes, 32);
-    std::optional<ustring_view> dump;
-    if (dump_bytes && dumplen)
-        dump.emplace(dump_bytes, dumplen);
-
-    auto c_conf = std::make_unique<config_object>();
-    auto c = std::make_unique<internals<groups::Info>>();
-
-    try {
-        c->config = std::make_unique<groups::Info>(ed25519_pubkey, ed25519_secretkey, dump);
-    } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return SESSION_ERR_INVALID_DUMP;
-    }
-
-    c_conf->internals = c.release();
-    c_conf->last_error = nullptr;
-    *conf = c_conf.release();
-    return SESSION_ERR_NONE;
+    return c_group_wrapper_init<groups::Info>(conf, ed25519_pubkey, ed25519_secretkey, dump, dumplen, error);
 }
 
 /// API: groups_info/groups_info_get_name

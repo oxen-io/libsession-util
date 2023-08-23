@@ -12,23 +12,13 @@
 
 namespace session::config {
 
-template <typename ConfigT>
-[[nodiscard]] int c_wrapper_init(
-        config_object** conf,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dumpstr,
-        size_t dumplen,
-        char* error) {
-    assert(ed25519_secretkey_bytes);
-    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
-    auto c_conf = std::make_unique<config_object>();
+template <typename ConfigT, typename... Args>
+[[nodiscard]] int c_wrapper_init_generic(config_object** conf, char* error, Args&&... args) {
     auto c = std::make_unique<internals<ConfigT>>();
-    std::optional<ustring_view> dump;
-    if (dumpstr && dumplen)
-        dump.emplace(dumpstr, dumplen);
+    auto c_conf = std::make_unique<config_object>();
 
     try {
-        c->config = std::make_unique<ConfigT>(ed25519_secretkey, dump);
+        c->config = std::make_unique<ConfigT>(std::forward<Args>(args)...);
     } catch (const std::exception& e) {
         if (error) {
             std::string msg = e.what();
@@ -43,6 +33,43 @@ template <typename ConfigT>
     c_conf->last_error = nullptr;
     *conf = c_conf.release();
     return SESSION_ERR_NONE;
+}
+
+template <typename ConfigT>
+[[nodiscard]] int c_wrapper_init(
+        config_object** conf,
+        const unsigned char* ed25519_secretkey_bytes,
+        const unsigned char* dumpstr,
+        size_t dumplen,
+        char* error) {
+    assert(ed25519_secretkey_bytes);
+    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
+    std::optional<ustring_view> dump;
+    if (dumpstr && dumplen)
+        dump.emplace(dumpstr, dumplen);
+    return c_wrapper_init_generic<ConfigT>(conf, error, ed25519_secretkey, dump);
+}
+
+template <typename ConfigT>
+[[nodiscard]] int c_group_wrapper_init(
+        config_object** conf,
+        const unsigned char* ed25519_pubkey_bytes,
+        const unsigned char* ed25519_secretkey_bytes,
+        const unsigned char* dump_bytes,
+        size_t dumplen,
+        char* error) {
+
+    assert(ed25519_pubkey_bytes);
+
+    ustring_view ed25519_pubkey{ed25519_pubkey_bytes, 32};
+    std::optional<ustring_view> ed25519_secretkey;
+    if (ed25519_secretkey_bytes)
+        ed25519_secretkey.emplace(ed25519_secretkey_bytes, 32);
+    std::optional<ustring_view> dump;
+    if (dump_bytes && dumplen)
+        dump.emplace(dump_bytes, dumplen);
+
+    return c_wrapper_init_generic<ConfigT>(conf, error, ed25519_pubkey, ed25519_secretkey, dump);
 }
 
 template <size_t N>
