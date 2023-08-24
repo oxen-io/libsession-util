@@ -80,11 +80,12 @@ void copy_c_str(char (&dest)[N], std::string_view src) {
     dest[src.size()] = 0;
 }
 
-// Throws std::invalid_argument if session_id doesn't look valid
-void check_session_id(std::string_view session_id);
+// Throws std::invalid_argument if session_id doesn't look valid.  Can optionally be passed a prefix
+// byte for id's that aren't starting with 0x05 (e.g. 0x03 for non-legacy group ids).
+void check_session_id(std::string_view session_id, unsigned char prefix = 0x05);
 
 // Checks the session_id (throwing if invalid) then returns it as bytes
-std::string session_id_to_bytes(std::string_view session_id);
+std::string session_id_to_bytes(std::string_view session_id, unsigned char prefix = 0x05);
 
 // Checks the session_id (throwing if invalid) then returns it as bytes, omitting the 05 prefix
 // (which is the x25519 pubkey).

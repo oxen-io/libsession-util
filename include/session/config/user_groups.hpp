@@ -12,6 +12,7 @@
 #include "notify.hpp"
 
 extern "C" {
+struct ugroups_group_info;
 struct ugroups_legacy_group_info;
 struct ugroups_community_info;
 }
@@ -20,25 +21,23 @@ namespace session::config {
 
 /// keys used in this config, either currently or in the past (so that we don't reuse):
 ///
-/// C - dict of legacy groups; within this dict each key is the group pubkey (binary, 33 bytes) and
-/// value is a dict containing keys:
+/// g - dict of groups (AKA closed groups) for new-style closed groups (i.e. not legacy closed
+///     groups; see below for those).  Each key is the group's public key (without 0x03 prefix).
 ///
-///     n - name (string).  Always set, even if empty.
-///     k - encryption public key (32 bytes).  Optional.
-///     K - encryption secret key (32 bytes).  Optional.
-///     m - set of member session ids (each 33 bytes).
-///     a - set of admin session ids (each 33 bytes).
-///     E - disappearing messages duration, in seconds, > 0.  Omitted if disappearing messages is
-///         disabled.  (Note that legacy groups only support expire after-read)
+///     K - group seed, if known (i.e. an admin).  This is just the seed, which is just the first
+///         half (32 bytes) of the 64-byte libsodium-style Ed25519 secret key value (i.e. it omits
+///         the cached public key in the second half).  This field is always set, but will be empty
+///         if the seed is not known.
+///     s - authentication signature; this is used by non-admins to authenticate
 ///     @ - notification setting (int).  Omitted = use default setting; 1 = all, 2 = disabled, 3 =
 ///         mentions-only.
 ///     ! - mute timestamp: if set then don't show notifications for this contact's messages until
 ///         this unix timestamp (i.e.  overriding the current notification setting until the given
 ///         time).
-///     + - the conversation priority, for pinned/hidden messages.  Integer.  Omitted means not
-///         pinned; -1 means hidden, and a positive value is a pinned message for which higher
-///         priority values means the conversation is meant to appear earlier in the pinned
-///         conversation list.
+///     + - the conversation priority, for pinning/hiding this group in the conversation list.
+///         Integer.  Omitted means not pinned; -1 means hidden, and a positive value is a pinned
+///         message for which higher priority values means the conversation is meant to appear
+///         earlier in the pinned conversation list.
 ///     j - joined at unix timestamp.  Omitted if 0.
 ///
 /// o - dict of communities (AKA open groups); within this dict (which deliberately has the same
@@ -51,14 +50,25 @@ namespace session::config {
 ///             appropriate).  For instance, a room name SudokuSolvers would be "sudokusolvers" in
 ///             the outer key, with the capitalization variation in use ("SudokuSolvers") in this
 ///             key.  This key is *always* present (to keep the room dict non-empty).
-///         @ - notification setting (see above).
+///         @ - notification setting (same values as groups, above).
 ///         ! - mute timestamp (see above).
-///         + - the conversation priority, for pinned messages.  Omitted means not pinned; -1 means
-///             hidden; otherwise an integer value >0, where a higher priority means the
-///             conversation is meant to appear earlier in the pinned conversation list.
+///         + - the conversation priority, for pinning/hiding this community room.  See above.
 ///         j - joined at unix timestamp.  Omitted if 0.
 ///
-/// c - reserved for future storage of new-style group info.
+/// C - dict of legacy groups; within this dict each key is the group pubkey (binary, 33 bytes) and
+/// value is a dict containing keys:
+///
+///     n - name (string).  Always set, even if empty.
+///     k - encryption public key (32 bytes).  Optional.
+///     K - encryption secret key (32 bytes).  Optional.
+///     m - set of member session ids (each 33 bytes).
+///     a - set of admin session ids (each 33 bytes).
+///     E - disappearing messages duration, in seconds, > 0.  Omitted if disappearing messages is
+///         disabled.  (Note that legacy groups only support expire after-read)
+///     @ - notification setting (int).  Same as above.
+///         ! - mute timestamp (see above).
+///     + - the conversation priority, for pinned/hidden conversations.  See above.
+///     j - joined at unix timestamp.  Omitted if 0.
 
 /// Common base type with fields shared by all the groups
 struct base_group_info {
@@ -162,6 +172,32 @@ struct legacy_group_info : base_group_info {
     void load(const dict& info_dict);
 };
 
+/// Struct containing new group info (aka "closed groups v2").
+struct group_info : base_group_info {
+    std::string id;  // The group pubkey (66 hex digits); this is an ed25519 key, prefixed with "03"
+                     // (to distinguish it from a 05 x25519 pubkey session id).
+
+    /// Group secret key (64 bytes); this is only possessed by admins.
+    ustring secretkey;
+
+    /// Group authentication signature; this is possessed by non-admins.  (This value will be
+    /// dropped when serializing if secretkey is non-empty, and so does not need to be explicitly
+    /// cleared when being promoted to admin)
+    ustring auth_sig;
+
+    /// Constructs a new group info from an hex id (03 + pubkey).  Throws if id is invalid.
+    explicit group_info(std::string gid);
+
+    // Internal ctor/method for C API implementations:
+    group_info(const struct ugroups_group_info& c);  // From c struct
+    void into(struct ugroups_group_info& c) const;  // Into c struct
+
+  private:
+    friend class UserGroups;
+
+    void load(const dict& info_dict);
+};
+
 /// Community (aka open group) info
 struct community_info : base_group_info, community {
     // Note that *changing* url/room/pubkey and then doing a set inserts a new room under the given
@@ -181,7 +217,7 @@ struct community_info : base_group_info, community {
     friend class comm_iterator_helper;
 };
 
-using any_group_info = std::variant<community_info, legacy_group_info>;
+using any_group_info = std::variant<group_info, community_info, legacy_group_info>;
 
 class UserGroups : public ConfigBase {
 
@@ -209,12 +245,12 @@ class UserGroups : public ConfigBase {
 
     /// API: user_groups/UserGroups::storage_namespace
     ///
-    /// Returns the Contacts namespace. Is constant, will always return 5
+    /// Returns the Contacts namespace.
     ///
     /// Inputs: None
     ///
     /// Outputs:
-    /// - `Namespace` - Returns 5
+    /// - `Namespace` - Returns Namespace::UserGroups
     Namespace storage_namespace() const override { return Namespace::UserGroups; }
 
     /// API: user_groups/UserGroups::encryption_domain
@@ -263,6 +299,20 @@ class UserGroups : public ConfigBase {
     /// - `std::optional<legacy_group_info>` - Returns the filled out legacy_group_info struct if
     ///   found
     std::optional<legacy_group_info> get_legacy_group(std::string_view pubkey_hex) const;
+
+    /// API: user_groups/UserGroups::get_group
+    ///
+    /// Looks up and returns a group (aka new closed group) by group ID (hex, looks like a Session
+    /// ID but starting with 03).  Returns nullopt if the group was not found, otherwise returns a
+    /// filled out `group_info`.
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- group ID (hex, looks like a session ID but starting 03 instead of 05)
+    ///
+    /// Outputs:
+    /// - `std::optional<group_info>` - Returns the filled out group_info struct if found, nullopt
+    ///   if not found.
+    std::optional<group_info> get_group(std::string_view pubkey_hex) const;
 
     /// API: user_groups/UserGroups::get_or_construct_community
     ///
@@ -324,6 +374,30 @@ class UserGroups : public ConfigBase {
     /// - `legacy_group_info` - Returns the filled out legacy_group_info struct
     legacy_group_info get_or_construct_legacy_group(std::string_view pubkey_hex) const;
 
+    /// API: user_groups/UserGroups::get_or_construct_group
+    ///
+    /// Gets or constructs a blank group_info for the given group id.
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- group ID (hex, looks like a session ID)
+    ///
+    /// Outputs:
+    /// - `group_info` - Returns the filled out group_info struct
+    group_info get_or_construct_group(std::string_view pubkey_hex) const;
+
+    /// API: user_groups/UserGroups::create_group
+    ///
+    /// Constructs a `group_info` object with newly generated (random) keys and returns the
+    /// group_info containing these keys.  The group will have the id and secretkey populated; other
+    /// fields are defaulted.  You still need to pass this to `set()` to store it, after setting any
+    /// other fields as desired.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `group_info` - Returns a filled out group_info struct for a new, randomly generated group.
+    group_info create_group() const;
+
     /// API: user_groups/UserGroups::set
     ///
     /// Inserts or replaces existing group info.  For example, to update the info for a community
@@ -336,12 +410,15 @@ class UserGroups : public ConfigBase {
     ///
     /// Declaration:
     /// ```cpp
+    /// void set(const group_info& info);
     /// void set(const community_info& info);
     /// void set(const legacy_group_info& info);
     /// ```
     ///
     /// Inputs:
-    /// - `info` -- group info struct to insert. Can be either community_info or legacy_group_info
+    /// - `info` -- group info struct to insert. Can be `community_info`, `group_info`, or
+    ///   `legacy_group_info`.
+    void set(const group_info& info);
     void set(const community_info& info);
     void set(const legacy_group_info& info);
 
@@ -380,11 +457,12 @@ class UserGroups : public ConfigBase {
 
     /// API: user_groups/UserGroups::erase
     ///
-    /// Removes a conversation taking the community_info or legacy_group_info instance (rather than
-    /// the pubkey/url) for convenience.
+    /// Removes a conversation taking the community_info, group_info, or legacy_group_info instance
+    /// (rather than the pubkey/url) for convenience.
     ///
     /// Declaration:
     /// ```cpp
+    /// bool erase(const group_info& g);
     /// bool erase(const community_info& g);
     /// bool erase(const legacy_group_info& c);
     /// bool erase(const any_group_info& info);
@@ -395,6 +473,7 @@ class UserGroups : public ConfigBase {
     ///
     /// Outputs:
     /// - `bool` - Returns true if found and removed, false otherwise
+    bool erase(const group_info& g);
     bool erase(const community_info& g);
     bool erase(const legacy_group_info& c);
     bool erase(const any_group_info& info);
@@ -409,6 +488,16 @@ class UserGroups : public ConfigBase {
     /// - `size_t` - Returns the number of groups
     size_t size() const;
 
+    /// API: user_groups/UserGroups::size_groups
+    ///
+    /// Returns the number of (non-legacy) groups
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `size_t` - Returns the number of groups
+    size_t size_groups() const;
+
     /// API: user_groups/UserGroups::size_communities
     ///
     /// Returns the number of communities
@@ -419,7 +508,7 @@ class UserGroups : public ConfigBase {
     /// - `size_t` - Returns the number of groups
     size_t size_communities() const;
 
-    /// API: user_groups/UserGroups::size_communities
+    /// API: user_groups/UserGroups::size_legacy_groups
     ///
     /// Returns the number of legacy groups
     ///
@@ -454,8 +543,8 @@ class UserGroups : public ConfigBase {
     ///     }
     /// ```
     ///
-    /// This iterates through all groups in sorted order (sorted first by convo type, then by
-    /// id within the type).
+    /// This iterates through all groups in sorted order (sorted first by convo type [groups,
+    /// communities, legacy groups], then by id within the type).
     ///
     /// It is NOT permitted to add/remove/modify records while iterating.  If such is needed it must
     /// be done in two passes: once to collect the modifications, then a loop applying the collected
@@ -482,11 +571,12 @@ class UserGroups : public ConfigBase {
 
     /// Returns an iterator that iterates only through one type of conversations.  (The regular
     /// `.end()` iterator is valid for testing the end of these iterations).
+    subtype_iterator<group_info> legacy_groups() const { return {data}; }
     subtype_iterator<community_info> begin_communities() const { return {data}; }
     subtype_iterator<legacy_group_info> begin_legacy_groups() const { return {data}; }
 
     using iterator_category = std::input_iterator_tag;
-    using value_type = std::variant<community_info, legacy_group_info>;
+    using value_type = std::variant<group_info, community_info, legacy_group_info>;
     using reference = value_type&;
     using pointer = value_type*;
     using difference_type = std::ptrdiff_t;
@@ -494,13 +584,19 @@ class UserGroups : public ConfigBase {
     struct iterator {
       protected:
         std::shared_ptr<any_group_info> _val;
+        std::optional<dict::const_iterator> _it_group, _end_group;
         std::optional<comm_iterator_helper> _it_comm;
         std::optional<dict::const_iterator> _it_legacy, _end_legacy;
         void _load_val();
         iterator() = default;  // Constructs an end tombstone
         explicit iterator(
-                const DictFieldRoot& data, bool communities = true, bool legacy_closed = true);
+                const DictFieldRoot& data,
+                bool communities = true,
+                bool legacy_closed = true,
+                bool groups = true);
         friend class UserGroups;
+        template <typename GroupInfo>
+        bool check_it();
 
       public:
         bool operator==(const iterator& other) const;
@@ -522,6 +618,7 @@ class UserGroups : public ConfigBase {
         subtype_iterator(const DictFieldRoot& data) :
                 iterator(
                         data,
+                        std::is_same_v<group_info, GroupType>,
                         std::is_same_v<community_info, GroupType>,
                         std::is_same_v<legacy_group_info, GroupType>) {}
         friend class UserGroups;
