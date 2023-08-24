@@ -269,59 +269,60 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     d.append("G", gen);
     d.append("K", enc_sv);
 
-    auto member_keys = d.append_list("k");
+    {
+        auto member_keys = d.append_list("k");
+        int member_count = 0;
+        for (const auto& m : members) {
+            auto m_xpk = session_id_xpk(m.session_id);
+            // Calculate the encryption key: H(aB || A || B)
+            if (0 != crypto_scalarmult_curve25519(member_k.data(), group_xsk.data(), m_xpk.data()))
+                continue;  // The scalarmult failed; maybe a bad session id?
 
-    int member_count = 0;
-    for (const auto& m : members) {
-        auto m_xpk = session_id_xpk(m.session_id);
-        // Calculate the encryption key: H(aB || A || B)
-        if (0 != crypto_scalarmult_curve25519(member_k.data(), group_xsk.data(), m_xpk.data()))
-            continue;  // The scalarmult failed; maybe a bad session id?
+            crypto_generichash_blake2b_init(
+                    &st,
+                    enc_key_member_hash_key.data(),
+                    enc_key_member_hash_key.size(),
+                    member_k.size());
+            crypto_generichash_blake2b_update(&st, member_k.data(), member_k.size());
+            crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
+            crypto_generichash_blake2b_update(&st, m_xpk.data(), m_xpk.size());
+            crypto_generichash_blake2b_final(&st, member_k.data(), member_k.size());
 
-        crypto_generichash_blake2b_init(
-                &st,
-                enc_key_member_hash_key.data(),
-                enc_key_member_hash_key.size(),
-                member_k.size());
-        crypto_generichash_blake2b_update(&st, member_k.data(), member_k.size());
-        crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
-        crypto_generichash_blake2b_update(&st, m_xpk.data(), m_xpk.size());
-        crypto_generichash_blake2b_final(&st, member_k.data(), member_k.size());
+            crypto_aead_xchacha20poly1305_ietf_encrypt(
+                    encrypted.data(),
+                    nullptr,
+                    enc_key.data(),
+                    enc_key.size(),
+                    nullptr,
+                    0,
+                    nullptr,
+                    nonce.data(),
+                    member_k.data());
 
-        crypto_aead_xchacha20poly1305_ietf_encrypt(
-                encrypted.data(),
-                nullptr,
-                enc_key.data(),
-                enc_key.size(),
-                nullptr,
-                0,
-                nullptr,
-                nonce.data(),
-                member_k.data());
+            member_keys.append(enc_sv);
+            member_count++;
+        }
 
-        member_keys.append(enc_sv);
-        member_count++;
-    }
+        // Pad it out with junk entries to the next MESSAGE_KEY_MULTIPLE
+        if (member_count % MESSAGE_KEY_MULTIPLE) {
+            int n_junk = MESSAGE_KEY_MULTIPLE - (member_count % MESSAGE_KEY_MULTIPLE);
+            std::vector<unsigned char> junk_data;
+            junk_data.resize(encrypted.size() * n_junk);
 
-    // Pad it out with junk entries to the next MESSAGE_KEY_MULTIPLE
-    if (member_count % MESSAGE_KEY_MULTIPLE) {
-        int n_junk = MESSAGE_KEY_MULTIPLE - (member_count % MESSAGE_KEY_MULTIPLE);
-        std::vector<unsigned char> junk_data;
-        junk_data.resize(encrypted.size() * n_junk);
+            std::array<unsigned char, randombytes_SEEDBYTES> rng_seed;
+            crypto_generichash_blake2b_init(
+                    &st, junk_seed_hash_key.data(), junk_seed_hash_key.size(), rng_seed.size());
+            crypto_generichash_blake2b_update(&st, h1.data(), h1.size());
+            crypto_generichash_blake2b_update(&st, _sign_sk.data(), _sign_sk.size());
+            crypto_generichash_blake2b_final(&st, rng_seed.data(), rng_seed.size());
 
-        std::array<unsigned char, randombytes_SEEDBYTES> rng_seed;
-        crypto_generichash_blake2b_init(
-                &st, junk_seed_hash_key.data(), junk_seed_hash_key.size(), rng_seed.size());
-        crypto_generichash_blake2b_update(&st, h1.data(), h1.size());
-        crypto_generichash_blake2b_update(&st, _sign_sk.data(), _sign_sk.size());
-        crypto_generichash_blake2b_final(&st, rng_seed.data(), rng_seed.size());
-
-        randombytes_buf_deterministic(junk_data.data(), junk_data.size(), rng_seed.data());
-        std::string_view junk_view{
-                reinterpret_cast<const char*>(junk_data.data()), junk_data.size()};
-        while (!junk_view.empty()) {
-            member_keys.append(junk_view.substr(0, encrypted.size()));
-            junk_view.remove_prefix(encrypted.size());
+            randombytes_buf_deterministic(junk_data.data(), junk_data.size(), rng_seed.data());
+            std::string_view junk_view{
+                    reinterpret_cast<const char*>(junk_data.data()), junk_data.size()};
+            while (!junk_view.empty()) {
+                member_keys.append(junk_view.substr(0, encrypted.size()));
+                junk_view.remove_prefix(encrypted.size());
+            }
         }
     }
 
