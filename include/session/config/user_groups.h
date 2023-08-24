@@ -43,14 +43,14 @@ typedef struct ugroups_legacy_group_info {
 /// Struct holding (non-legacy) group info; this struct owns allocated memory and *must* be freed
 /// via either `ugroups_group_free()` or `ugroups_set_free_group()` when finished with it.
 typedef struct ugroups_group_info {
-    char id[67]; // in hex; 66 hex chars + null terminator
+    char id[67];  // in hex; 66 hex chars + null terminator
 
-    bool have_secretkey; // Will be true if the `secretkey` is populated
-    unsigned char secretkey[64]; // If `have_secretkey` is set then this is the libsodium-style
-                                 // "secret key" for the group (i.e. 32 byte seed + 32 byte pubkey)
-    bool have_auth_sig; // Will be true if the `auth_sig` is populated
-    unsigned char auth_sig[64]; // If `have_auth_sig` is set then this is the authentication
-                                // signature that can be used to access the swarm.
+    bool have_secretkey;          // Will be true if the `secretkey` is populated
+    unsigned char secretkey[64];  // If `have_secretkey` is set then this is the libsodium-style
+                                  // "secret key" for the group (i.e. 32 byte seed + 32 byte pubkey)
+    bool have_auth_sig;           // Will be true if the `auth_sig` is populated
+    unsigned char auth_sig[64];   // If `have_auth_sig` is set then this is the authentication
+                                  // signature that can be used to access the swarm.
 
     int priority;  // pinned message priority; 0 = unpinned, negative = hidden, positive = pinned
                    // (with higher meaning pinned higher).

@@ -190,7 +190,7 @@ struct group_info : base_group_info {
 
     // Internal ctor/method for C API implementations:
     group_info(const struct ugroups_group_info& c);  // From c struct
-    void into(struct ugroups_group_info& c) const;  // Into c struct
+    void into(struct ugroups_group_info& c) const;   // Into c struct
 
   private:
     friend class UserGroups;
