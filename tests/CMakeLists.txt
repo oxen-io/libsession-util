@@ -16,6 +16,14 @@ add_executable(testAll
     test_xed25519.cpp
     )
 
+add_executable(testKeys
+    test_group_keys.cpp
+)
+
+target_link_libraries(testKeys PRIVATE
+    config
+    Catch2::Catch2WithMain)
+
 target_link_libraries(testAll PRIVATE
     config
     Catch2::Catch2WithMain)
