@@ -33,6 +33,10 @@ inline constexpr auto operator""_kiB(unsigned long long kiB) {
     return kiB * 1024;
 }
 
+inline int64_t get_timestamp() {
+    return std::chrono::steady_clock::now().time_since_epoch().count();
+}
+
 inline std::string_view to_sv(ustring_view x) {
     return {reinterpret_cast<const char*>(x.data()), x.size()};
 }
