@@ -43,7 +43,7 @@ template <typename ConfigT>
         size_t dumplen,
         char* error) {
     assert(ed25519_secretkey_bytes);
-    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 32};
+    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 64};
     std::optional<ustring_view> dump;
     if (dumpstr && dumplen)
         dump.emplace(dumpstr, dumplen);
@@ -64,7 +64,7 @@ template <typename ConfigT>
     ustring_view ed25519_pubkey{ed25519_pubkey_bytes, 32};
     std::optional<ustring_view> ed25519_secretkey;
     if (ed25519_secretkey_bytes)
-        ed25519_secretkey.emplace(ed25519_secretkey_bytes, 32);
+        ed25519_secretkey.emplace(ed25519_secretkey_bytes, 64);
     std::optional<ustring_view> dump;
     if (dump_bytes && dumplen)
         dump.emplace(dump_bytes, dumplen);
