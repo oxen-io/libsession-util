@@ -27,6 +27,7 @@ std::string session_id_to_bytes(std::string_view session_id, unsigned char prefi
 std::array<unsigned char, 32> session_id_xpk(std::string_view session_id) {
     check_session_id(session_id);
     std::array<unsigned char, 32> xpk;
+    session_id.remove_prefix(2);
     oxenc::from_hex(session_id.begin(), session_id.end(), xpk.begin());
     return xpk;
 }
