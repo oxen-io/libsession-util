@@ -6,8 +6,11 @@
 #include <catch2/matchers/catch_matchers.hpp>
 #include <iostream>
 #include <session/config/groups/info.hpp>
+#include <session/config/groups/info.h>
 #include <session/config/groups/keys.hpp>
+#include <session/config/groups/keys.h>
 #include <session/config/groups/members.hpp>
+#include <session/config/groups/members.h>
 #include <string_view>
 
 #include "utils.hpp"
@@ -19,7 +22,7 @@ static constexpr int64_t created_ts = 1680064059;
 
 using namespace session::config;
 
-TEST_CASE("Group Keys", "[config][groups][keys]") {
+TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
 
     struct pseudo_client {
         const bool is_admin;
@@ -132,8 +135,9 @@ TEST_CASE("Group Keys", "[config][groups][keys]") {
 
     CHECK(admin1.members->needs_push());
 
-    auto new_keys_config1 = admin1.keys->rekey(*admin1.info, *admin1.members);
-    CHECK(not new_keys_config1.empty());
+    auto maybe_key_config = admin1.keys->pending_config();
+    REQUIRE(maybe_key_config);
+    auto new_keys_config1 = *maybe_key_config;
 
     auto [iseq1, new_info_config1, iobs1] = admin1.info->push();
     admin1.info->confirm_pushed(iseq1, "fakehash1");
@@ -292,4 +296,125 @@ TEST_CASE("Group Keys", "[config][groups][keys]") {
 
     CHECK(compressed.size() < msg.size());
     CHECK(compressed.size() < uncompressed.size());
+}
+
+TEST_CASE("Group Keys - C++ API", "[config][groups][keys][c]")
+{
+    struct pseudo_client {
+        const bool is_admin;
+
+        const ustring seed;
+        std::string session_id;
+
+        std::array<unsigned char, 32> public_key;
+        std::array<unsigned char, 64> secret_key;
+
+        config_group_keys* keys;
+        config_object* info;
+        config_object* members;
+
+        pseudo_client(ustring s, bool a, unsigned char* gpk, std::optional<unsigned char*> gsk) :
+                seed{s}, is_admin{a} {
+            crypto_sign_ed25519_seed_keypair(
+                    public_key.data(),
+                    secret_key.data(),
+                    reinterpret_cast<const unsigned char*>(seed.data()));
+
+            REQUIRE(oxenc::to_hex(seed.begin(), seed.end()) ==
+                    oxenc::to_hex(secret_key.begin(), secret_key.begin() + 32));
+
+            std::array<unsigned char, 33> sid;
+            int rc = crypto_sign_ed25519_pk_to_curve25519(&sid[1], public_key.data());
+            REQUIRE(rc == 0);
+            sid[0] = 0x05;
+            session_id = oxenc::to_hex(sid.begin(), sid.end());
+
+            int rv = groups_members_init(
+                    &members,
+                    gpk,
+                    is_admin ? *gsk : NULL,
+                    NULL,
+                    0,
+                    NULL);
+            REQUIRE(rv == 0);
+
+            rv = groups_info_init(
+                    &info,
+                    gpk,
+                    is_admin ? *gsk : NULL,
+                    NULL,
+                    0,
+                    NULL);
+            REQUIRE(rv == 0);
+
+            rv = groups_keys_init(
+                    &keys,
+                    secret_key.data(),
+                    gpk,
+                    is_admin ? *gsk : NULL,
+                    info,
+                    members,
+                    NULL,
+                    0,
+                    NULL);
+            REQUIRE(rv == 0);
+        }
+
+        ~pseudo_client()
+        {
+            config_free(info);
+            config_free(members);
+        }
+    };
+
+    const ustring group_seed =
+            "0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210"_hexbytes;
+    const ustring admin1_seed =
+            "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
+    const ustring admin2_seed =
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"_hexbytes;
+    const std::array member_seeds = {
+            "000111222333444555666777888999aaabbbcccdddeeefff0123456789abcdef"_hexbytes,  // member1
+            "00011122435111155566677788811263446552465222efff0123456789abcdef"_hexbytes,  // member2
+            "00011129824754185548239498168169316979583253efff0123456789abcdef"_hexbytes,  // member3
+            "0000111122223333444455556666777788889999aaaabbbbccccddddeeeeffff"_hexbytes   // member4
+    };
+
+    std::array<unsigned char, 32> group_pk;
+    std::array<unsigned char, 64> group_sk;
+
+    crypto_sign_ed25519_seed_keypair(
+            group_pk.data(),
+            group_sk.data(),
+            reinterpret_cast<const unsigned char*>(group_seed.data()));
+    REQUIRE(oxenc::to_hex(group_seed.begin(), group_seed.end()) ==
+            oxenc::to_hex(group_sk.begin(), group_sk.begin() + 32));
+
+    std::vector<pseudo_client> admins;
+    std::vector<pseudo_client> members;
+
+    // Initialize admin and member objects
+    admins.emplace_back(admin1_seed, true, group_pk.data(), group_sk.data());
+    // admins.emplace_back(admin2_seed, true, group_pk.data(), group_sk.data());
+
+    // for (int i = 0; i < 4; ++i)
+    //     members.emplace_back(member_seeds[i], false, group_pk.data(), std::nullopt);
+
+    // REQUIRE(admins[0].session_id ==
+    //         "05f1e8b64bbf761edf8f7b47e3a1f369985644cce0a62adb8e21604474bdd49627");
+    // REQUIRE(admins[1].session_id ==
+    //         "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    // REQUIRE(members[0].session_id ==
+    //         "05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628");
+    // REQUIRE(members[1].session_id ==
+    //         "053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c");
+    // REQUIRE(members[2].session_id ==
+    //         "05a2b03abdda4df8316f9d7aed5d2d1e483e9af269d0b39191b08321b8495bc118");
+    // REQUIRE(members[3].session_id ==
+    //         "050a41669a06c098f22633aee2eba03764ef6813bd4f770a3a2b9033b868ca470d");
+
+    // for (const auto& a : admins)
+    //     REQUIRE(contacts_size(a.members) == 0);
+    // for (const auto& m : members)
+    //     REQUIRE(contacts_size(m.members) == 0);
 }
