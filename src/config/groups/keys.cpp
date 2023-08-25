@@ -146,7 +146,7 @@ std::vector<ustring_view> Keys::group_keys() const {
     std::vector<ustring_view> ret;
     ret.reserve(keys_.size() + !pending_key_config_.empty());
 
-    if (pending_key_config_.empty())
+    if (!pending_key_config_.empty())
         ret.emplace_back(pending_key_.data(), 32);
 
     for (auto it = keys_.rbegin(); it != keys_.rend(); ++it)
