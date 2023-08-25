@@ -502,7 +502,7 @@ bool Keys::insert_key(const key_info& new_key) {
         // We found a key we already had, so just ignore it.
         return false;
 
-    if (it == keys_.begin() && new_key.generation < keys_.front().generation &&
+    if (keys_.size() >= 2 && it == keys_.begin() && new_key.generation < keys_.front().generation &&
         keys_.front().timestamp + KEY_EXPIRY < keys_.back().timestamp)
         // The new one is older than the front one, and the front one is already more than
         // KEY_EXPIRY before the last one, so this new one is stale.
