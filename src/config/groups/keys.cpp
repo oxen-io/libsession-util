@@ -908,7 +908,7 @@ LIBSESSION_C_API int groups_keys_init(
     auto c_conf = std::make_unique<config_group_keys>();
 
     try {
-        c_conf->internals = new groups::Keys{user_sk, group_pk, group_sk, dump, info, members};
+        c_conf->internals = new groups::Keys{user_sk, group_pk, group_sk, dumped, info, members};
     } catch (const std::exception& e) {
         if (error) {
             std::string msg = e.what();
