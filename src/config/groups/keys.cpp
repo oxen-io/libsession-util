@@ -243,7 +243,6 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     oxenc::bt_dict_producer d{};
 
     d.append("#", from_unsigned_sv(nonce));
-    // d.append("+", 0); // Not supplemental, so leave off
 
     static_assert(crypto_aead_xchacha20poly1305_ietf_KEYBYTES == 32);
     static_assert(crypto_aead_xchacha20poly1305_ietf_ABYTES == 16);
@@ -659,6 +658,7 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
             throw config_value_error{"Failed to decrypt admin key from key message"};
 
         found_key = true;
+        insert_key(new_key);
     }
 
     // Even if we're already found a key we still parse these, so that admins and all users have the
