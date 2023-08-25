@@ -46,7 +46,7 @@ Keys::Keys(
 
     if (dumped) {
         load_dump(*dumped);
-    } else if (_sign_sk) {
+    } else if (admin()) {
         rekey(info, members);
     }
 }
@@ -179,7 +179,7 @@ static const ustring_view enc_key_member_hash_key = to_unsigned_sv("SessionGroup
 static const ustring_view junk_seed_hash_key = to_unsigned_sv("SessionGroupJunkMembers"sv);
 
 ustring_view Keys::rekey(Info& info, Members& members) {
-    if (!_sign_sk || !_sign_pk)
+    if (!admin())
         throw std::logic_error{
                 "Unable to issue a new group encryption key without the main group keys"};
 
@@ -222,6 +222,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     std::array<unsigned char, 56> h1;
 
     crypto_generichash_blake2b_state st;
+
     crypto_generichash_blake2b_init(
             &st, enc_key_hash_key.data(), enc_key_hash_key.size(), h1.size());
     for (const auto& m : members)
@@ -357,10 +358,162 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
 
+ustring Keys::key_supplement(std::vector<std::string> sids, bool all) const {
+    if (!admin())
+        throw std::logic_error{
+                "Unable to issue supplemental group encryption keys without the main group keys"};
+
+    if (keys_.empty())
+        throw std::logic_error{
+                "Unable to create supplemental keys: this object has no keys at all"};
+
+    // For members we calculate the outer encryption key as H(aB || A || B).  But because we only
+    // have `B` (the session id) as an x25519 pubkey, we do this in x25519 space, which means we
+    // have to use the x25519 conversion of a/A rather than the group's ed25519 pubkey.
+    auto group_xpk = compute_xpk(_sign_pk->data());
+
+    sodium_cleared<std::array<unsigned char, 32>> group_xsk;
+    crypto_sign_ed25519_sk_to_curve25519(group_xsk.data(), _sign_sk.data());
+
+    // We need quasi-randomness here for the nonce: full secure random would be great, except that
+    // different admins encrypting for the same update would always create different keys, but we
+    // want it deterministic so that that doesn't happen.
+    //
+    // So we use a nonce of:
+    //
+    // H1(member0 || member1 || ... || memberN || keysdata || H2(group_secret_key))
+    //
+    // where:
+    // - H1(.) = 24-byte BLAKE2b keyed hash with key "SessionGroupKeyGen"
+    // - memberI is the full session ID of each member included in this key update, expressed in hex
+    //   (66 chars), in sorted order.
+    // - keysdata is the unencrypted inner value that we are encrypting for each supplemental member
+    // - H2(.) = 32-byte BLAKE2b keyed hash of the sodium group secret key seed (just the 32 byte,
+    //           not the full 64 byte with the pubkey in the second half), key "SessionGroupKeySeed"
+
+    std::string supp_keys;
+    {
+        oxenc::bt_list_producer supp;
+        for (auto& ki : keys_) {
+            auto d = supp.append_dict();
+            d.append("g", ki.generation);
+            d.append("k", from_unsigned_sv(ki.key));
+            d.append(
+                    "t",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                            ki.timestamp.time_since_epoch())
+                            .count());
+        }
+        supp_keys = std::move(supp).str();
+    }
+
+    std::array<unsigned char, 24> h1;
+
+    crypto_generichash_blake2b_state st;
+
+    crypto_generichash_blake2b_init(
+            &st, enc_key_hash_key.data(), enc_key_hash_key.size(), h1.size());
+
+    for (const auto& sid : sids)
+        crypto_generichash_blake2b_update(&st, to_unsigned(sid.data()), sid.size());
+
+    crypto_generichash_blake2b_update(&st, to_unsigned(supp_keys.data()), supp_keys.size());
+
+    std::array<unsigned char, 32> h2 = seed_hash(seed_hash_key);
+    crypto_generichash_blake2b_update(&st, h2.data(), h2.size());
+
+    crypto_generichash_blake2b_final(&st, h1.data(), h1.size());
+
+    ustring_view nonce{h1.data(), h1.size()};
+
+    oxenc::bt_dict_producer d{};
+
+    d.append("#", from_unsigned_sv(nonce));
+
+    {
+        auto list = d.append_list("+");
+        std::vector<unsigned char> encrypted;
+        encrypted.resize(supp_keys.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES);
+
+        size_t member_count = 0;
+
+        for (auto& sid : sids) {
+            auto m_xpk = session_id_xpk(sid);
+
+            // Calculate the encryption key: H(aB || A || B)
+            std::array<unsigned char, 32> member_k;
+            if (0 != crypto_scalarmult_curve25519(member_k.data(), group_xsk.data(), m_xpk.data()))
+                continue;  // The scalarmult failed; maybe a bad session id?
+
+            crypto_generichash_blake2b_init(
+                    &st,
+                    enc_key_member_hash_key.data(),
+                    enc_key_member_hash_key.size(),
+                    member_k.size());
+            crypto_generichash_blake2b_update(&st, member_k.data(), member_k.size());
+            crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
+            crypto_generichash_blake2b_update(&st, m_xpk.data(), m_xpk.size());
+            crypto_generichash_blake2b_final(&st, member_k.data(), member_k.size());
+
+            crypto_aead_xchacha20poly1305_ietf_encrypt(
+                    encrypted.data(),
+                    nullptr,
+                    to_unsigned(supp_keys.data()),
+                    supp_keys.size(),
+                    nullptr,
+                    0,
+                    nullptr,
+                    nonce.data(),
+                    member_k.data());
+
+            list.append(from_unsigned_sv(encrypted));
+
+            member_count++;
+        }
+
+        if (member_count == 0)
+            throw std::runtime_error{
+                    "Unable to construct supplemental messages: invalid session ids given"};
+    }
+
+    // Finally we sign the message at put it as the ~ key (which is 0x7f, and thus comes later than
+    // any other ascii key).
+    auto to_sign = to_unsigned_sv(d.view());
+    // The view contains the trailing "e", but we don't sign it (we are going to append the
+    // signature there instead):
+    to_sign.remove_suffix(1);
+    auto sig = signer_(to_sign);
+    if (sig.size() != 64)
+        throw std::logic_error{"Invalid signature: signing function did not return 64 bytes"};
+
+    d.append("~", from_unsigned_sv(sig));
+
+    return ustring{to_unsigned_sv(d.view())};
+}
+
 std::optional<ustring_view> Keys::pending_config() const {
     if (pending_key_config_.empty())
         return std::nullopt;
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
+}
+
+bool Keys::insert_key(const key_info& new_key) {
+    auto it = std::lower_bound(keys_.begin(), keys_.end(), new_key);
+    if (it != keys_.end() && new_key == *it)
+        // We found a key we already had, so just ignore it.
+        return false;
+
+    if (it == keys_.begin() && new_key.generation < keys_.front().generation &&
+        keys_.front().timestamp + KEY_EXPIRY < keys_.back().timestamp)
+        // The new one is older than the front one, and the front one is already more than
+        // KEY_EXPIRY before the last one, so this new one is stale.
+        return false;
+
+    keys_.insert(it, new_key);
+    remove_expired();
+    needs_dump_ = true;
+
+    return true;
 }
 
 void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members) {
@@ -376,57 +529,11 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
         throw config_value_error{"Key message has no nonce"};
     auto nonce = to_unsigned_sv(d.consume_string_view());
 
-    bool supplemental = false;
-    if (d.skip_until("+")) {
-        auto supp = d.consume_integer<int>();
-        if (supp == 0 || supp == 1)
-            supplemental = static_cast<bool>(supp);
-        else
-            throw config_value_error{
-                    "Unexpected value " + std::to_string(supp) + " for '+' key (expected 0/1)"};
-    }
-
     bool found_key = false;
     sodium_cleared<key_info> new_key{};
-    new_key.timestamp = sys_time_from_ms(timestamp_ms);
-
-    if (!d.skip_until("G"))
-        throw config_value_error{"Key message missing required generation (G) field"};
-
-    new_key.generation = d.consume_integer<int64_t>();
-    if (new_key.generation < 0)
-        throw config_value_error{"Key message contains invalid negative generation"};
-
-    if (!supplemental) {
-        if (!d.skip_until("K"))
-            throw config_value_error{
-                    "Non-supplemental key message is missing required admin key (K)"};
-
-        auto admin_key = to_unsigned_sv(d.consume_string_view());
-        if (admin_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
-            throw config_value_error{"Key message has invalid admin key length"};
-
-        if (_sign_sk) {
-            auto k = seed_hash(enc_key_admin_hash_key);
-
-            if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
-                             new_key.key.data(),
-                             nullptr,
-                             nullptr,
-                             admin_key.data(),
-                             admin_key.size(),
-                             nullptr,
-                             0,
-                             nonce.data(),
-                             k.data()))
-                throw config_value_error{"Failed to decrypt admin key from key message"};
-
-            found_key = true;
-        }
-    }
 
     sodium_cleared<std::array<unsigned char, 32>> member_dec_key;
-    if (!found_key) {
+    if (!admin()) {
         sodium_cleared<std::array<unsigned char, 32>> member_xsk;
         crypto_sign_ed25519_sk_to_curve25519(member_xsk.data(), user_ed25519_sk.data());
         auto member_xpk = compute_xpk(user_ed25519_sk.data() + 32);
@@ -447,6 +554,111 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
         crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
         crypto_generichash_blake2b_update(&st, member_xpk.data(), member_xpk.size());
         crypto_generichash_blake2b_final(&st, member_dec_key.data(), member_dec_key.size());
+    }
+
+    if (d.skip_until("+")) {
+        // This is a supplemental keys message, not a full one
+        auto supp = d.consume_list_consumer();
+
+        while (!supp.is_finished()) {
+
+            int member_key_count = 0;
+            for (; !supp.is_finished(); member_key_count++) {
+                auto encrypted = to_unsigned_sv(supp.consume_string_view());
+                // Expect an encrypted message like this, which has a minimum valid size (if both g
+                // and t are 0 for some reason) of:
+                // d            --   1
+                //   1:k 32:... -- +38
+                //   1:g i1e    -- + 6
+                //   1:t iXe    -- + 6
+                // e               + 1
+                //                 ---
+                //                  52
+                if (encrypted.size() < 52 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+                    throw config_value_error{
+                            "Supplemental key message has invalid key info size at index " +
+                            std::to_string(member_key_count)};
+
+                if (found_key || admin())
+                    continue;
+
+                ustring plaintext;
+                plaintext.resize(encrypted.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
+
+                if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
+                                 plaintext.data(),
+                                 nullptr,
+                                 nullptr,
+                                 encrypted.data(),
+                                 encrypted.size(),
+                                 nullptr,
+                                 0,
+                                 nonce.data(),
+                                 member_dec_key.data())) {
+                    // Decryption success, we found our key list!
+                    found_key = true;
+
+                    oxenc::bt_list_consumer key_infos{from_unsigned_sv(plaintext)};
+                    while (!key_infos.is_finished()) {
+                        auto keyinf = key_infos.consume_dict_consumer();
+                        if (!keyinf.skip_until("g"))
+                            throw config_value_error{
+                                    "Invalid supplemental key message: no `g` generation"};
+                        new_key.generation = keyinf.consume_integer<int64_t>();
+                        if (!keyinf.skip_until("k"))
+                            throw config_value_error{
+                                    "Invalid supplemental key message: no `k` key data"};
+                        auto key_val = keyinf.consume_string_view();
+                        if (key_val.size() != 32)
+                            throw config_value_error{
+                                    "Invalid supplemental key message: `k` key has wrong size"};
+                        std::memcpy(new_key.key.data(), key_val.data(), 32);
+                        if (!keyinf.skip_until("t"))
+                            throw config_value_error{
+                                    "Invalid supplemental key message: no `t` timestamp"};
+                        new_key.timestamp = sys_time_from_ms(keyinf.consume_integer<int64_t>());
+
+                        insert_key(new_key);
+                    }
+                }
+            }
+        }
+
+        return;
+    }
+
+    new_key.timestamp = sys_time_from_ms(timestamp_ms);
+
+    if (!d.skip_until("G"))
+        throw config_value_error{"Key message missing required generation (G) field"};
+
+    new_key.generation = d.consume_integer<int64_t>();
+    if (new_key.generation < 0)
+        throw config_value_error{"Key message contains invalid negative generation"};
+
+    if (!d.skip_until("K"))
+        throw config_value_error{"Non-supplemental key message is missing required admin key (K)"};
+
+    auto admin_key = to_unsigned_sv(d.consume_string_view());
+    if (admin_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+        throw config_value_error{"Key message has invalid admin key length"};
+
+    if (admin()) {
+        auto k = seed_hash(enc_key_admin_hash_key);
+
+        if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
+                         new_key.key.data(),
+                         nullptr,
+                         nullptr,
+                         admin_key.data(),
+                         admin_key.size(),
+                         nullptr,
+                         0,
+                         nonce.data(),
+                         k.data()))
+            throw config_value_error{"Failed to decrypt admin key from key message"};
+
+        found_key = true;
     }
 
     // Even if we're already found a key we still parse these, so that admins and all users have the
@@ -478,27 +690,14 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
                          member_dec_key.data())) {
             // Decryption success, we found our key!
             found_key = true;
+            insert_key(new_key);
         }
     }
 
-    if (!supplemental && member_key_count % MESSAGE_KEY_MULTIPLE != 0)
+    if (member_key_count % MESSAGE_KEY_MULTIPLE != 0)
         throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};
 
     verify_config_sig(d, data, verifier_);
-
-    if (found_key) {
-        auto it = std::lower_bound(keys_.begin(), keys_.end(), new_key);
-        if (it != keys_.end() && new_key == *it) {
-            // We found a key we already had, so just ignore it.
-            found_key = false;
-        } else {
-            keys_.insert(it, new_key);
-
-            remove_expired();
-
-            needs_dump_ = true;
-        }
-    }
 
     // If this is our pending config or this has a later generation than our pending config then
     // drop our pending status.
@@ -551,7 +750,7 @@ void Keys::remove_expired() {
 }
 
 bool Keys::needs_rekey() const {
-    if (!_sign_sk || !_sign_pk || keys_.size() < 2)
+    if (!admin() || keys_.size() < 2)
         return false;
 
     // We rekey if the max generation value is being used across multiple keys (which indicates some

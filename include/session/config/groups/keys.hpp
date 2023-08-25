@@ -31,13 +31,25 @@ using namespace std::literals;
 ///
 /// Fields used (in ascii order):
 /// # -- 24-byte nonce used for all the encrypted values in this message; required.
-/// + -- set to 1 if this is a supplemental key message; omitted for a full key message.  (It's
-///      important that this key sort earlier than any fields that can differ between
-///      supplemental/non-supplemental fields so we can identify the message type while parsing it).
+///
+/// For non-supplemental messages:
+///
 /// G -- monotonically incrementing counter identifying key generation changes
 /// K -- encrypted copy of the key for admins (omitted for `+` incremental key messages)
 /// k -- packed bytes of encrypted keys for non-admin members; this is a single byte string in which
 ///      each 48 bytes is a separate encrypted value.
+///
+/// For supplemental messages:
+/// + -- encrypted supplemental key info list; this is a list of encrypted values, encrypted for
+///      each member to whom keys are being disclosed.  The *decrypted* value of these entries are
+///      the same value (encrypted separately for each member) which is a bt-encoded list of dicts
+///      where each dict contains keys:
+///      - g -- the key generation
+///      - k -- the key itself (32 bytes).
+///      - t -- the storage timestamp of the key (so that recipients know when keys expire)
+///
+/// And finally, for both types:
+///
 /// ~ -- signature of the message signed by the group's master keypair, signing the message value up
 ///      to but not including the ~ keypair.  The signature must be the last key in the dict (thus
 ///      `~` since it is the largest 7-bit ascii character value).  Note that this signature
@@ -45,7 +57,7 @@ using namespace std::literals;
 ///
 /// Some extra details:
 ///
-/// - each copy of the encryption key uses xchacha20_poly1305 using the `n` nonce
+/// - each copy of the encryption key uses xchacha20_poly1305 using the `#` nonce
 /// - the `k` members list gets padded with junk entries up to the next multiple of 75 (for
 ///   non-supplemental messages).
 /// - the decryption key for the admin version of the key is H(admin_seed,
@@ -96,6 +108,10 @@ class Keys final : public ConfigSig {
 
     // Loads existing state from a previous dump of keys data
     void load_dump(ustring_view dump);
+
+    // Inserts a key into the correct place in `keys_`.  Returns true if the key was inserted, false
+    // if it already existed.
+    bool insert_key(const key_info& key);
 
   public:
     /// The multiple of members keys we include in the message; we add junk entries to the key list
@@ -208,6 +224,16 @@ class Keys final : public ConfigSig {
     /// - `ustring_view` of the most current group encryption key.
     ustring_view group_enc_key() const;
 
+    /// API: groups/Keys::is_admin
+    ///
+    /// True if we have admin permissions (i.e. we know the group's master secret key).
+    ///
+    /// Inputs: none.
+    ///
+    /// Outputs:
+    /// - `true` if this object knows the group's master key
+    bool admin() const { return _sign_sk && _sign_pk; }
+
     /// API: groups/Keys::rekey
     ///
     /// Generate a new encryption key for the group and returns an encrypted key message to be
@@ -243,6 +269,33 @@ class Keys final : public ConfigSig {
     ///   for the group.  (This can be re-obtained from `push()` if needed until it has been
     ///   confirmed or superceded).
     ustring_view rekey(Info& info, Members& members);
+
+    /// API: groups/Keys::key_supplement
+    ///
+    /// Generates a supplemental key message for one or more session IDs.  This is used to
+    /// distribute an existing key to a new member so that that member can access existing keys and
+    /// messages.  Only admins can call this.
+    ///
+    /// The recommended order of operations for adding such a member is:
+    /// - add the member to Members
+    /// - generate the key supplement
+    /// - push new members & key supplement (ideally in a batch)
+    /// - send invite details, auth signature, etc. to the new user
+    ///
+    /// Inputs:
+    /// - `sid` or `sids` -- session ID(s) of the members to generate a supplemental key for (there
+    ///   are two versions of this function, one taking a single ID and one taking a vector).
+    ///   Session IDs are specified in hex.
+    /// - `all` -- if true (the default) then generate a supplemental message for *all* current
+    ///   keys; if false then only generate one for the most recent key.
+    ///
+    /// Outputs:
+    /// - `ustring` containing the message that should be pushed to the swarm containing encrypted
+    ///   keys for the given user(s).
+    ustring key_supplement(std::vector<std::string> sids, bool all = true) const;
+    ustring key_supplement(std::string sid, bool all = true) const {
+        return key_supplement(std::vector{{std::move(sid)}}, all);
+    }
 
     /// API: groups/Keys::pending_config
     ///
