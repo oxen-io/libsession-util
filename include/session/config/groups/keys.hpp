@@ -273,8 +273,8 @@ class Keys final : public ConfigSig {
     /// API: groups/Keys::key_supplement
     ///
     /// Generates a supplemental key message for one or more session IDs.  This is used to
-    /// distribute an existing key to a new member so that that member can access existing keys and
-    /// messages.  Only admins can call this.
+    /// distribute existing active keys to a new member so that that member can access existing
+    /// keys, configs, and messages.  Only admins can call this.
     ///
     /// The recommended order of operations for adding such a member is:
     /// - add the member to Members
@@ -282,19 +282,19 @@ class Keys final : public ConfigSig {
     /// - push new members & key supplement (ideally in a batch)
     /// - send invite details, auth signature, etc. to the new user
     ///
+    /// To add a member *without* giving them access you would use rekey() instead of this method.
+    ///
     /// Inputs:
     /// - `sid` or `sids` -- session ID(s) of the members to generate a supplemental key for (there
     ///   are two versions of this function, one taking a single ID and one taking a vector).
     ///   Session IDs are specified in hex.
-    /// - `all` -- if true (the default) then generate a supplemental message for *all* current
-    ///   keys; if false then only generate one for the most recent key.
     ///
     /// Outputs:
     /// - `ustring` containing the message that should be pushed to the swarm containing encrypted
     ///   keys for the given user(s).
-    ustring key_supplement(std::vector<std::string> sids, bool all = true) const;
-    ustring key_supplement(std::string sid, bool all = true) const {
-        return key_supplement(std::vector{{std::move(sid)}}, all);
+    ustring key_supplement(std::vector<std::string> sids) const;
+    ustring key_supplement(std::string sid) const {
+        return key_supplement(std::vector{{std::move(sid)}});
     }
 
     /// API: groups/Keys::pending_config
@@ -354,7 +354,11 @@ class Keys final : public ConfigSig {
     ///
     /// Outputs:
     /// - throws `std::runtime_error` (typically a subclass thereof) on failure to parse.
-    void load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members);
+    /// - returns true if we found a key for us in the message, false if we did not.  Note that this
+    ///   is mainly informative and does not signal an error: false could mean, for instance, be a
+    ///   supplemental message that wasn't for us.  Note also that true doesn't mean keys changed:
+    ///   it could mean we decrypted one for us, but already had it.
+    bool load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members);
 
     /// API: groups/Keys::needs_rekey
     ///

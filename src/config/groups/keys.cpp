@@ -2,6 +2,7 @@
 
 #include <sodium/core.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
+#include <sodium/crypto_core_ed25519.h>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/crypto_scalarmult_curve25519.h>
 #include <sodium/crypto_sign_ed25519.h>
@@ -15,6 +16,8 @@
 #include "session/config/groups/info.hpp"
 #include "session/config/groups/keys.h"
 #include "session/config/groups/members.hpp"
+
+using namespace std::literals;
 
 namespace session::config::groups {
 
@@ -156,6 +159,8 @@ std::vector<ustring_view> Keys::group_keys() const {
 }
 
 ustring_view Keys::group_enc_key() const {
+    if (!pending_key_config_.empty())
+        return {pending_key_.data(), 32};
     if (keys_.empty())
         throw std::runtime_error{"group_enc_key failed: Keys object has no keys at all!"};
 
@@ -357,7 +362,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
 
-ustring Keys::key_supplement(std::vector<std::string> sids, bool all) const {
+ustring Keys::key_supplement(std::vector<std::string> sids) const {
     if (!admin())
         throw std::logic_error{
                 "Unable to issue supplemental group encryption keys without the main group keys"};
@@ -497,10 +502,18 @@ std::optional<ustring_view> Keys::pending_config() const {
 }
 
 bool Keys::insert_key(const key_info& new_key) {
+    // Find all keys with the same generation and see if our key is in there (that is: we are
+    // deliberately ignoring timestamp so that we don't add the same key with slight timestamp
+    // variations).
+    const auto [gen_begin, gen_end] =
+            std::equal_range(keys_.begin(), keys_.end(), new_key, [](const auto& a, const auto& b) {
+                return a.generation < b.generation;
+            });
+    for (auto it = gen_begin; it != gen_end; ++it)
+        if (it->key == new_key.key)
+            return false;
+
     auto it = std::lower_bound(keys_.begin(), keys_.end(), new_key);
-    if (it != keys_.end() && new_key == *it)
-        // We found a key we already had, so just ignore it.
-        return false;
 
     if (keys_.size() >= 2 && it == keys_.begin() && new_key.generation < keys_.front().generation &&
         keys_.front().timestamp + KEY_EXPIRY < keys_.back().timestamp)
@@ -515,7 +528,7 @@ bool Keys::insert_key(const key_info& new_key) {
     return true;
 }
 
-void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members) {
+bool Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members) {
 
     oxenc::bt_dict_consumer d{from_unsigned_sv(data)};
 
@@ -528,8 +541,7 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
         throw config_value_error{"Key message has no nonce"};
     auto nonce = to_unsigned_sv(d.consume_string_view());
 
-    bool found_key = false;
-    sodium_cleared<key_info> new_key{};
+    sodium_vector<key_info> new_keys;
 
     sodium_cleared<std::array<unsigned char, 32>> member_dec_key;
     if (!admin()) {
@@ -578,8 +590,8 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
                             "Supplemental key message has invalid key info size at index " +
                             std::to_string(member_key_count)};
 
-                if (found_key || admin())
-                    continue;
+                if (!new_keys.empty() || admin())
+                    continue;  // Keep parsing, just to ensure validity of the whole message
 
                 ustring plaintext;
                 plaintext.resize(encrypted.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
@@ -595,10 +607,10 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
                                  nonce.data(),
                                  member_dec_key.data())) {
                     // Decryption success, we found our key list!
-                    found_key = true;
 
                     oxenc::bt_list_consumer key_infos{from_unsigned_sv(plaintext)};
                     while (!key_infos.is_finished()) {
+                        auto& new_key = new_keys.emplace_back();
                         auto keyinf = key_infos.consume_dict_consumer();
                         if (!keyinf.skip_until("g"))
                             throw config_value_error{
@@ -616,100 +628,109 @@ void Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
                             throw config_value_error{
                                     "Invalid supplemental key message: no `t` timestamp"};
                         new_key.timestamp = sys_time_from_ms(keyinf.consume_integer<int64_t>());
-
-                        insert_key(new_key);
                     }
                 }
             }
         }
+    } else {
+        // Full message (i.e. not supplemental)
 
-        return;
-    }
+        bool found_key = false;
+        auto& new_key = new_keys.emplace_back();
+        new_key.timestamp = sys_time_from_ms(timestamp_ms);
 
-    new_key.timestamp = sys_time_from_ms(timestamp_ms);
+        if (!d.skip_until("G"))
+            throw config_value_error{"Key message missing required generation (G) field"};
 
-    if (!d.skip_until("G"))
-        throw config_value_error{"Key message missing required generation (G) field"};
+        new_key.generation = d.consume_integer<int64_t>();
+        if (new_key.generation < 0)
+            throw config_value_error{"Key message contains invalid negative generation"};
 
-    new_key.generation = d.consume_integer<int64_t>();
-    if (new_key.generation < 0)
-        throw config_value_error{"Key message contains invalid negative generation"};
-
-    if (!d.skip_until("K"))
-        throw config_value_error{"Non-supplemental key message is missing required admin key (K)"};
-
-    auto admin_key = to_unsigned_sv(d.consume_string_view());
-    if (admin_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
-        throw config_value_error{"Key message has invalid admin key length"};
-
-    if (admin()) {
-        auto k = seed_hash(enc_key_admin_hash_key);
-
-        if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
-                         new_key.key.data(),
-                         nullptr,
-                         nullptr,
-                         admin_key.data(),
-                         admin_key.size(),
-                         nullptr,
-                         0,
-                         nonce.data(),
-                         k.data()))
-            throw config_value_error{"Failed to decrypt admin key from key message"};
-
-        found_key = true;
-        insert_key(new_key);
-    }
-
-    // Even if we're already found a key we still parse these, so that admins and all users have the
-    // same error conditions for rejecting an invalid config message.
-    if (!d.skip_until("k"))
-        throw config_value_error{"Config is missing member keys list (k)"};
-    auto key_list = d.consume_list_consumer();
-
-    int member_key_count = 0;
-    for (; !key_list.is_finished(); member_key_count++) {
-        auto member_key = to_unsigned_sv(key_list.consume_string_view());
-        if (member_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+        if (!d.skip_until("K"))
             throw config_value_error{
-                    "Key message has invalid member key length at index " +
-                    std::to_string(member_key_count)};
+                    "Non-supplemental key message is missing required admin key (K)"};
 
-        if (found_key)
-            continue;
+        auto admin_key = to_unsigned_sv(d.consume_string_view());
+        if (admin_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+            throw config_value_error{"Key message has invalid admin key length"};
 
-        if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
-                         new_key.key.data(),
-                         nullptr,
-                         nullptr,
-                         member_key.data(),
-                         member_key.size(),
-                         nullptr,
-                         0,
-                         nonce.data(),
-                         member_dec_key.data())) {
-            // Decryption success, we found our key!
+        if (admin()) {
+            auto k = seed_hash(enc_key_admin_hash_key);
+
+            if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
+                             new_key.key.data(),
+                             nullptr,
+                             nullptr,
+                             admin_key.data(),
+                             admin_key.size(),
+                             nullptr,
+                             0,
+                             nonce.data(),
+                             k.data()))
+                throw config_value_error{"Failed to decrypt admin key from key message"};
+
             found_key = true;
-            insert_key(new_key);
         }
-    }
 
-    if (member_key_count % MESSAGE_KEY_MULTIPLE != 0)
-        throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};
+        // Even if we're already found a key we still parse these, so that admins and all users have
+        // the same error conditions for rejecting an invalid config message.
+        if (!d.skip_until("k"))
+            throw config_value_error{"Config is missing member keys list (k)"};
+        auto key_list = d.consume_list_consumer();
+
+        int member_key_count = 0;
+        for (; !key_list.is_finished(); member_key_count++) {
+            auto member_key = to_unsigned_sv(key_list.consume_string_view());
+            if (member_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+                throw config_value_error{
+                        "Key message has invalid member key length at index " +
+                        std::to_string(member_key_count)};
+
+            if (found_key)
+                continue;
+
+            if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
+                             new_key.key.data(),
+                             nullptr,
+                             nullptr,
+                             member_key.data(),
+                             member_key.size(),
+                             nullptr,
+                             0,
+                             nonce.data(),
+                             member_dec_key.data())) {
+                // Decryption success, we found our key!
+                found_key = true;
+            }
+        }
+
+        if (member_key_count % MESSAGE_KEY_MULTIPLE != 0)
+            throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};
+
+        if (!found_key)
+            new_keys.pop_back();
+    }
 
     verify_config_sig(d, data, verifier_);
 
     // If this is our pending config or this has a later generation than our pending config then
     // drop our pending status.
-    if (!pending_key_config_.empty() &&
-        (new_key.generation > pending_gen_ || new_key.key == pending_key_)) {
+    if (admin() && !new_keys.empty() && !pending_key_config_.empty() &&
+        (new_keys[0].generation > pending_gen_ || new_keys[0].key == pending_key_)) {
         pending_key_config_.clear();
         needs_dump_ = true;
     }
 
-    auto new_key_list = group_keys();
-    members.replace_keys(new_key_list, /*dirty=*/false);
-    info.replace_keys(new_key_list, /*dirty=*/false);
+    if (!new_keys.empty()) {
+        for (auto& k : new_keys)
+            insert_key(k);
+
+        auto new_key_list = group_keys();
+        members.replace_keys(new_key_list, /*dirty=*/false);
+        info.replace_keys(new_key_list, /*dirty=*/false);
+        return true;
+    }
+    return false;
 }
 
 void Keys::remove_expired() {
