@@ -28,7 +28,8 @@ namespace session::config {
 ///         half (32 bytes) of the 64-byte libsodium-style Ed25519 secret key value (i.e. it omits
 ///         the cached public key in the second half).  This field is always set, but will be empty
 ///         if the seed is not known.
-///     s - authentication signature; this is used by non-admins to authenticate
+///     s - authentication signature; this is used by non-admins to authenticate.  Omitted when K is
+///         non-empty.
 ///     @ - notification setting (int).  Omitted = use default setting; 1 = all, 2 = disabled, 3 =
 ///         mentions-only.
 ///     ! - mute timestamp: if set then don't show notifications for this contact's messages until
@@ -442,6 +443,18 @@ class UserGroups : public ConfigBase {
     /// Outputs:
     /// - `bool` - Returns true if found and removed, false otherwise
     bool erase_community(std::string_view base_url, std::string_view room);
+
+    /// API: user_groups/UserGroups::erase_group
+    ///
+    /// Removes a (new, closed) group conversation.  Returns true if found and removed, false if not
+    /// present.
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- group ID (hex, looks like a session ID, but starts with 03)
+    ///
+    /// Outputs:
+    /// - `bool` - Returns true if found and removed, false otherwise
+    bool erase_group(std::string_view pubkey_hex);
 
     /// API: user_groups/UserGroups::erase_legacy_group
     ///

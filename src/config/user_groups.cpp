@@ -50,7 +50,7 @@ static void base_from(base_group_info& self, const T& c) {
 }
 
 group_info::group_info(std::string sid) : id{std::move(sid)} {
-    check_session_id(id, 0x03);
+    check_session_id(id, "03");
 }
 
 legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid)} {
@@ -315,7 +315,7 @@ legacy_group_info UserGroups::get_or_construct_legacy_group(std::string_view pub
 }
 
 std::optional<group_info> UserGroups::get_group(std::string_view pubkey_hex) const {
-    std::string pubkey = session_id_to_bytes(pubkey_hex, 0x03);
+    std::string pubkey = session_id_to_bytes(pubkey_hex, "03");
 
     auto* info_dict = data["g"][pubkey].dict();
     if (!info_dict)
@@ -388,14 +388,16 @@ void UserGroups::set(const legacy_group_info& g) {
 }
 
 void UserGroups::set(const group_info& g) {
-    auto info = data["g"][session_id_to_bytes(g.id, 0x03)];
+    auto info = data["g"][session_id_to_bytes(g.id, "03")];
     set_base(g, info);
 
     if (g.secretkey.size() == 64)
         info["K"] = ustring_view{g.secretkey.data(), 32};
-
-    else if (g.auth_sig.size() == 64)
-        info["s"] = g.auth_sig;
+    else {
+        info["K"] = ustring_view{};
+        if (g.auth_sig.size() == 64)
+            info["s"] = g.auth_sig;
+    }
 }
 
 template <typename Field>
@@ -420,7 +422,7 @@ bool UserGroups::erase(const community_info& c) {
     return gone;
 }
 bool UserGroups::erase(const group_info& c) {
-    return erase_impl(data["g"][session_id_to_bytes(c.id, 0x03)]);
+    return erase_impl(data["g"][session_id_to_bytes(c.id, "03")]);
 }
 bool UserGroups::erase(const legacy_group_info& c) {
     return erase_impl(data["C"][session_id_to_bytes(c.session_id)]);
@@ -434,6 +436,9 @@ bool UserGroups::erase_community(std::string_view base_url, std::string_view roo
 }
 bool UserGroups::erase_legacy_group(std::string_view id) {
     return erase(legacy_group_info{std::string{id}});
+}
+bool UserGroups::erase_group(std::string_view id) {
+    return erase(group_info{std::string{id}});
 }
 
 size_t UserGroups::size_communities() const {

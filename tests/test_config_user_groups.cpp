@@ -408,6 +408,96 @@ TEST_CASE("User Groups", "[config][groups]") {
     }
 }
 
+TEST_CASE("User Groups (new)", "[config][groups][new]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
+    REQUIRE(oxenc::to_hex(curve_pk.begin(), curve_pk.end()) ==
+            "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    session::config::UserGroups groups{ustring_view{seed}, std::nullopt};
+
+    constexpr auto definitely_real_id =
+            "035000000000000000000000000000000000000000000000000000000000000000"sv;
+
+    int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+    CHECK_FALSE(groups.get_group(definitely_real_id));
+
+    CHECK(groups.empty());
+    CHECK(groups.size() == 0);
+
+    auto c = groups.get_or_construct_group(definitely_real_id);
+
+    CHECK(c.id == definitely_real_id);
+    CHECK(c.priority == 0);
+    CHECK(c.joined_at == 0);
+    CHECK(c.notifications == session::config::notify_mode::defaulted);
+    CHECK(c.mute_until == 0);
+
+    groups.set(c);
+
+    CHECK(groups.needs_push());
+    CHECK(groups.needs_dump());
+
+    auto [seqno, to_push, obs] = groups.push();
+    groups.confirm_pushed(seqno, "fakehash1");
+
+    auto d1 = groups.dump();
+
+    session::config::UserGroups g2{ustring_view{seed}, d1};
+
+    auto c2 = g2.get_group(definitely_real_id);
+    REQUIRE(c2.has_value());
+
+    CHECK(c2->id == definitely_real_id);
+    CHECK(c2->priority == 0);
+    CHECK(c2->joined_at == 0);
+    CHECK(c2->notifications == session::config::notify_mode::defaulted);
+    CHECK(c2->mute_until == 0);
+
+    c2->priority = 123;
+    c2->joined_at = 1234567890;
+    c2->notifications = session::config::notify_mode::mentions_only;
+    c2->mute_until = 456789012;
+
+    g2.set(*c2);
+
+    std::tie(seqno, to_push, obs) = g2.push();
+    g2.confirm_pushed(seqno, "fakehash2");
+
+    std::vector<std::pair<std::string, ustring>> to_merge;
+    to_merge.emplace_back("fakehash2", to_push);
+    groups.merge(to_merge);
+
+    auto c3 = groups.get_group(definitely_real_id);
+    REQUIRE(c3.has_value());
+    CHECK(c3->id == definitely_real_id);
+    CHECK(c3->priority == 123);
+    CHECK(c3->joined_at == 1234567890);
+    CHECK(c3->notifications == session::config::notify_mode::mentions_only);
+    CHECK(c3->mute_until == 456789012);
+
+    groups.erase(*c3);
+
+    auto gg = groups.get_or_construct_group("030303030303030303030303030303030303030303030303030303030303030303");
+    groups.set(gg);
+    CHECK(groups.erase_group("030303030303030303030303030303030303030303030303030303030303030303"));
+    CHECK_FALSE(groups.erase_group("030303030303030303030303030303030303030303030303030303030303030303"));
+}
+
 TEST_CASE("User Groups members C API", "[config][groups][c]") {
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;

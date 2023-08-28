@@ -11,15 +11,15 @@
 
 namespace session::config {
 
-void check_session_id(std::string_view session_id, unsigned char prefix) {
-    if (!(session_id.size() == 66 && oxenc::is_hex(session_id) &&
-          session_id[0] == ('0' + (prefix >> 4)) && session_id[1] == ('0' + (prefix & 0xf))))
+void check_session_id(std::string_view session_id, std::string_view prefix) {
+    if (!(session_id.size() == 64 + prefix.size() && oxenc::is_hex(session_id) &&
+          session_id.substr(0, prefix.size()) == prefix))
         throw std::invalid_argument{
-                "Invalid session ID: expected 66 hex digits starting with 05; got " +
-                std::string{session_id}};
+                "Invalid session ID: expected 66 hex digits starting with " + std::string{prefix} +
+                "; got " + std::string{session_id}};
 }
 
-std::string session_id_to_bytes(std::string_view session_id, unsigned char prefix) {
+std::string session_id_to_bytes(std::string_view session_id, std::string_view prefix) {
     check_session_id(session_id, prefix);
     return oxenc::from_hex(session_id);
 }
