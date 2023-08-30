@@ -89,7 +89,8 @@ std::string session_id_to_bytes(std::string_view session_id, std::string_view pr
 
 // Checks the session_id (throwing if invalid) then returns it as bytes, omitting the 05 (or
 // whatever) prefix, which is a pubkey (x25519 for 05 session_ids, ed25519 for other prefixes).
-std::array<unsigned char, 32> session_id_pk(std::string_view session_id, std::string_view prefix = "05");
+std::array<unsigned char, 32> session_id_pk(
+        std::string_view session_id, std::string_view prefix = "05");
 
 // Validates an open group pubkey; we accept it in hex, base32z, or base64 (padded or unpadded).
 // Throws std::invalid_argument if invalid.
