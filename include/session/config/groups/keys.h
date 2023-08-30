@@ -190,6 +190,41 @@ LIBSESSION_EXPORT bool groups_keys_needs_dump(const config_group_keys* conf)
 LIBSESSION_EXPORT void groups_keys_dump(
         config_group_keys* conf, unsigned char** out, size_t* outlen);
 
+/// API: grous/groups_keys_key_supplement
+///
+/// Generates a supplemental key message for one or more session IDs.  This is used to distribute
+/// existing active keys to a new member so that that member can access existing keys, configs, and
+/// messages.  Only admins can call this.
+///
+/// The recommended order of operations for adding such a member is:
+/// - add the member to Members
+/// - generate the key supplement
+/// - push new members & key supplement (ideally in a batch)
+/// - send invite details, auth signature, etc. to the new user
+///
+/// To add a member *without* giving them access to old messages you would use groups_keys_rekey()
+/// instead of this method.
+///
+/// Inputs:
+/// - `conf` -- pointer to the keys config object
+/// - `sids` -- array of session IDs of the members to generate a supplemental key for; each element
+///   must be an ordinary (null-terminated) C string containing the 66-character session id.
+/// - `sids_len` -- length of the `sids` array
+/// - `message` -- pointer-pointer that will be set to a newly allocated buffer containing the
+///   message that should be sent to the swarm.  The caller must free() the pointer when finished to
+///   not leak the message memory (but only if the function returns true).
+/// - `message_len` -- pointer to a `size_t` that will be set to the length of the `message` buffer.
+///
+/// Oututs:
+/// - `true` and sets `*message` and `*message_len` on success; returns `false` and does not set
+///   them on failure.
+LIBSESSION_EXPORT bool groups_keys_key_supplement(
+        config_group_keys* conf,
+        const char** sids,
+        size_t sids_len,
+        unsigned char** message,
+        size_t* message_len);
+
 /// API: groups/groups_keys_encrypt_message
 ///
 /// Encrypts a message using the most recent group encryption key of this object.  The message will

@@ -22,5 +22,5 @@ target_link_libraries(testAll PRIVATE
 
 add_custom_target(check COMMAND testAll)
 
-add_executable(swarm-auth-test swarm-auth-test.cpp)
+add_executable(swarm-auth-test EXCLUDE_FROM_ALL swarm-auth-test.cpp)
 target_link_libraries(swarm-auth-test PRIVATE config)
