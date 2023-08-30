@@ -24,12 +24,12 @@ std::string session_id_to_bytes(std::string_view session_id, std::string_view pr
     return oxenc::from_hex(session_id);
 }
 
-std::array<unsigned char, 32> session_id_xpk(std::string_view session_id) {
-    check_session_id(session_id);
-    std::array<unsigned char, 32> xpk;
+std::array<unsigned char, 32> session_id_pk(std::string_view session_id, std::string_view prefix) {
+    check_session_id(session_id, prefix);
+    std::array<unsigned char, 32> pk;
     session_id.remove_prefix(2);
-    oxenc::from_hex(session_id.begin(), session_id.end(), xpk.begin());
-    return xpk;
+    oxenc::from_hex(session_id.begin(), session_id.end(), pk.begin());
+    return pk;
 }
 
 void check_encoded_pubkey(std::string_view pk) {

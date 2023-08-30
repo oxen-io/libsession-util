@@ -48,9 +48,10 @@ typedef struct ugroups_group_info {
     bool have_secretkey;          // Will be true if the `secretkey` is populated
     unsigned char secretkey[64];  // If `have_secretkey` is set then this is the libsodium-style
                                   // "secret key" for the group (i.e. 32 byte seed + 32 byte pubkey)
-    bool have_auth_sig;           // Will be true if the `auth_sig` is populated
-    unsigned char auth_sig[64];   // If `have_auth_sig` is set then this is the authentication
-                                  // signature that can be used to access the swarm.
+    bool have_auth_data;          // Will be true if the `auth_data` is populated
+    unsigned char auth_data[100];  // If `have_auth_data` is set then this is the authentication
+                                   // signing value that can be used to produce signature values to
+                                   // access the swarm.
 
     int priority;  // pinned message priority; 0 = unpinned, negative = hidden, positive = pinned
                    // (with higher meaning pinned higher).

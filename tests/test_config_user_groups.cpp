@@ -8,6 +8,7 @@
 #include <string_view>
 #include <variant>
 
+#include "session/config/notify.hpp"
 #include "utils.hpp"
 
 using namespace std::literals;
@@ -492,10 +493,13 @@ TEST_CASE("User Groups (new)", "[config][groups][new]") {
 
     groups.erase(*c3);
 
-    auto gg = groups.get_or_construct_group("030303030303030303030303030303030303030303030303030303030303030303");
+    auto gg = groups.get_or_construct_group(
+            "030303030303030303030303030303030303030303030303030303030303030303");
     groups.set(gg);
     CHECK(groups.erase_group("030303030303030303030303030303030303030303030303030303030303030303"));
-    CHECK_FALSE(groups.erase_group("030303030303030303030303030303030303030303030303030303030303030303"));
+    CHECK_FALSE(
+            groups.erase_group("03030303030303030303030303030303030303030303030303030303030303030"
+                               "3"));
 }
 
 TEST_CASE("User Groups members C API", "[config][groups][c]") {

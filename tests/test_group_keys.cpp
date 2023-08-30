@@ -1,3 +1,4 @@
+#include <oxenc/base64.h>
 #include <oxenc/endian.h>
 #include <oxenc/hex.h>
 #include <session/config/groups/info.h>
@@ -7,12 +8,14 @@
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 #include <iostream>
 #include <iterator>
 #include <session/config/groups/info.hpp>
 #include <session/config/groups/keys.hpp>
 #include <session/config/groups/members.hpp>
+#include <session/config/user_groups.hpp>
 #include <string_view>
 
 #include "utils.hpp"
@@ -51,36 +54,36 @@ struct hacky_list : std::list<T> {
     T& operator[](size_t n) { return *std::next(std::begin(*this), n); }
 };
 
+struct pseudo_client {
+    std::array<unsigned char, 64> secret_key;
+    const ustring_view public_key{secret_key.data() + 32, 32};
+    std::string session_id{session_id_from_ed(public_key)};
+
+    groups::Info info;
+    groups::Members members;
+    groups::Keys keys;
+
+    pseudo_client(
+            ustring_view seed,
+            bool admin,
+            const unsigned char* gpk,
+            std::optional<const unsigned char*> gsk) :
+            secret_key{sk_from_seed(seed)},
+            info{ustring_view{gpk, 32},
+                 admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
+                 std::nullopt},
+            members{ustring_view{gpk, 32},
+                    admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
+                    std::nullopt},
+            keys{to_usv(secret_key),
+                 ustring_view{gpk, 32},
+                 admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
+                 std::nullopt,
+                 info,
+                 members} {}
+};
+
 TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
-
-    struct pseudo_client {
-        std::array<unsigned char, 64> secret_key;
-        const ustring_view public_key{secret_key.data() + 32, 32};
-        std::string session_id{session_id_from_ed(public_key)};
-
-        groups::Info info;
-        groups::Members members;
-        groups::Keys keys;
-
-        pseudo_client(
-                ustring_view seed,
-                bool a,
-                const unsigned char* gpk,
-                std::optional<const unsigned char*> gsk) :
-                secret_key{sk_from_seed(seed)},
-                info{ustring_view{gpk, 32},
-                     a ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
-                     std::nullopt},
-                members{ustring_view{gpk, 32},
-                        a ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
-                        std::nullopt},
-                keys{to_usv(secret_key),
-                     ustring_view{gpk, 32},
-                     a ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
-                     std::nullopt,
-                     info,
-                     members} {}
-    };
 
     const ustring group_seed =
             "0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210"_hexbytes;
@@ -100,10 +103,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     std::array<unsigned char, 32> group_pk;
     std::array<unsigned char, 64> group_sk;
 
-    crypto_sign_ed25519_seed_keypair(
-            group_pk.data(),
-            group_sk.data(),
-            reinterpret_cast<const unsigned char*>(group_seed.data()));
+    crypto_sign_ed25519_seed_keypair(group_pk.data(), group_sk.data(), group_seed.data());
     REQUIRE(oxenc::to_hex(group_seed.begin(), group_seed.end()) ==
             oxenc::to_hex(group_sk.begin(), group_sk.begin() + 32));
 
@@ -379,7 +379,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     }
 }
 
-TEST_CASE("Group Keys - C++ API", "[config][groups][keys][c]") {
+TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     struct pseudo_client {
         const bool is_admin;
 
@@ -484,4 +484,99 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][c]") {
     //     REQUIRE(contacts_size(a.members) == 0);
     // for (const auto& m : members)
     //     REQUIRE(contacts_size(m.members) == 0);
+}
+
+TEST_CASE("Group Keys - swarm authentication", "[config][groups][keys][swarm]") {
+
+    const ustring group_seed =
+            "0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210"_hexbytes;
+    const ustring admin_seed =
+            "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
+    const ustring member_seed =
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"_hexbytes;
+
+    std::array<unsigned char, 32> group_pk;
+    std::array<unsigned char, 64> group_sk;
+
+    crypto_sign_ed25519_seed_keypair(group_pk.data(), group_sk.data(), group_seed.data());
+    REQUIRE(oxenc::to_hex(group_seed.begin(), group_seed.end()) ==
+            oxenc::to_hex(group_sk.begin(), group_sk.begin() + 32));
+
+    CHECK(oxenc::to_hex(group_pk.begin(), group_pk.end()) ==
+          "c50cb3ae956947a8de19135b5be2685ff348afc63fc34a837aca12bc5c1f5625");
+
+    pseudo_client admin{admin_seed, true, group_pk.data(), group_sk.data()};
+    pseudo_client member{member_seed, false, group_pk.data(), std::nullopt};
+    session::config::UserGroups member_groups{member_seed, std::nullopt};
+
+    CHECK(admin.session_id == "05f1e8b64bbf761edf8f7b47e3a1f369985644cce0a62adb8e21604474bdd49627");
+
+    CHECK(member.session_id ==
+          "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5"
+          "e");
+    CHECK(oxenc::to_hex(group_pk.begin(), group_pk.end()) ==
+          "c50cb3ae956947a8de19135b5be2685ff348afc63fc34a837aca12bc5c1f5625");
+    CHECK(member.info.id == "03c50cb3ae956947a8de19135b5be2685ff348afc63fc34a837aca12bc5c1f5625");
+
+    auto auth_data = admin.keys.swarm_make_subaccount(member.session_id);
+    {
+        auto g = member_groups.get_or_construct_group(member.info.id);
+        g.auth_data = auth_data;
+        member_groups.set(g);
+    }
+
+    session::config::UserGroups member_gr2{member_seed, std::nullopt};
+    auto [seqno, push, obs] = member_groups.push();
+
+    std::vector<std::pair<std::string, ustring_view>> gr_conf;
+    gr_conf.emplace_back("fakehash1", push);
+
+    member_gr2.merge(gr_conf);
+
+    auto g = member_groups.get_group(member.info.id);
+    REQUIRE(g);
+    CHECK(g->id == member.info.id);
+    CHECK(g->auth_data == auth_data);
+
+    auto to_sign = to_usv("retrieve9991693340111000");
+    auto subauth_b64 = member.keys.swarm_subaccount_sign(to_sign, auth_data);
+
+    CHECK(subauth_b64.subaccount ==
+          "0303000085af311da72570859cae7e84d6a135e716a8c0b7f7f4d554b8da4778a636e839");
+    CHECK(subauth_b64.subaccount_sig ==
+          "6brvv/"
+          "2jfciBAJeRKMGSepNJLullyrVVHijyVDE+8GC5Oc89UNxjNrq1kVV1P+pkUIRDOew24gSLFgLZfdl+BQ==");
+    CHECK(subauth_b64.signature ==
+          "c3PJ4g29v5RivKm8Tdg49vGU2/"
+          "6kVd0yONnpz5U5zePMYptqW3iYQ0TYf2rEzv3qqkPhS5p67M5GAccHoBHGDQ==");
+
+    auto subauth = member.keys.swarm_subaccount_sign(to_sign, auth_data, true);
+    CHECK(oxenc::to_hex(subauth.subaccount) == subauth_b64.subaccount);
+    CHECK(oxenc::to_base64(subauth.subaccount_sig) == subauth_b64.subaccount_sig);
+    CHECK(oxenc::to_base64(subauth.signature) == subauth_b64.signature);
+
+    CHECK(0 ==
+          crypto_sign_ed25519_verify_detached(
+                  reinterpret_cast<const unsigned char*>(subauth.signature.data()),
+                  to_sign.data(),
+                  to_sign.size(),
+                  reinterpret_cast<const unsigned char*>(subauth.subaccount.substr(4).data())));
+
+    CHECK(member.keys.swarm_verify_subaccount(auth_data));
+    CHECK(session::config::groups::Keys::swarm_verify_subaccount(
+            member.info.id, to_usv(member.secret_key), auth_data));
+
+    // Try flipping a bit in each position of the auth data and make sure it fails to validate:
+    for (int i = 0; i < auth_data.size(); i++) {
+        for (int b = 0; b < 8; b++) {
+            if (i == 35 && b == 7)  // This is the sign bit of k, which can be flipped but gets
+                                    // flipped back when dealing with the missing X->Ed conversion
+                                    // sign bit, so won't actually change anything if it flips.
+                continue;
+            auto auth_data2 = auth_data;
+            auth_data2[i] ^= 1 << b;
+            CHECK_FALSE(session::config::groups::Keys::swarm_verify_subaccount(
+                    member.info.id, to_usv(member.secret_key), auth_data2));
+        }
+    }
 }

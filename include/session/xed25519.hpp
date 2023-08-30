@@ -35,4 +35,18 @@ std::array<unsigned char, 32> pubkey(ustring_view curve25519_pubkey);
 /// "Softer" version that takes/returns strings of regular chars
 std::string pubkey(std::string_view curve25519_pubkey);
 
+/// Utility function that provides a constant-time `if (b) f = g;` implementation for byte arrays.
+template <size_t N>
+void constant_time_conditional_assign(
+        std::array<unsigned char, N>& f, const std::array<unsigned char, N>& g, bool b) {
+    std::array<unsigned char, N> x;
+    for (size_t i = 0; i < x.size(); i++)
+        x[i] = f[i] ^ g[i];
+    unsigned char mask = (unsigned char)(-(signed char)b);
+    for (size_t i = 0; i < x.size(); i++)
+        x[i] &= mask;
+    for (size_t i = 0; i < x.size(); i++)
+        f[i] ^= x[i];
+}
+
 }  // namespace session::xed25519

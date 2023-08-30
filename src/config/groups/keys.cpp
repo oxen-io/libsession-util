@@ -1,10 +1,13 @@
 #include "session/config/groups/keys.hpp"
 
+#include <oxenc/base64.h>
+#include <oxenc/hex.h>
 #include <sodium/core.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_core_ed25519.h>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/crypto_scalarmult_curve25519.h>
+#include <sodium/crypto_scalarmult_ed25519.h>
 #include <sodium/crypto_sign_ed25519.h>
 #include <sodium/randombytes.h>
 #include <sodium/utils.h>
@@ -16,6 +19,7 @@
 #include "session/config/groups/info.hpp"
 #include "session/config/groups/keys.h"
 #include "session/config/groups/members.hpp"
+#include "session/xed25519.hpp"
 
 using namespace std::literals;
 
@@ -278,7 +282,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
         auto member_keys = d.append_list("k");
         int member_count = 0;
         for (const auto& m : members) {
-            auto m_xpk = session_id_xpk(m.session_id);
+            auto m_xpk = session_id_pk(m.session_id);
             // Calculate the encryption key: H(aB || A || B)
             if (0 != crypto_scalarmult_curve25519(member_k.data(), group_xsk.data(), m_xpk.data()))
                 continue;  // The scalarmult failed; maybe a bad session id?
@@ -442,7 +446,7 @@ ustring Keys::key_supplement(std::vector<std::string> sids) const {
         size_t member_count = 0;
 
         for (auto& sid : sids) {
-            auto m_xpk = session_id_xpk(sid);
+            auto m_xpk = session_id_pk(sid);
 
             // Calculate the encryption key: H(aB || A || B)
             std::array<unsigned char, 32> member_k;
@@ -493,6 +497,304 @@ ustring Keys::key_supplement(std::vector<std::string> sids) const {
     d.append("~", from_unsigned_sv(sig));
 
     return ustring{to_unsigned_sv(d.view())};
+}
+
+// Blinding factor for subaccounts: H(sessionid || groupid) mod L, where H is 64-byte blake2b, using
+// a hash key derived from the group's seed.
+std::array<unsigned char, 32> Keys::subaccount_blind_factor(
+        const std::array<unsigned char, 32>& session_xpk) const {
+
+    auto mask = seed_hash("SessionGroupSubaccountMask");
+    static_assert(mask.size() == crypto_generichash_blake2b_KEYBYTES);
+
+    std::array<unsigned char, 64> h;
+    crypto_generichash_blake2b_state st;
+    crypto_generichash_blake2b_init(&st, mask.data(), mask.size(), h.size());
+    crypto_generichash_blake2b_update(&st, to_unsigned("\x05"), 1);
+    crypto_generichash_blake2b_update(&st, session_xpk.data(), session_xpk.size());
+    crypto_generichash_blake2b_update(&st, to_unsigned("\x03"), 1);
+    crypto_generichash_blake2b_update(&st, _sign_pk->data(), _sign_pk->size());
+    crypto_generichash_blake2b_final(&st, h.data(), h.size());
+
+    std::array<unsigned char, 32> out;
+    crypto_core_ed25519_scalar_reduce(out.data(), h.data());
+    return out;
+}
+
+namespace {
+
+    // These constants are defined and explains in more detail in oxen-storage-server
+    constexpr unsigned char SUBACC_FLAG_READ = 0b0001;
+    constexpr unsigned char SUBACC_FLAG_WRITE = 0b0010;
+    constexpr unsigned char SUBACC_FLAG_DEL = 0b0100;
+    constexpr unsigned char SUBACC_FLAG_ANY_PREFIX = 0b1000;
+
+    constexpr unsigned char subacc_flags(bool write, bool del) {
+        return SUBACC_FLAG_READ | (write ? SUBACC_FLAG_WRITE : 0) | (del ? SUBACC_FLAG_DEL : 0);
+    }
+
+}  // namespace
+
+ustring Keys::swarm_make_subaccount(std::string_view session_id, bool write, bool del) const {
+    if (!admin())
+        throw std::logic_error{"Cannot make subaccount signature: admin keys required"};
+
+    // This gets a wee bit complicated because we only have a session_id, but we really need an
+    // Ed25519 pubkey.  So we do the signal-style XEd25519 thing here where we start with the
+    // positive alternative behind their x25519 pubkey and work from there.  This means,
+    // unfortunately, that making a signature needs to muck around since this is the proper public
+    // only half the time.
+
+    // Terminology/variables (a/A indicates private/public keys)
+    // - s/S are the Ed25519 underlying Session keys (neither is observed in this context)
+    // - x/X are the X25519 conversions of s/S (x, similarly, is not observed, but X is: it's in the
+    //   session_id).
+    // - T = |S|, i.e. the positive of the two alternatives we get from inverting the Ed -> X
+    //   pubkey.
+    // - c/C is the group's Ed25519
+    // - k is the blinding factor, which is: H(\x05...[sessionid]\x03...[groupid], key=M) mod L,
+    //   where: H is 64-byte blake2b; M is `subaccount_blind_factor` (see above).
+    // - p is the account network prefix (03)
+    // - f are the flag bits, determined by `write` and `del` arguments
+
+    auto X = session_id_pk(session_id);
+    auto& c = _sign_sk;
+    auto& C = *_sign_pk;
+
+    auto k = subaccount_blind_factor(X);
+
+    // T = |S|
+    auto T = xed25519::pubkey(ustring_view{X.data(), X.size()});
+
+    // kT is the user's Ed25519 blinded pubkey:
+    std::array<unsigned char, 32> kT;
+
+    if (0 != crypto_scalarmult_ed25519_noclamp(kT.data(), k.data(), T.data()))
+        throw std::runtime_error{"scalarmult failed: perhaps an invalid session id?"};
+
+    ustring out;
+    out.resize(4 + 32 + 64);
+    out[0] = 0x03;                      // network prefix
+    out[1] = subacc_flags(write, del);  // permission flags
+    out[2] = 0;                         // reserved 1
+    out[3] = 0;                         // reserved 2
+    // The next 32 bytes are k (NOT kT; the user can go make kT themselves):
+    std::memcpy(&out[4], k.data(), k.size());
+
+    // And then finally, we append a group signature of: p || f || 0 || 0 || kT
+    std::array<unsigned char, 36> to_sign;
+    std::memcpy(&to_sign[0], out.data(), 4);  // first 4 bytes are the same as out
+    std::memcpy(&to_sign[4], kT.data(), 32);  // but then we have kT instead of k
+    crypto_sign_ed25519_detached(&out[36], nullptr, to_sign.data(), to_sign.size(), c.data());
+
+    return out;
+}
+
+ustring Keys::swarm_subaccount_token(std::string_view session_id, bool write, bool del) const {
+    if (!admin())
+        throw std::logic_error{"Cannot make subaccount signature: admin keys required"};
+
+    // Similar to the above, but we only care about getting flags || kT
+
+    auto X = session_id_pk(session_id);
+    auto& c = _sign_sk;
+    auto& C = *_sign_pk;
+
+    auto k = subaccount_blind_factor(X);
+
+    // T = |S|
+    auto T = xed25519::pubkey(ustring_view{X.data(), X.size()});
+
+    ustring out;
+    out.resize(4 + 32);
+    out[0] = 0x03;                      // network prefix
+    out[1] = subacc_flags(write, del);  // permission flags
+    out[2] = 0;                         // reserved 1
+    out[3] = 0;                         // reserved 2
+    if (0 != crypto_scalarmult_ed25519_noclamp(&out[4], k.data(), T.data()))
+        throw std::runtime_error{"scalarmult failed: perhaps an invalid session id?"};
+    return out;
+}
+
+Keys::swarm_auth Keys::swarm_subaccount_sign(
+        ustring_view msg, ustring_view sign_val, bool binary) const {
+    if (sign_val.size() != 100)
+        throw std::logic_error{"Invalid signing value: size is wrong"};
+
+    if (!_sign_pk)
+        throw std::logic_error{"Unable to verify: group pubkey is not set (!?)"};
+
+    Keys::swarm_auth result;
+    auto& [token, sub_sig, sig] = result;
+
+    // (see above for variable/crypto notation)
+
+    ustring_view k = sign_val.substr(4, 32);
+
+    // our token is the first 4 bytes of `sign_val` (flags, etc.), followed by kT which we have to
+    // compute:
+    token.resize(36);
+    std::memcpy(token.data(), sign_val.data(), 4);
+
+    // T = |S|, i.e. we have to clear the sign bit from our pubkey
+    std::array<unsigned char, 32> T;
+    crypto_sign_ed25519_sk_to_pk(T.data(), user_ed25519_sk.data());
+    bool neg = T[31] & 0x80;
+    T[31] &= 0x7f;
+    if (0 != crypto_scalarmult_ed25519_noclamp(to_unsigned(token.data() + 4), k.data(), T.data()))
+        throw std::runtime_error{"scalarmult failed: perhaps an invalid session id or seed?"};
+
+    // token is now set: flags || kT
+    ustring_view kT{to_unsigned(token.data() + 4), 32};
+
+    // sub_sig is just the admin's signature, sitting at the end of sign_val (after 4f || k):
+    sub_sig = from_unsigned_sv(sign_val.substr(36));
+
+    // Our signing private scalar is kt, where t = ±s according to whether we had to negate S to
+    // make T
+    std::array<unsigned char, 32> s, s_neg;
+    crypto_sign_ed25519_sk_to_curve25519(s.data(), user_ed25519_sk.data());
+    crypto_core_ed25519_scalar_negate(s_neg.data(), s.data());
+    xed25519::constant_time_conditional_assign(s, s_neg, neg);
+
+    auto& t = s;
+
+    std::array<unsigned char, 32> kt;
+    crypto_core_ed25519_scalar_mul(kt.data(), k.data(), t.data());
+
+    // We now have kt, kT, our privkey/public.  (Note that kt is a scalar, not a seed).
+
+    // We're going to get *close* to standard Ed25519 here, except:
+    //
+    // where Ed25519 uses
+    //
+    //     r = SHA512(SHA512(seed)[32:64] || M) mod L
+    //
+    // we're instead going to use:
+    //
+    //     r = H64(H32(seed, key="SubaccountSeed") || kT || M, key="SubaccountSig") mod L
+    //
+    // where H64 and H32 are BLAKE2b keyed hashes of 64 and 32 bytes, respectively, thus
+    // differentiating the signature for both different seeds and different blinded kT pubkeys.
+    //
+    // From there, we follow the standard EdDSA construction:
+    //
+    //     R = rB
+    //     S = r + H(R || kT || M) kt    (mod L)
+    //
+    // (using the standard Ed25519 SHA-512 here for H)
+
+    constexpr auto seed_hash_key = "SubaccountSeed"sv;
+    constexpr auto r_hash_key = "SubaccountSig"sv;
+    std::array<unsigned char, 32> hseed;
+    crypto_generichash_blake2b(
+            hseed.data(),
+            hseed.size(),
+            user_ed25519_sk.data(),
+            32,
+            reinterpret_cast<const unsigned char*>(seed_hash_key.data()),
+            seed_hash_key.size());
+
+    std::array<unsigned char, 64> tmp;
+    crypto_generichash_blake2b_state st;
+    crypto_generichash_blake2b_init(
+            &st,
+            reinterpret_cast<const unsigned char*>(r_hash_key.data()),
+            r_hash_key.size(),
+            tmp.size());
+    crypto_generichash_blake2b_update(&st, hseed.data(), hseed.size());
+    crypto_generichash_blake2b_update(&st, kT.data(), kT.size());
+    crypto_generichash_blake2b_update(&st, msg.data(), msg.size());
+    crypto_generichash_blake2b_final(&st, tmp.data(), tmp.size());
+
+    std::array<unsigned char, 32> r;
+    crypto_core_ed25519_scalar_reduce(r.data(), tmp.data());
+
+    sig.resize(64);
+    unsigned char* R = to_unsigned(sig.data());
+    unsigned char* S = to_unsigned(sig.data() + 32);
+    // R = rB
+    crypto_scalarmult_ed25519_base_noclamp(R, r.data());
+
+    // Compute S = r + H(R || A || M) a mod L:  (with A = kT, a = kt)
+    crypto_hash_sha512_state shast;
+    crypto_hash_sha512_init(&shast);
+    crypto_hash_sha512_update(&shast, R, 32);
+    crypto_hash_sha512_update(&shast, kT.data(), kT.size());  // A = pubkey, that is, kT
+    crypto_hash_sha512_update(&shast, msg.data(), msg.size());
+    std::array<unsigned char, 64> hram;
+    crypto_hash_sha512_final(&shast, hram.data());      // S = H(R||A||M)
+    crypto_core_ed25519_scalar_reduce(S, hram.data());  // S %= L
+    crypto_core_ed25519_scalar_mul(S, S, kt.data());    // S *= a
+    crypto_core_ed25519_scalar_add(S, S, r.data());     // S += r
+
+    // sig is now set to the desired R || S, with S = r + H(R || A || M)a (all mod L)
+
+    if (!binary) {
+        token = oxenc::to_hex(token);
+        sub_sig = oxenc::to_base64(sub_sig);
+        sig = oxenc::to_base64(sig);
+    }
+
+    return result;
+}
+
+bool Keys::swarm_verify_subaccount(ustring_view sign_val, bool write, bool del) const {
+    if (!_sign_pk)
+        return false;
+    return swarm_verify_subaccount(
+            "03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end()),
+            ustring_view{user_ed25519_sk.data(), user_ed25519_sk.size()},
+            sign_val,
+            write,
+            del);
+}
+
+bool Keys::swarm_verify_subaccount(
+        std::string group_id,
+        ustring_view user_ed_sk,
+        ustring_view sign_val,
+        bool write,
+        bool del) {
+    auto group_pk = session_id_pk(group_id, "03");
+
+    if (sign_val.size() != 100)
+        return false;
+
+    ustring_view prefix = sign_val.substr(0, 4);
+    if (prefix[0] != 0x03 && !(prefix[1] & SUBACC_FLAG_ANY_PREFIX))
+        return false;  // require either 03 prefix match, or the "any prefix" flag
+
+    if (!(prefix[1] & SUBACC_FLAG_READ))
+        return false;  // missing the read flag
+
+    if (write && !(prefix[1] & SUBACC_FLAG_WRITE))
+        return false;  // we require write, but it isn't set
+                       //
+    if (del && !(prefix[1] & SUBACC_FLAG_DEL))
+        return false;  // we require delete, but it isn't set
+
+    ustring_view k = sign_val.substr(4, 32);
+    ustring_view sig = sign_val.substr(36);
+
+    // T = |S|, i.e. we have to clear the sign bit from our pubkey
+    std::array<unsigned char, 32> T;
+    crypto_sign_ed25519_sk_to_pk(T.data(), user_ed_sk.data());
+    T[31] &= 0x7f;
+
+    // Compute kT, then reconstruct the `flags || kT` value the admin should have provided a
+    // signature for
+    std::array<unsigned char, 32> kT;
+    if (0 != crypto_scalarmult_ed25519_noclamp(kT.data(), k.data(), T.data()))
+        throw std::runtime_error{"scalarmult failed: perhaps an invalid session id or seed?"};
+
+    std::array<unsigned char, 36> to_verify;
+    std::memcpy(&to_verify[0], sign_val.data(), 4);  // prefix, flags, 2x future use bytes
+    std::memcpy(&to_verify[4], kT.data(), 32);
+
+    // Verify it!
+    return 0 == crypto_sign_ed25519_verify_detached(
+                        sig.data(), to_verify.data(), to_verify.size(), group_pk.data());
 }
 
 std::optional<ustring_view> Keys::pending_config() const {

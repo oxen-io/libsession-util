@@ -3,11 +3,12 @@
 #include <oxenc/hex.h>
 
 #include <array>
-#include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cstddef>
 #include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "session/config/base.h"
 
@@ -64,14 +65,6 @@ inline std::string printable(std::string_view x) {
 std::string printable(const unsigned char* x) = delete;
 inline std::string printable(const unsigned char* x, size_t n) {
     return printable({x, n});
-}
-
-inline void log_msg(config_log_level lvl, const char* msg, void*) {
-    INFO((lvl == LOG_LEVEL_ERROR     ? "ERROR"
-          : lvl == LOG_LEVEL_WARNING ? "Warning"
-          : lvl == LOG_LEVEL_INFO    ? "Info"
-                                     : "debug")
-         << ": " << msg);
 }
 
 template <typename Container>

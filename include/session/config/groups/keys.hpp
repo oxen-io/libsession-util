@@ -113,6 +113,11 @@ class Keys final : public ConfigSig {
     // if it already existed.
     bool insert_key(const key_info& key);
 
+    // Returned the blinding factor for a given session X25519 pubkey.  This depends on the group's
+    // seed and thus is only obtainable by an admin account.
+    std::array<unsigned char, 32> subaccount_blind_factor(
+            const std::array<unsigned char, 32>& session_xpk) const;
+
   public:
     /// The multiple of members keys we include in the message; we add junk entries to the key list
     /// to reach a multiple of this.  75 is chosen because it's a decently large human-round number
@@ -296,6 +301,144 @@ class Keys final : public ConfigSig {
     ustring key_supplement(std::string sid) const {
         return key_supplement(std::vector{{std::move(sid)}});
     }
+
+    /// API: groups/Keys::swarm_make_subaccount
+    ///
+    /// Constructs a swarm subaccount signing value that a member can use to access messages in the
+    /// swarm.  Requires group admins keys.
+    ///
+    /// Inputs:
+    /// - `session_id` -- the session ID of the member (in hex)
+    /// - `write` -- if true (which is the default if omitted) then the member shall be allowed to
+    ///   submit messages into the group account of the swarm and extend (but not shorten) the
+    ///   expiry of messages in the group account.  If false then the user can only retrieve
+    ///   messages.
+    /// - `del` -- if true (default is false) then the user shall be allowed to delete messages
+    ///   from the swarm.  This permission can be used to appoint a sort of "moderator" who can
+    ///   delete messages without having the full admin group keys.
+    ///
+    /// Outputs:
+    /// - `ustring` -- contains a subaccount swarm signing value; this can be passed (by the user)
+    ///   into `swarm_subaccount_sign` to sign a value suitable for swarm authentication.
+    ///   (Internally this packs the flags, blinding factor, and group admin signature together and
+    ///   will be 4 + 32 + 64 = 100 bytes long).
+    ///
+    ///   This value must be provided to the user so that they can authentication.  The user should
+    ///   call `swarm_verify_subaccount` to verify that the signing value was indeed signed by a
+    ///   group admin before using/storing it.
+    ///
+    ///   The signing value produced will be the same (for a given `session_id`/`write`/`del`
+    ///   values) when constructed by any admin of the group.
+    ustring swarm_make_subaccount(
+            std::string_view session_id, bool write = true, bool del = false) const;
+
+    /// API: groups/Keys::swarm_verify_subaccount
+    ///
+    /// Verifies that a received subaccount signing value (allegedly produced by
+    /// swarm_make_subaccount) is a valid subaccount signing value for the given group pubkey,
+    /// including a proper signature by an admin of the group.  The signing value must have read
+    /// permission, but parameters can be given to also require write or delete permissions.  A
+    /// subaccount signing value should always be checked for validity using this before creating a
+    /// group that would depend on it.
+    ///
+    /// There are two versions of this function: a static one callable without having a Keys
+    /// instance that takes the group id and user's session Ed25519 secret key as arguments; and a
+    /// member function that omits these first two arguments (using the ones from the Keys
+    /// instance).
+    ///
+    /// Inputs:
+    /// - `groupid` -- the group id/pubkey, in hex, beginning with "03".
+    /// - `session_ed25519_secretkey` -- the user's Session ID secret key.
+    /// - `signing_value` -- the subaccount signing value to validate
+    /// - `write` -- if true, require that the signing_value has write permission (i.e. that the
+    ///   user will be allowed to post messages).
+    /// - `del` -- if true, required that the signing_value has delete permissions (i.e. that the
+    ///   user will be allowed to remove storage messages from the group's swarm).  Note that this
+    ///   permission is about forcible swarm message deletion, and has no effect on an ability to
+    ///   submit a deletion meta-message to the group (which only requires writing a message).
+    ///
+    /// Outputs:
+    /// - `true` if `signing_value` is a valid subaccount signing value for `groupid` with read (and
+    ///   possible write and/or del permissions, if requested).  `false` if the signing value does
+    ///   not validate or does not meet the requirements.
+    static bool swarm_verify_subaccount(
+            std::string group_id,
+            ustring_view session_ed25519_secretkey,
+            ustring_view signing_value,
+            bool write = false,
+            bool del = false);
+    bool swarm_verify_subaccount(
+            ustring_view signing_value, bool write = false, bool del = false) const;
+
+    /// API: groups/Keys::swarm_auth
+    ///
+    /// This struct containing the storage server authentication values for subaccount
+    /// authentication.  The three strings in this struct may be either raw bytes, or hex/base64
+    /// encoded, depending on the `binary` parameter passed to `swarm_subaccount_sign`.
+    ///
+    /// `.subaccount` is the value to be passed as the "subaccount" authentication parameter.  (It
+    /// consists of permission flags followed by a blinded public key.)
+    ///
+    /// `.subaccount_sig` is the value to be passed as the "subaccount_sig" authentication
+    /// parameter.  (It consists of an admin-produced signature of the subaccount, providing
+    /// permission for that token to be used for authentication).
+    ///
+    /// `.signature` is the value to be passed as the "signature" authentication parameter.  (It is
+    /// an Ed25519 signature that validates using the blinded public key inside `subaccount`).
+    ///
+    /// Inputs: none.
+    struct swarm_auth {
+        std::string subaccount;
+        std::string subaccount_sig;
+        std::string signature;
+    };
+
+    /// API: groups/Keys::swarm_subaccount_sign
+    ///
+    /// This helper function generates the required signature for swarm subaccount authentication,
+    /// given the user's keys and swarm auth keys (as provided by an admin, produced via
+    /// `swarm_auth_key`).
+    ///
+    /// Storage server subaccount authentication requires passing the three values in the returned
+    /// struct in the storage server request.  (See Keys::swarm_auth for details).
+    ///
+    /// Inputs:
+    /// - `msg` -- the data that needs to be signed (which depends on the storage server request
+    ///   being made; for example, "retrieve9991234567890123" for a retrieve request to namespace
+    ///   999 made at unix time 1234567890.123; see storage server RPC documentation for details).
+    /// - `signing_value` -- the 100-byte subaccount signing value, as produced by an admin's
+    ///   `swarm_make_subaccount` and provided to this member.
+    /// - `binary` -- if set to true then the returned values will be binary.  If omitted, the
+    ///   returned struct values will be hex-encoded (subaccount token) or base64-encoded
+    ///   (signatures) suitable for direct passing as JSON values to the storage server.
+    ///
+    /// Outputs:
+    /// - struct containing three binary values enabling swarm authentication (see description
+    /// above).
+    swarm_auth swarm_subaccount_sign(
+            ustring_view msg, ustring_view signing_value, bool binary = false) const;
+
+    /// API: groups/Keys::swarm_subaccount_token
+    ///
+    /// Constructs the subaccount token for a session id.  The main use of this is to submit a swarm
+    /// token revocation; for issuing subaccount tokens you want to use `swarm_make_subaccount`
+    /// instead.  This will produce the same subaccount token that `swarm_make_subaccount`
+    /// implicitly creates that can be passed to a swarm to add a revocation for that subaccount.
+    ///
+    /// This is recommended to be used when removing a non-admin member to prevent their access.
+    /// (Note, however, that there are circumstances where this can fail to prevent access, and so
+    /// should be combined with proper member removal and key rotation so that even if the member
+    /// gains access to messages, they cannot read them).
+    ///
+    /// Inputs:
+    /// - `session_id` -- the session ID of the member (in hex)
+    /// - `write`, `del` -- optional; see `swarm_make_subaccount`.  The same arguments should be
+    ///   provided (or omitted) as were used in `swarm_make_subaccount`.
+    ///
+    /// Outputs:
+    /// - 36 byte token that can be used for swarm token revocation.
+    ustring swarm_subaccount_token(
+            std::string_view session_id, bool write = true, bool del = false) const;
 
     /// API: groups/Keys::pending_config
     ///

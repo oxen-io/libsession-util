@@ -199,8 +199,8 @@ group_info::group_info(const ugroups_group_info& c) : id{c.id, 66} {
     base_from(*this, c);
     if (c.have_secretkey)
         secretkey.assign(c.secretkey, 64);
-    if (c.have_auth_sig)
-        auth_sig.assign(c.auth_sig, 64);
+    if (c.have_auth_data)
+        auth_data.assign(c.auth_data, sizeof(c.auth_data));
 }
 
 void group_info::into(ugroups_group_info& c) const {
@@ -209,8 +209,8 @@ void group_info::into(ugroups_group_info& c) const {
     copy_c_str(c.id, id);
     if ((c.have_secretkey = secretkey.size() == 64))
         std::memcpy(c.secretkey, secretkey.data(), 64);
-    if ((c.have_auth_sig = auth_sig.size() == 64))
-        std::memcpy(c.auth_sig, auth_sig.data(), 64);
+    if ((c.have_auth_data = auth_data.size() == 100))
+        std::memcpy(c.auth_data, auth_data.data(), 100);
 }
 
 void group_info::load(const dict& info_dict) {
@@ -223,8 +223,8 @@ void group_info::load(const dict& info_dict) {
         if (id != oxenc::to_hex(pk.begin(), pk.end()))
             secretkey.clear();
     }
-    if (auto sig = maybe_ustring(info_dict, "s"); sig && sig->size() == 64)
-        auth_sig = std::move(*sig);
+    if (auto sig = maybe_ustring(info_dict, "s"); sig && sig->size() == 100)
+        auth_data = std::move(*sig);
 }
 
 void community_info::load(const dict& info_dict) {
@@ -395,8 +395,8 @@ void UserGroups::set(const group_info& g) {
         info["K"] = ustring_view{g.secretkey.data(), 32};
     else {
         info["K"] = ustring_view{};
-        if (g.auth_sig.size() == 64)
-            info["s"] = g.auth_sig;
+        if (g.auth_data.size() == 100)
+            info["s"] = g.auth_data;
     }
 }
 

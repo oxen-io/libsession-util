@@ -181,10 +181,13 @@ struct group_info : base_group_info {
     /// Group secret key (64 bytes); this is only possessed by admins.
     ustring secretkey;
 
-    /// Group authentication signature; this is possessed by non-admins.  (This value will be
-    /// dropped when serializing if secretkey is non-empty, and so does not need to be explicitly
-    /// cleared when being promoted to admin)
-    ustring auth_sig;
+    /// Group authentication signing value (100 bytes); this is used by non-admins to authenticate
+    /// (using the swarm key generation functions in config::groups::Keys).  This value will be
+    /// dropped when serializing an updated config message if `secretkey` is non-empty (i.e. if it
+    /// is an admin), and so does not need to be explicitly cleared when being promoted to admin.
+    ///
+    /// Producing and using this value is done with the groups::Keys `swarm` methods.
+    ustring auth_data;
 
     /// Constructs a new group info from an hex id (03 + pubkey).  Throws if id is invalid.
     explicit group_info(std::string gid);

@@ -21,3 +21,6 @@ target_link_libraries(testAll PRIVATE
     Catch2::Catch2WithMain)
 
 add_custom_target(check COMMAND testAll)
+
+add_executable(swarm-auth-test swarm-auth-test.cpp)
+target_link_libraries(swarm-auth-test PRIVATE config)
