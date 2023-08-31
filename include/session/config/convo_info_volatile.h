@@ -280,7 +280,6 @@ LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_group(
         config_object* conf, convo_info_volatile_group* convo, const char* id)
         __attribute__((warn_unused_result));
 
-
 /// API: convo_info_volatile/convo_info_volatile_get_legacy_group
 ///
 /// Fills `convo` with the conversation info given a legacy group ID (specified as a null-terminated
@@ -478,9 +477,7 @@ LIBSESSION_EXPORT bool convo_info_volatile_erase_community(
 ///
 /// Outputs:
 /// - `bool` - Returns true if group was found and removed
-LIBSESSION_EXPORT bool convo_info_volatile_erase_group(
-        config_object* conf, const char* group_id);
-
+LIBSESSION_EXPORT bool convo_info_volatile_erase_group(config_object* conf, const char* group_id);
 
 /// API: convo_info_volatile/convo_info_volatile_erase_legacy_group
 ///

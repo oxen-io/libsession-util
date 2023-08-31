@@ -1,6 +1,7 @@
 #include <oxenc/base64.h>
 #include <oxenc/endian.h>
 #include <oxenc/hex.h>
+#include <session/config/contacts.h>
 #include <session/config/groups/info.h>
 #include <session/config/groups/keys.h>
 #include <session/config/groups/members.h>
@@ -383,34 +384,20 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
 
 TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     struct pseudo_client {
-        const bool is_admin;
-
-        const ustring seed;
-        std::string session_id;
-
-        std::array<unsigned char, 32> public_key;
         std::array<unsigned char, 64> secret_key;
+        const ustring_view public_key{secret_key.data() + 32, 32};
+        std::string session_id{session_id_from_ed(public_key)};
 
         config_group_keys* keys;
         config_object* info;
         config_object* members;
 
-        pseudo_client(ustring s, bool a, unsigned char* gpk, std::optional<unsigned char*> gsk) :
-                seed{s}, is_admin{a} {
-            crypto_sign_ed25519_seed_keypair(
-                    public_key.data(),
-                    secret_key.data(),
-                    reinterpret_cast<const unsigned char*>(seed.data()));
-
-            REQUIRE(oxenc::to_hex(seed.begin(), seed.end()) ==
-                    oxenc::to_hex(secret_key.begin(), secret_key.begin() + 32));
-
-            std::array<unsigned char, 33> sid;
-            int rc = crypto_sign_ed25519_pk_to_curve25519(&sid[1], public_key.data());
-            REQUIRE(rc == 0);
-            session_id += "\x05";
-            oxenc::to_hex(sid.begin(), sid.end(), std::back_inserter(session_id));
-
+        pseudo_client(
+                ustring seed,
+                bool is_admin,
+                unsigned char* gpk,
+                std::optional<unsigned char*> gsk) :
+                secret_key{sk_from_seed(seed)} {
             int rv = groups_members_init(&members, gpk, is_admin ? *gsk : NULL, NULL, 0, NULL);
             REQUIRE(rv == 0);
 
@@ -459,33 +446,149 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     REQUIRE(oxenc::to_hex(group_seed.begin(), group_seed.end()) ==
             oxenc::to_hex(group_sk.begin(), group_sk.begin() + 32));
 
-    std::vector<pseudo_client> admins;
-    std::vector<pseudo_client> members;
+    hacky_list<pseudo_client> admins;
+    hacky_list<pseudo_client> members;
 
     // Initialize admin and member objects
     admins.emplace_back(admin1_seed, true, group_pk.data(), group_sk.data());
-    // admins.emplace_back(admin2_seed, true, group_pk.data(), group_sk.data());
+    admins.emplace_back(admin2_seed, true, group_pk.data(), group_sk.data());
 
-    // for (int i = 0; i < 4; ++i)
-    //     members.emplace_back(member_seeds[i], false, group_pk.data(), std::nullopt);
+    for (int i = 0; i < 4; ++i)
+        members.emplace_back(member_seeds[i], false, group_pk.data(), std::nullopt);
 
-    // REQUIRE(admins[0].session_id ==
-    //         "05f1e8b64bbf761edf8f7b47e3a1f369985644cce0a62adb8e21604474bdd49627");
-    // REQUIRE(admins[1].session_id ==
-    //         "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
-    // REQUIRE(members[0].session_id ==
-    //         "05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628");
-    // REQUIRE(members[1].session_id ==
-    //         "053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c");
-    // REQUIRE(members[2].session_id ==
-    //         "05a2b03abdda4df8316f9d7aed5d2d1e483e9af269d0b39191b08321b8495bc118");
-    // REQUIRE(members[3].session_id ==
-    //         "050a41669a06c098f22633aee2eba03764ef6813bd4f770a3a2b9033b868ca470d");
+    REQUIRE(admins[0].session_id ==
+            "05f1e8b64bbf761edf8f7b47e3a1f369985644cce0a62adb8e21604474bdd49627");
+    REQUIRE(admins[1].session_id ==
+            "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    REQUIRE(members[0].session_id ==
+            "05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628");
+    REQUIRE(members[1].session_id ==
+            "053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c");
+    REQUIRE(members[2].session_id ==
+            "05a2b03abdda4df8316f9d7aed5d2d1e483e9af269d0b39191b08321b8495bc118");
+    REQUIRE(members[3].session_id ==
+            "050a41669a06c098f22633aee2eba03764ef6813bd4f770a3a2b9033b868ca470d");
 
-    // for (const auto& a : admins)
-    //     REQUIRE(contacts_size(a.members) == 0);
-    // for (const auto& m : members)
-    //     REQUIRE(contacts_size(m.members) == 0);
+    for (const auto& a : admins)
+        REQUIRE(groups_members_size(a.members) == 0);
+    for (const auto& m : members)
+        REQUIRE(groups_members_size(m.members) == 0);
+
+    // add admin account, re-key, distribute
+    auto& admin1 = admins[0];
+    config_group_member new_admin1;
+
+    REQUIRE(groups_members_get_or_construct(
+            admin1.members, &new_admin1, admin1.session_id.c_str()));
+
+    new_admin1.admin = true;
+    groups_members_set(admin1.members, &new_admin1);
+
+    CHECK(config_needs_push(admin1.members));
+
+    const unsigned char* new_keys_config_1;
+    size_t key_len1;
+    REQUIRE(groups_keys_pending_config(admin1.keys, &new_keys_config_1, &key_len1));
+
+    config_push_data* new_info_config1 = config_push(admin1.info);
+    CHECK(new_info_config1->seqno == 1);
+
+    config_push_data* new_mem_config1 = config_push(admin1.members);
+    CHECK(new_mem_config1->seqno == 1);
+
+    const char* merge_hash1[1];
+    const unsigned char* merge_data1[2];
+    size_t merge_size1[2];
+
+    merge_hash1[0] = "fakehash1";
+
+    merge_data1[0] = new_info_config1->config;
+    merge_size1[0] = new_info_config1->config_len;
+
+    merge_data1[1] = new_mem_config1->config;
+    merge_size1[1] = new_mem_config1->config_len;
+
+    /*  Even though we have only added one admin, admin2 will still be able to see group info
+        like group size and merge all configs. This is because they have loaded the key config
+        message, which they can decrypt with the group secret key.
+    */
+    for (auto& a : admins) {
+        REQUIRE(groups_keys_load_message(
+                a.keys, new_keys_config_1, key_len1, get_timestamp(), a.info, a.members));
+        REQUIRE(config_merge(a.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
+        config_confirm_pushed(a.info, new_info_config1->seqno, "fakehash1");
+
+        REQUIRE(config_merge(a.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
+        config_confirm_pushed(a.members, new_mem_config1->seqno, "fakehash1");
+
+        REQUIRE(groups_members_size(a.members) == 1);
+    }
+
+    /*  All attempts to merge non-admin members will throw, as none of the non admin members
+        will be able to decrypt the new info/member configs using the updated keys
+    */
+    for (auto& m : members) {
+        // this will return true if the message was parsed successfully, NOT if the keys were
+        // decrypted
+        REQUIRE(groups_keys_load_message(
+                m.keys, new_keys_config_1, key_len1, get_timestamp(), m.info, m.members));
+        REQUIRE_THROWS(config_merge(m.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
+        REQUIRE_THROWS(config_merge(m.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
+
+        REQUIRE(groups_members_size(m.members) == 0);
+    }
+
+    free(new_info_config1);
+    free(new_mem_config1);
+
+    for (int i = 0; i < members.size(); ++i) {
+        config_group_member new_mem;
+
+        REQUIRE(groups_members_get_or_construct(
+                members[i].members, &new_mem, members[i].session_id.c_str()));
+        new_mem.admin = false;
+        groups_members_set(admin1.members, &new_mem);
+    }
+
+    CHECK(config_needs_push(admin1.members));
+
+    const unsigned char* new_keys_config_2;
+    size_t key_len2;
+    REQUIRE(groups_keys_rekey(
+            admin1.keys, admin1.info, admin1.members, &new_keys_config_2, &key_len2));
+
+    config_push_data* new_info_config2 = config_push(admin1.info);
+    CHECK(new_info_config2->seqno == 2);
+
+    config_push_data* new_mem_config2 = config_push(admin1.members);
+    CHECK(new_mem_config2->seqno == 2);
+
+    const char* merge_hash2[1];
+    const unsigned char* merge_data2[2];
+    size_t merge_size2[2];
+
+    merge_hash2[0] = "fakehash2";
+
+    merge_data2[0] = new_info_config2->config;
+    merge_size2[0] = new_info_config2->config_len;
+
+    merge_data2[1] = new_mem_config2->config;
+    merge_size2[1] = new_mem_config2->config_len;
+
+    for (auto& a : admins) {
+        REQUIRE(groups_keys_load_message(
+                a.keys, new_keys_config_2, key_len2, get_timestamp(), a.info, a.members));
+        REQUIRE(config_merge(a.info, merge_hash2, &merge_data2[0], &merge_size2[0], 1));
+        config_confirm_pushed(a.info, new_info_config2->seqno, "fakehash2");
+
+        REQUIRE(config_merge(a.members, merge_hash2, &merge_data2[1], &merge_size2[1], 1));
+        config_confirm_pushed(a.members, new_mem_config2->seqno, "fakehash2");
+
+        REQUIRE(groups_members_size(a.members) == 5);
+    }
+
+    free(new_info_config2);
+    free(new_mem_config2);
 }
 
 TEST_CASE("Group Keys - swarm authentication", "[config][groups][keys][swarm]") {

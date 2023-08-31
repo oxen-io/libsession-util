@@ -121,9 +121,7 @@ LIBSESSION_EXPORT int user_groups_init(
 /// Outputs:
 /// Returns `true` and populates `group` if the group was found; returns false otherwise.
 LIBSESSION_EXPORT bool user_groups_get_group(
-        config_object* conf,
-        ugroups_group_info* group,
-        const char* group_id);
+        config_object* conf, ugroups_group_info* group, const char* group_id);
 
 /// API: user_groups/user_groups_get_or_construct_group
 ///
@@ -138,9 +136,7 @@ LIBSESSION_EXPORT bool user_groups_get_group(
 /// Outputs:
 /// Returns `true` on success, `false` upon error (such as when given an invalid group id).
 LIBSESSION_EXPORT bool user_groups_get_or_construct_group(
-        config_object* conf,
-        ugroups_group_info* group,
-        const char* group_id);
+        config_object* conf, ugroups_group_info* group, const char* group_id);
 
 /// API: user_groups/user_groups_get_community
 ///
@@ -318,8 +314,7 @@ LIBSESSION_EXPORT void user_groups_set_community(
 /// Inputs:
 /// - `conf` -- [in] Pointer to config_object object
 /// - `group` -- [in] Pointer to a group info object
-LIBSESSION_EXPORT void user_groups_set_group(
-        config_object* conf, const ugroups_group_info* group);
+LIBSESSION_EXPORT void user_groups_set_group(config_object* conf, const ugroups_group_info* group);
 
 /// API: user_groups/user_groups_set_legacy_group
 ///
@@ -407,8 +402,7 @@ LIBSESSION_EXPORT bool user_groups_erase_community(
 ///
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
-LIBSESSION_EXPORT bool user_groups_erase_group(
-        config_object* conf, const char* group_id);
+LIBSESSION_EXPORT bool user_groups_erase_group(config_object* conf, const char* group_id);
 
 /// API: user_groups/user_groups_erase_legacy_group
 ///
@@ -778,9 +772,7 @@ LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_legacy_groups(
 ///
 /// Outputs:
 /// - `user_groups_iterator*` -- The Iterator
-LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_groups(
-        const config_object* conf);
-
+LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_groups(const config_object* conf);
 
 /// API: user_groups/user_groups_iterator_free
 ///
@@ -862,10 +854,9 @@ LIBSESSION_EXPORT bool user_groups_it_is_community(
 /// - `group` -- [out] sets details of the group into here (if true is returned)
 ///
 /// Outputs:
-/// - `bool` -- Returns `true` and sets `group` if the group is a non-legacy group (aka closed group).
-LIBSESSION_EXPORT bool user_groups_it_is_group(
-        user_groups_iterator* it, ugroups_group_info* group);
-
+/// - `bool` -- Returns `true` and sets `group` if the group is a non-legacy group (aka closed
+/// group).
+LIBSESSION_EXPORT bool user_groups_it_is_group(user_groups_iterator* it, ugroups_group_info* group);
 
 /// API: user_groups/user_groups_it_is_legacy_group
 ///

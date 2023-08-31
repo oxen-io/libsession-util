@@ -69,7 +69,6 @@ namespace convo {
         c.unread = unread;
     }
 
-
     legacy_group::legacy_group(std::string&& cgid) : id{std::move(cgid)} {
         check_session_id(id);
     }
@@ -174,8 +173,7 @@ convo::community ConvoInfoVolatile::get_or_construct_community(
     return result;
 }
 
-std::optional<convo::group> ConvoInfoVolatile::get_group(
-        std::string_view pubkey_hex) const {
+std::optional<convo::group> ConvoInfoVolatile::get_group(std::string_view pubkey_hex) const {
     std::string pubkey = session_id_to_bytes(pubkey_hex, "03");
 
     auto* info_dict = data["g"][pubkey].dict();
@@ -187,14 +185,12 @@ std::optional<convo::group> ConvoInfoVolatile::get_group(
     return result;
 }
 
-convo::group ConvoInfoVolatile::get_or_construct_group(
-        std::string_view pubkey_hex) const {
+convo::group ConvoInfoVolatile::get_or_construct_group(std::string_view pubkey_hex) const {
     if (auto maybe = get_group(pubkey_hex))
         return *std::move(maybe);
 
     return convo::group{std::string{pubkey_hex}};
 }
-
 
 std::optional<convo::legacy_group> ConvoInfoVolatile::get_legacy_group(
         std::string_view pubkey_hex) const {

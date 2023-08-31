@@ -93,7 +93,6 @@ TEST_CASE("Conversations", "[config][conversations]") {
     g.unread = true;
     convos.set(g);
 
-
     auto [seqno, to_push, obs] = convos.push();
 
     CHECK(seqno == 1);
