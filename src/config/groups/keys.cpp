@@ -149,9 +149,13 @@ void Keys::load_dump(ustring_view dump) {
     }
 }
 
+size_t Keys::size() const {
+    return keys_.size() + !pending_key_config_.empty();
+}
+
 std::vector<ustring_view> Keys::group_keys() const {
     std::vector<ustring_view> ret;
-    ret.reserve(keys_.size() + !pending_key_config_.empty());
+    ret.reserve(size());
 
     if (!pending_key_config_.empty())
         ret.emplace_back(pending_key_.data(), 32);
@@ -1245,6 +1249,17 @@ LIBSESSION_C_API int groups_keys_init(
     c_conf->last_error = nullptr;
     *conf = c_conf.release();
     return SESSION_ERR_NONE;
+}
+
+LIBSESSION_C_API size_t group_keys_size(const config_group_keys* conf) {
+    return unbox(conf).size();
+}
+
+LIBSESSION_C_API const unsigned char* group_keys_get_key(const config_group_keys* conf, size_t N) {
+    auto keys = unbox(conf).group_keys();
+    if (N >= keys.size())
+        return nullptr;
+    return keys[N].data();
 }
 
 LIBSESSION_C_API bool groups_keys_is_admin(const config_group_keys* conf) {

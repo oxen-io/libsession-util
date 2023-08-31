@@ -128,7 +128,7 @@ LIBSESSION_EXPORT bool groups_members_erase(config_object* conf, const char* ses
 ///
 /// Outputs:
 /// - `size_t` -- number of contacts
-LIBSESSION_EXPORT size_t contacts_size(const config_object* conf);
+LIBSESSION_EXPORT size_t groups_members_size(const config_object* conf);
 
 typedef struct groups_members_iterator {
     void* _internals;

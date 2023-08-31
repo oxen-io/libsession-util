@@ -215,6 +215,17 @@ class Keys final : public ConfigSig {
     /// - `std::vector<ustring_view>` - vector of encryption keys.
     std::vector<ustring_view> group_keys() const;
 
+    /// API: groups/Keys::size
+    ///
+    /// Returns the number of distinct decryption keys that we know about.  Mainly for
+    /// debugging/information purposes.
+    ///
+    /// Inputs: none
+    ///
+    /// Outputs:
+    /// - `size_t` of the number of keys we know about
+    size_t size() const;
+
     /// API: groups/Keys::encryption_key
     ///
     /// Accesses the current encryption key: that is, the most current group decryption key.  Throws

@@ -362,11 +362,13 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             if (i < 1) {
                 // This supp key wasn't for us
                 CHECK_FALSE(found_key);
+                CHECK(m.keys.size() == 3);
                 CHECK(m.keys.group_keys().size() == 3);
             } else {
                 CHECK(found_key);
                 // new_keys_config1 never went to the initial members, but did go out in the
                 // supplement, which is why we have the extra key here.
+                CHECK(m.keys.size() == 4);
                 CHECK(m.keys.group_keys().size() == 4);
             }
 

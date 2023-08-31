@@ -69,6 +69,45 @@ LIBSESSION_EXPORT int groups_keys_init(
         size_t dumplen,
         char* error) __attribute__((warn_unused_result));
 
+/// API: groups/groups_keys_size
+///
+/// Returns the number of decryption keys stored in this Keys object.  Mainly for
+/// debugging/information purposes.
+///
+/// Inputs:
+/// - `conf` -- keys config object
+///
+/// Outputs:
+/// - `size_t` number of keys
+LIBSESSION_EXPORT size_t groups_keys_size(const config_group_keys* conf);
+
+/// API: groups/groups_keys_get_key
+///
+/// Accesses the Nth encryption key, ordered from most-to-least recent starting from index 0.
+/// Calling this with 0 thus returns the most-current key (which is also the current _en_cryption
+/// key).
+///
+/// This function is not particularly efficient and is not typically needed except for diagnostics:
+/// instead encryption/decryption should be performed used the dedicated functions which
+/// automatically manage the decryption keys.
+///
+/// This function can be used to obtain all decryption keys by calling it with an incrementing value
+/// until it returns nullptr (or alternatively, looping over `0 <= i < groups_keys_size`).
+///
+/// Returns nullptr if N is >= the current number of decryption keys.
+///
+/// The returned pointer points at a 32-byte binary value containing the key; it should be copied or
+/// used at once as it may not remain valid past other calls to the keys object.  It should *not* be
+/// freed.
+///
+/// Inputs:
+/// - `conf` -- keys config object
+/// - `N` -- the index of the key to obtain
+///
+/// Outputs:
+/// - `const unsigned char*` -- pointer to the 32-byte key, or nullptr if there
+LIBSESSION_EXPORT const unsigned char* groups_keys_get_key(const config_group_keys* conf, size_t N);
+
 /// API: groups/groups_keys_is_admin
 ///
 /// Returns true if this object has the group private keys, i.e. the user is an all-powerful
