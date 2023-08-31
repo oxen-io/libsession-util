@@ -65,7 +65,7 @@ LIBSESSION_EXPORT int groups_members_init(
 /// - `session_id` -- [in] null terminated hex string
 ///
 /// Output:
-/// - `bool` -- Returns true if member exsts
+/// - `bool` -- Returns true if member exists
 LIBSESSION_EXPORT bool groups_members_get(
         config_object* conf, config_group_member* member, const char* session_id)
         __attribute__((warn_unused_result));
@@ -87,8 +87,8 @@ LIBSESSION_EXPORT bool groups_members_get(
 /// - `session_id` -- [in] null terminated hex string
 ///
 /// Output:
-/// - `bool` -- Returns true if the member exists, false if not (`member` is always filled
-///   regardless).
+/// - `bool` -- Returns true if the call succeeds, false if an error occurs (e.g. because of an
+///   invalid session_id).
 LIBSESSION_EXPORT bool groups_members_get_or_construct(
         config_object* conf, config_group_member* member, const char* session_id)
         __attribute__((warn_unused_result));
