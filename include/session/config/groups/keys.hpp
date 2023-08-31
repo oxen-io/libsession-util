@@ -297,7 +297,7 @@ class Keys final : public ConfigSig {
     /// Outputs:
     /// - `ustring` containing the message that should be pushed to the swarm containing encrypted
     ///   keys for the given user(s).
-    ustring key_supplement(std::vector<std::string> sids) const;
+    ustring key_supplement(const std::vector<std::string>& sids) const;
     ustring key_supplement(std::string sid) const {
         return key_supplement(std::vector{{std::move(sid)}});
     }
@@ -373,7 +373,7 @@ class Keys final : public ConfigSig {
     /// API: groups/Keys::swarm_auth
     ///
     /// This struct containing the storage server authentication values for subaccount
-    /// authentication.  The three strings in this struct may be either raw bytes, or hex/base64
+    /// authentication.  The three strings in this struct may be either raw bytes, or base64
     /// encoded, depending on the `binary` parameter passed to `swarm_subaccount_sign`.
     ///
     /// `.subaccount` is the value to be passed as the "subaccount" authentication parameter.  (It
@@ -397,7 +397,7 @@ class Keys final : public ConfigSig {
     ///
     /// This helper function generates the required signature for swarm subaccount authentication,
     /// given the user's keys and swarm auth keys (as provided by an admin, produced via
-    /// `swarm_auth_key`).
+    /// `swarm_make_subaccount`).
     ///
     /// Storage server subaccount authentication requires passing the three values in the returned
     /// struct in the storage server request.  (See Keys::swarm_auth for details).
@@ -408,9 +408,9 @@ class Keys final : public ConfigSig {
     ///   999 made at unix time 1234567890.123; see storage server RPC documentation for details).
     /// - `signing_value` -- the 100-byte subaccount signing value, as produced by an admin's
     ///   `swarm_make_subaccount` and provided to this member.
-    /// - `binary` -- if set to true then the returned values will be binary.  If omitted, the
-    ///   returned struct values will be hex-encoded (subaccount token) or base64-encoded
-    ///   (signatures) suitable for direct passing as JSON values to the storage server.
+    /// - `binary` -- if set to true then the returned values will be binary.  If omitted (or
+    ///   explicitly false), the returned struct values will be base64-encoded suitable for direct
+    ///   passing as JSON values to the storage server without further encoding/modification.
     ///
     /// Outputs:
     /// - struct containing three binary values enabling swarm authentication (see description

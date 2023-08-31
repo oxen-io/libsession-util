@@ -69,6 +69,18 @@ LIBSESSION_EXPORT int groups_keys_init(
         size_t dumplen,
         char* error) __attribute__((warn_unused_result));
 
+/// API: groups/groups_keys_is_admin
+///
+/// Returns true if this object has the group private keys, i.e. the user is an all-powerful
+/// wiz^H^H^Hadmin of the group.
+///
+/// Inputs:
+/// - `conf` -- the groups config object
+///
+/// Outputs:
+/// - `true` if we have admin keys, `false` otherwise.
+LIBSESSION_EXPORT bool groups_keys_is_admin(const config_group_keys* conf);
+
 /// API: groups/groups_keys_rekey
 ///
 /// Generates a new encryption key for the group and returns an encrypted key message to be pushed
@@ -190,7 +202,7 @@ LIBSESSION_EXPORT bool groups_keys_needs_dump(const config_group_keys* conf)
 LIBSESSION_EXPORT void groups_keys_dump(
         config_group_keys* conf, unsigned char** out, size_t* outlen);
 
-/// API: grous/groups_keys_key_supplement
+/// API: groups/groups_keys_key_supplement
 ///
 /// Generates a supplemental key message for one or more session IDs.  This is used to distribute
 /// existing active keys to a new member so that that member can access existing keys, configs, and
@@ -224,6 +236,211 @@ LIBSESSION_EXPORT bool groups_keys_key_supplement(
         size_t sids_len,
         unsigned char** message,
         size_t* message_len);
+
+/// API: groups/groups_keys_swarm_make_subaccount
+///
+/// Constructs a swarm subaccount signing value that a member can use to access messages in the
+/// swarm.  The member will have read and write access, but not delete access.  Requires group
+/// admins keys.
+///
+/// Inputs:
+/// - `conf` -- the config object
+/// - `session_id` -- the session ID of the member (in hex)
+/// - `sign_value` -- [out] pointer to a 100 byte (or larger) buffer where the 100 byte signing
+///   value will be written.  This is the value that should be sent to a member to allow
+///   authentication.
+///
+/// Outputs:
+/// - `true` -- if making the subaccount succeeds, false if it fails (e.g. because of an invalid
+///   session id, or not being an admin).  If a failure occurs, sign_value will not be written to.
+LIBSESSION_EXPORT bool groups_keys_swarm_make_subaccount(
+        config_group_keys* conf, const char* session_id, unsigned char* sign_value);
+
+/// API: groups/groups_keys_swarm_make_subaccount_flags
+///
+/// Same as groups_keys_swarm_make_subaccount, but lets you specify whether the write/del flags are
+/// present.
+///
+///
+/// Inputs:
+/// - `conf` -- the config object
+/// - `session_id` -- the member session id (hex c string)
+/// - `write` -- if true then the member shall be allowed to submit messages into the group account
+///   of the swarm and extend (but not shorten) the expiry of messages in the group account.  If
+///   false then the user can only retrieve messages.  Typically this is true.
+/// - `del` -- if true (default is false) then the user shall be allowed to delete messages from the
+///   swarm.  This permission can be used to appoint a sort of "moderator" who can delete messages
+///   without having the full admin group keys.  Typically this is false.
+/// - `sign_value` -- pointer to a buffer with at least 100 bytes where the 100 byte signing value
+///   will be written.
+///
+/// Outputs:
+/// - `bool` - same as groups_keys_swarm_make_subaccount
+LIBSESSION_EXPORT bool groups_keys_swarm_make_subaccount_flags(
+        config_group_keys* conf,
+        const char* session_id,
+        bool write,
+        bool del,
+        unsigned char* sign_value);
+
+/// API: groups/groups_keys_swarm_verify_subaccount
+///
+/// Verifies that a received subaccount signing value (allegedly produced by
+/// groups_keys_swarm_make_subaccount) is a valid subaccount signing value for the given group
+/// pubkey, including a proper signature by an admin of the group.  The signing value must have read
+/// permission, but parameters can be given to also require write or delete permissions.  A
+/// subaccount signing value should always be checked for validity using this before creating a
+/// group that would depend on it.
+///
+/// Inputs:
+/// - note that this function does *not* take a config object as it is intended for use to validate
+///   an invitation before constructing the keys config objects.
+/// - `groupid` -- the group id/pubkey, in hex, beginning with "03".
+/// - `session_ed25519_secretkey` -- the user's Session ID secret key (64 bytes).
+/// - `signing_value` -- the 100-byte subaccount signing value to validate
+///
+/// The key will require read and write access to be acceptable.  (See the _flags version if you
+/// need something else).
+///
+/// Outputs:
+/// - `true` if `signing_value` is a valid subaccount signing value for `groupid` with (at least)
+///   read and write permissions, `false` if the signing value does not validate or does not meet
+///   the requirements.
+LIBSESSION_EXPORT bool groups_keys_swarm_verify_subaccount(
+        const char* group_id,
+        const unsigned char* session_ed25519_secretkey,
+        const unsigned char* signing_value);
+
+/// API: groups/groups_keys_swarm_verify_subaccount_flags
+///
+/// Same as groups_keys_swarm_verify_subaccount, except that you can specify whether you want to
+/// require the write and or delete flags.
+///
+/// Inputs:
+/// - same as groups_keys_swarm_verify_subaccount
+/// - `write` -- if true, require that the signing_value has write permission (i.e. that the
+///   user will be allowed to post messages).
+/// - `del` -- if true, required that the signing_value has delete permissions (i.e. that the
+///   user will be allowed to remove storage messages from the group's swarm).  Note that this
+///   permission is about forcible swarm message deletion, and has no effect on an ability to
+///   submit a deletion meta-message to the group (which only requires writing a message).
+LIBSESSION_EXPORT bool groups_keys_swarm_verify_subaccount_flags(
+        const char* group_id,
+        const unsigned char* session_ed25519_secretkey,
+        const unsigned char* signing_value,
+        bool write,
+        bool del);
+
+/// API: groups/groups_keys_swarm_subaccount_sign
+///
+/// This helper function generates the required signature for swarm subaccount authentication,
+/// given the user's keys and swarm auth keys (as provided by an admin, produced via
+/// `groups_keys_swarm_make_subaccount`).
+///
+/// Storage server subaccount authentication requires passing the three values in the returned
+/// struct in the storage server request.
+///
+/// This version of the function writes base64-encoded values to the output parameters; there is
+/// also a `_binary` version that writes raw values.
+///
+/// Inputs:
+/// - `conf` -- the keys config object
+/// - `msg` -- the binary data that needs to be signed (which depends on the storage server request
+///   being made; for example, "retrieve9991234567890123" for a retrieve request to namespace 999
+///   made at unix time 1234567890.123; see storage server RPC documentation for details).
+/// - `msg_len` -- the length of the `msg` buffer
+/// - `signing_value` -- the 100-byte subaccount signing value, as produced by an admin's
+///   `swarm_make_subaccount` and provided to this member.
+/// - `subaccount` -- [out] a C string buffer of *at least* 49 bytes where the null-terminated
+///   48-byte base64-encoded subaccount value will be written.  This is the value to pass as
+///   `subaccount` for storage server subaccount authentication.
+/// - `subaccount_sig` -- [out] a C string buffer of *at least* 89 bytes where the null-terminated,
+///   88-ascii-character base64-encoded version of the 64-byte admin signature authorizing this
+///   subaccount will be written.  This is the value to be passed as `subaccount_sig` for storage
+///   server subaccount authentication.
+/// - `signature` -- [out] a C string buffer of *at least* 89 bytes where the null-terminated,
+///   88-character request signature will be written, base64 encoded.  This is passes as the
+///   `signature` value, alongside `subaccount`/`subaccoung_sig` to perform subaccount signature
+///   authentication.
+///
+/// Outputs:
+/// - true if the values were written, false if an error occured (e.g. from an invalid signing_value
+///   or cryptography error).
+LIBSESSION_EXPORT bool groups_keys_swarm_subaccount_sign(
+        config_group_keys* conf,
+        const unsigned char* msg,
+        size_t msg_len,
+        const unsigned char* signing_value,
+
+        char* subaccount,
+        char* subaccount_sig,
+        char* signature);
+
+/// API: groups/groups_keys_swarm_subaccount_sign_binary
+///
+/// Does exactly the same as groups_keys_swarm_subaccount_sign except that the subaccount,
+/// subaccount_sig, and signature values are written in binary (without null termination) of exactly
+/// 36, 64, and 64 bytes, respectively.
+///
+/// Inputs:
+/// - see groups_keys_swarm_subaccount_sign
+/// - `subaccount`, `subaccount_sig`, and `signature` are binary output buffers of size 36, 64, and
+///   64, respectively.
+///
+/// Outputs:
+/// See groups_keys_swarm_subaccount.
+LIBSESSION_EXPORT bool groups_keys_swarm_subaccount_sign_binary(
+        config_group_keys* conf,
+        const unsigned char* msg,
+        size_t msg_len,
+        const unsigned char* signing_value,
+
+        unsigned char* subaccount,
+        unsigned char* subaccount_sig,
+        unsigned char* signature);
+
+/// API: groups/groups_keys_swarm_subaccount_token
+///
+/// Constructs the subaccount token for a session id.  The main use of this is to submit a swarm
+/// token revocation; for issuing subaccount tokens you want to use
+/// `groups_keys_swarm_make_subaccount` instead.  This will produce the same subaccount token that
+/// `groups_keys_swarm_make_subaccount` implicitly creates that can be passed to a swarm to add a
+/// revocation for that subaccount.
+///
+/// This is recommended to be used when removing a non-admin member to prevent their access.
+/// (Note, however, that there are circumstances where this can fail to prevent access, and so
+/// should be combined with proper member removal and key rotation so that even if the member
+/// gains access to messages, they cannot read them).
+///
+/// Inputs:
+/// - `conf` -- the keys config object
+/// - `session_id` -- the session ID of the member (in hex)
+/// - `token` -- [out] a 36-byte buffer into which to write the subaccount token.
+///
+/// Outputs:
+/// - true if the call succeeded, false if an error occured.
+LIBSESSION_EXPORT bool groups_keys_swarm_subaccount_token(
+        config_group_keys* conf, const char* session_id, unsigned char* token);
+
+/// API: groups/groups_keys_swarm_subaccount_token_flags
+///
+/// Same as `groups_keys_swarm_subaccount_token`, but takes `write` and `del` flags for creating a
+/// token matching a user with non-standard permissions.
+///
+/// Inputs:
+/// - `conf` -- the keys config object
+/// - `session_id` -- the session ID of the member (in hex)
+/// - `write`, `del` -- see groups_keys_swarm_make_subaccount_flags
+/// - `token` -- [out] a 36-byte buffer into which to write the subaccount token.
+///
+/// Outputs:
+/// - true if the call succeeded, false if an error occured.
+LIBSESSION_EXPORT bool groups_keys_swarm_subaccount_token_flags(
+        config_group_keys* conf,
+        const char* session_id,
+        bool write,
+        bool del,
+        unsigned char* token);
 
 /// API: groups/groups_keys_encrypt_message
 ///

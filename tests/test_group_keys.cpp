@@ -541,8 +541,7 @@ TEST_CASE("Group Keys - swarm authentication", "[config][groups][keys][swarm]") 
     auto to_sign = to_usv("retrieve9991693340111000");
     auto subauth_b64 = member.keys.swarm_subaccount_sign(to_sign, auth_data);
 
-    CHECK(subauth_b64.subaccount ==
-          "0303000085af311da72570859cae7e84d6a135e716a8c0b7f7f4d554b8da4778a636e839");
+    CHECK(subauth_b64.subaccount == "AwMAAIWvMR2nJXCFnK5+hNahNecWqMC39/TVVLjaR3imNug5");
     CHECK(subauth_b64.subaccount_sig ==
           "6brvv/"
           "2jfciBAJeRKMGSepNJLullyrVVHijyVDE+8GC5Oc89UNxjNrq1kVV1P+pkUIRDOew24gSLFgLZfdl+BQ==");
@@ -551,7 +550,7 @@ TEST_CASE("Group Keys - swarm authentication", "[config][groups][keys][swarm]") 
           "6kVd0yONnpz5U5zePMYptqW3iYQ0TYf2rEzv3qqkPhS5p67M5GAccHoBHGDQ==");
 
     auto subauth = member.keys.swarm_subaccount_sign(to_sign, auth_data, true);
-    CHECK(oxenc::to_hex(subauth.subaccount) == subauth_b64.subaccount);
+    CHECK(oxenc::to_base64(subauth.subaccount) == subauth_b64.subaccount);
     CHECK(oxenc::to_base64(subauth.subaccount_sig) == subauth_b64.subaccount_sig);
     CHECK(oxenc::to_base64(subauth.signature) == subauth_b64.signature);
 

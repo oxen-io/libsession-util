@@ -366,7 +366,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
 
-ustring Keys::key_supplement(std::vector<std::string> sids) const {
+ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     if (!admin())
         throw std::logic_error{
                 "Unable to issue supplemental group encryption keys without the main group keys"};
@@ -731,7 +731,7 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     // sig is now set to the desired R || S, with S = r + H(R || A || M)a (all mod L)
 
     if (!binary) {
-        token = oxenc::to_hex(token);
+        token = oxenc::to_base64(token);
         sub_sig = oxenc::to_base64(sub_sig);
         sig = oxenc::to_base64(sig);
     }
@@ -1247,6 +1247,10 @@ LIBSESSION_C_API int groups_keys_init(
     return SESSION_ERR_NONE;
 }
 
+LIBSESSION_C_API bool groups_keys_is_admin(const config_group_keys* conf) {
+    return unbox(conf).admin();
+}
+
 LIBSESSION_C_API bool groups_keys_rekey(
         config_group_keys* conf,
         config_object* info,
@@ -1352,4 +1356,152 @@ LIBSESSION_C_API bool groups_keys_decrypt_message(
     std::memcpy(*plaintext_out, plaintext->data(), plaintext->size());
     *plaintext_len = plaintext->size();
     return true;
+}
+
+LIBSESSION_C_API bool groups_keys_key_supplement(
+        config_group_keys* conf,
+        const char** sids,
+        size_t sids_len,
+        unsigned char** message,
+        size_t* message_len) {
+    assert(sids && message && message_len);
+
+    std::vector<std::string> session_ids;
+    for (size_t i = 0; i < sids_len; i++)
+        session_ids.emplace_back(sids[i]);
+    try {
+        auto msg = unbox(conf).key_supplement(session_ids);
+        *message = static_cast<unsigned char*>(malloc(msg.size()));
+        *message_len = msg.size();
+        std::memcpy(*message, msg.data(), msg.size());
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_make_subaccount_flags(
+        config_group_keys* conf,
+        const char* session_id,
+        bool write,
+        bool del,
+        unsigned char* sign_value) {
+    assert(sign_value);
+    try {
+        auto val = unbox(conf).swarm_make_subaccount(session_id, write, del);
+        assert(val.size() == 100);
+        std::memcpy(sign_value, val.data(), val.size());
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_make_subaccount(
+        config_group_keys* conf, const char* session_id, unsigned char* sign_value) {
+    return groups_keys_swarm_make_subaccount_flags(conf, session_id, true, false, sign_value);
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount_flags(
+        const char* group_id,
+        const unsigned char* session_ed25519_secretkey,
+        const unsigned char* signing_value,
+        bool write,
+        bool del) {
+    try {
+        return groups::Keys::swarm_verify_subaccount(
+                group_id,
+                ustring_view{session_ed25519_secretkey, 64},
+                ustring_view{signing_value, 100},
+                write,
+                del);
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount(
+        const char* group_id,
+        const unsigned char* session_ed25519_secretkey,
+        const unsigned char* signing_value) {
+    return groups::Keys::swarm_verify_subaccount(
+            group_id,
+            ustring_view{session_ed25519_secretkey, 64},
+            ustring_view{signing_value, 100});
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign(
+        config_group_keys* conf,
+        const unsigned char* msg,
+        size_t msg_len,
+        const unsigned char* signing_value,
+
+        char* subaccount,
+        char* subaccount_sig,
+        char* signature) {
+    assert(msg && signing_value && subaccount && subaccount_sig && signature);
+    try {
+        auto auth = unbox(conf).swarm_subaccount_sign(
+                ustring_view{msg, msg_len}, ustring_view{signing_value, 100});
+        assert(auth.subaccount.size() == 48);
+        assert(auth.subaccount_sig.size() == 88);
+        assert(auth.signature.size() == 88);
+        std::memcpy(subaccount, auth.subaccount.c_str(), auth.subaccount.size() + 1);
+        std::memcpy(subaccount_sig, auth.subaccount_sig.c_str(), auth.subaccount_sig.size() + 1);
+        std::memcpy(signature, auth.signature.c_str(), auth.signature.size() + 1);
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign_binary(
+        config_group_keys* conf,
+        const unsigned char* msg,
+        size_t msg_len,
+        const unsigned char* signing_value,
+
+        unsigned char* subaccount,
+        unsigned char* subaccount_sig,
+        unsigned char* signature) {
+    assert(msg && signing_value && subaccount && subaccount_sig && signature);
+    try {
+        auto auth = unbox(conf).swarm_subaccount_sign(
+                ustring_view{msg, msg_len}, ustring_view{signing_value, 100}, true);
+        assert(auth.subaccount.size() == 36);
+        assert(auth.subaccount_sig.size() == 64);
+        assert(auth.signature.size() == 64);
+        std::memcpy(subaccount, auth.subaccount.data(), 36);
+        std::memcpy(subaccount_sig, auth.subaccount_sig.data(), 36);
+        std::memcpy(signature, auth.signature.data(), 36);
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_subaccount_token_flags(
+        config_group_keys* conf,
+        const char* session_id,
+        bool write,
+        bool del,
+        unsigned char* token) {
+    try {
+        auto tok = unbox(conf).swarm_subaccount_token(session_id, write, del);
+        assert(tok.size() == 36);
+        std::memcpy(token, tok.data(), 36);
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool groups_keys_swarm_subaccount_token(
+        config_group_keys* conf, const char* session_id, unsigned char* token) {
+    return groups_keys_swarm_subaccount_token_flags(conf, session_id, true, false, token);
 }
