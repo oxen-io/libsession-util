@@ -1251,7 +1251,7 @@ LIBSESSION_C_API int groups_keys_init(
     return SESSION_ERR_NONE;
 }
 
-LIBSESSION_C_API size_t group_keys_size(const config_group_keys* conf) {
+LIBSESSION_C_API size_t groups_keys_size(const config_group_keys* conf) {
     return unbox(conf).size();
 }
 
