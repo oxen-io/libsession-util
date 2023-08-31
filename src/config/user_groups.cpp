@@ -613,6 +613,34 @@ LIBSESSION_C_API bool user_groups_get_or_construct_community(
         return false;
     }
 }
+LIBSESSION_C_API bool user_groups_get_group(
+        config_object* conf, ugroups_group_info* group, const char* group_id){
+    try {
+        conf->last_error = nullptr;
+        if (auto g = unbox<UserGroups>(conf)->get_group(group_id)) {
+            g->into(*group);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+    }
+    return false;
+}
+LIBSESSION_C_API bool user_groups_get_or_construct_group(
+        config_object* conf,
+        ugroups_group_info* group,
+        const char* group_id) {
+    try {
+        conf->last_error = nullptr;
+        unbox<UserGroups>(conf)
+                ->get_or_construct_group(group_id)
+                .into(*group);
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
 
 LIBSESSION_C_API void ugroups_legacy_group_free(ugroups_legacy_group_info* group) {
     if (group && group->_internal) {
@@ -657,6 +685,10 @@ LIBSESSION_C_API void user_groups_set_community(
         config_object* conf, const ugroups_community_info* comm) {
     unbox<UserGroups>(conf)->set(community_info{*comm});
 }
+LIBSESSION_C_API void user_groups_set_group(
+        config_object* conf, const ugroups_group_info* group) {
+    unbox<UserGroups>(conf)->set(group_info{*group});
+}
 LIBSESSION_C_API void user_groups_set_legacy_group(
         config_object* conf, const ugroups_legacy_group_info* group) {
     unbox<UserGroups>(conf)->set(legacy_group_info{*group});
@@ -670,6 +702,14 @@ LIBSESSION_C_API bool user_groups_erase_community(
         config_object* conf, const char* base_url, const char* room) {
     try {
         return unbox<UserGroups>(conf)->erase_community(base_url, room);
+    } catch (...) {
+        return false;
+    }
+}
+LIBSESSION_C_API bool user_groups_erase_group(
+        config_object* conf, const char* group_id) {
+    try {
+        return unbox<UserGroups>(conf)->erase_group(group_id);
     } catch (...) {
         return false;
     }
@@ -772,6 +812,9 @@ LIBSESSION_C_API size_t user_groups_size(const config_object* conf) {
 LIBSESSION_C_API size_t user_groups_size_communities(const config_object* conf) {
     return unbox<UserGroups>(conf)->size_communities();
 }
+LIBSESSION_C_API size_t user_groups_size_groups(const config_object* conf) {
+    return unbox<UserGroups>(conf)->size_groups();
+}
 LIBSESSION_C_API size_t user_groups_size_legacy_groups(const config_object* conf) {
     return unbox<UserGroups>(conf)->size_legacy_groups();
 }
@@ -783,6 +826,10 @@ LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new(const config_obj
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_communities(
         const config_object* conf) {
     return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_communities()}};
+}
+LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_groups(
+        const config_object* conf) {
+    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_groups()}};
 }
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_legacy_groups(
         const config_object* conf) {
@@ -816,6 +863,11 @@ bool user_groups_it_is_impl(user_groups_iterator* it, C* c) {
 LIBSESSION_C_API bool user_groups_it_is_community(
         user_groups_iterator* it, ugroups_community_info* c) {
     return user_groups_it_is_impl<community_info>(it, c);
+}
+
+LIBSESSION_C_API bool user_groups_it_is_group(
+        user_groups_iterator* it, ugroups_group_info* g) {
+    return user_groups_it_is_impl<group_info>(it, g);
 }
 
 LIBSESSION_C_API bool user_groups_it_is_legacy_group(

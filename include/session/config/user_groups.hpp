@@ -585,10 +585,31 @@ class UserGroups : public ConfigBase {
     template <typename GroupType>
     struct subtype_iterator;
 
-    /// Returns an iterator that iterates only through one type of conversations.  (The regular
-    /// `.end()` iterator is valid for testing the end of these iterations).
-    subtype_iterator<group_info> legacy_groups() const { return {data}; }
+    /// API: user_groups/UserGroups::begin_groups
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - an iterator that iterates only through group conversations.  (The regular `.end()`
+    ///   iterator is valid for testing the end of this iterator).
+    subtype_iterator<group_info> begin_groups() const { return {data}; }
+
+    /// API: user_groups/UserGroups::begin_communities
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - an iterator that iterates only through community conversations.  (The regular `.end()`
+    ///   iterator is valid for testing the end of this iterator).
     subtype_iterator<community_info> begin_communities() const { return {data}; }
+
+    /// API: user_groups/UserGroups::begin_legacy_groups
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - an iterator that iterates only through legacy group conversations.  (The regular `.end()`
+    ///   iterator is valid for testing the end of this iterator).
     subtype_iterator<legacy_group_info> begin_legacy_groups() const { return {data}; }
 
     using iterator_category = std::input_iterator_tag;
