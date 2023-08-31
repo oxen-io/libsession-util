@@ -31,7 +31,7 @@ namespace convo {
     one_to_one::one_to_one(std::string_view sid) : session_id{sid} {
         check_session_id(session_id);
     }
-    one_to_one::one_to_one(const struct convo_info_volatile_1to1& c) :
+    one_to_one::one_to_one(const convo_info_volatile_1to1& c) :
             base{c.last_read, c.unread}, session_id{c.session_id, 66} {}
 
     void one_to_one::into(convo_info_volatile_1to1& c) const {
@@ -54,13 +54,29 @@ namespace convo {
         c.unread = unread;
     }
 
+    group::group(std::string&& cgid) : id{std::move(cgid)} {
+        check_session_id(id, "03");
+    }
+    group::group(std::string_view cgid) : id{cgid} {
+        check_session_id(id, "03");
+    }
+    group::group(const convo_info_volatile_group& c) :
+            base{c.last_read, c.unread}, id{c.group_id, 66} {}
+
+    void group::into(convo_info_volatile_group& c) const {
+        std::memcpy(c.group_id, id.c_str(), 67);
+        c.last_read = last_read;
+        c.unread = unread;
+    }
+
+
     legacy_group::legacy_group(std::string&& cgid) : id{std::move(cgid)} {
         check_session_id(id);
     }
     legacy_group::legacy_group(std::string_view cgid) : id{cgid} {
         check_session_id(id);
     }
-    legacy_group::legacy_group(const struct convo_info_volatile_legacy_group& c) :
+    legacy_group::legacy_group(const convo_info_volatile_legacy_group& c) :
             base{c.last_read, c.unread}, id{c.group_id, 66} {}
 
     void legacy_group::into(convo_info_volatile_legacy_group& c) const {
@@ -158,6 +174,28 @@ convo::community ConvoInfoVolatile::get_or_construct_community(
     return result;
 }
 
+std::optional<convo::group> ConvoInfoVolatile::get_group(
+        std::string_view pubkey_hex) const {
+    std::string pubkey = session_id_to_bytes(pubkey_hex, "03");
+
+    auto* info_dict = data["g"][pubkey].dict();
+    if (!info_dict)
+        return std::nullopt;
+
+    auto result = std::make_optional<convo::group>(std::string{pubkey_hex});
+    result->load(*info_dict);
+    return result;
+}
+
+convo::group ConvoInfoVolatile::get_or_construct_group(
+        std::string_view pubkey_hex) const {
+    if (auto maybe = get_group(pubkey_hex))
+        return *std::move(maybe);
+
+    return convo::group{std::string{pubkey_hex}};
+}
+
+
 std::optional<convo::legacy_group> ConvoInfoVolatile::get_legacy_group(
         std::string_view pubkey_hex) const {
     std::string pubkey = session_id_to_bytes(pubkey_hex);
@@ -242,6 +280,11 @@ void ConvoInfoVolatile::set(const convo::community& c) {
     set_base(c, info);
 }
 
+void ConvoInfoVolatile::set(const convo::group& c) {
+    auto info = data["g"][session_id_to_bytes(c.id, "03")];
+    set_base(c, info);
+}
+
 void ConvoInfoVolatile::set(const convo::legacy_group& c) {
     auto info = data["C"][session_id_to_bytes(c.id)];
     set_base(c, info);
@@ -270,6 +313,9 @@ bool ConvoInfoVolatile::erase(const convo::community& c) {
     }
     return gone;
 }
+bool ConvoInfoVolatile::erase(const convo::group& c) {
+    return erase_impl(data["g"][session_id_to_bytes(c.id, "03")]);
+}
 bool ConvoInfoVolatile::erase(const convo::legacy_group& c) {
     return erase_impl(data["C"][session_id_to_bytes(c.id)]);
 }
@@ -282,6 +328,9 @@ bool ConvoInfoVolatile::erase_1to1(std::string_view session_id) {
 }
 bool ConvoInfoVolatile::erase_community(std::string_view base_url, std::string_view room) {
     return erase(convo::community{base_url, room});
+}
+bool ConvoInfoVolatile::erase_group(std::string_view id) {
+    return erase(convo::group{id});
 }
 bool ConvoInfoVolatile::erase_legacy_group(std::string_view id) {
     return erase(convo::legacy_group{id});
@@ -309,6 +358,12 @@ size_t ConvoInfoVolatile::size_communities() const {
     return count;
 }
 
+size_t ConvoInfoVolatile::size_groups() const {
+    if (auto* d = data["g"].dict())
+        return d->size();
+    return 0;
+}
+
 size_t ConvoInfoVolatile::size_legacy_groups() const {
     if (auto* d = data["C"].dict())
         return d->size();
@@ -316,11 +371,11 @@ size_t ConvoInfoVolatile::size_legacy_groups() const {
 }
 
 size_t ConvoInfoVolatile::size() const {
-    return size_1to1() + size_communities() + size_legacy_groups();
+    return size_1to1() + size_communities() + size_legacy_groups() + size_groups();
 }
 
 ConvoInfoVolatile::iterator::iterator(
-        const DictFieldRoot& data, bool oneto1, bool communities, bool legacy_groups) {
+        const DictFieldRoot& data, bool oneto1, bool communities, bool groups, bool legacy_groups) {
     if (oneto1)
         if (auto* d = data["1"].dict()) {
             _it_11 = d->begin();
@@ -329,6 +384,11 @@ ConvoInfoVolatile::iterator::iterator(
     if (communities)
         if (auto* d = data["o"].dict())
             _it_comm.emplace(d->begin(), d->end());
+    if (groups)
+        if (auto* d = data["g"].dict()) {
+            _it_group = d->begin();
+            _end_group = d->end();
+        }
     if (legacy_groups)
         if (auto* d = data["C"].dict()) {
             _it_lgroup = d->begin();

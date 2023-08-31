@@ -24,6 +24,12 @@ typedef struct convo_info_volatile_community {
     bool unread;        // true if marked unread
 } convo_info_volatile_community;
 
+typedef struct convo_info_volatile_group {
+    char group_id[67];  // in hex; 66 hex chars + null terminator.  Begins with "03".
+    int64_t last_read;  // ms since unix epoch
+    bool unread;        // true if marked unread
+} convo_info_volatile_group;
+
 typedef struct convo_info_volatile_legacy_group {
     char group_id[67];  // in hex; 66 hex chars + null terminator.  Looks just like a Session ID,
                         // though isn't really one.
@@ -189,7 +195,7 @@ LIBSESSION_EXPORT bool convo_info_volatile_get_community(
 ///
 /// Declaration:
 /// ```cpp
-/// BOOL convo_info_volatile_get_or_constructcommunity(
+/// BOOL convo_info_volatile_get_or_construct_community(
 ///     [in]    config_object*                  conf,
 ///     [out]   convo_info_volatile_community*  comm,
 ///     [in]    const char*                     base_url,
@@ -206,13 +212,74 @@ LIBSESSION_EXPORT bool convo_info_volatile_get_community(
 /// - `pubkey` -- [in] 32 byte binary data of the pubkey
 ///
 /// Outputs:
-/// - `bool` - Returns true if the community exists
+/// - `bool` - Returns true if the call succeeds
 LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_community(
         config_object* conf,
         convo_info_volatile_community* convo,
         const char* base_url,
         const char* room,
         unsigned const char* pubkey) __attribute__((warn_unused_result));
+
+/// API: convo_info_volatile/convo_info_volatile_get_group
+///
+/// Fills `convo` with the conversation info given a group ID (specified as a null-terminated
+/// hex string), if the conversation exists, and returns true.  If the conversation does not exist
+/// then `convo` is left unchanged and false is returned.  On error, false is returned and the error
+/// is set in conf->last_error (on non-error, last_error is cleared).
+///
+/// Declaration:
+/// ```cpp
+/// BOOL convo_info_volatile_get_group(
+///     [in]    config_object*               conf,
+///     [out]   convo_info_volatile_group*   convo,
+///     [in]    const char*                  id
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `convo` -- [out] Pointer to group
+/// - `id` -- [in] Null terminated hex string (66 chars, beginning with 03) specifying the ID of the
+///   group
+///
+/// Outputs:
+/// - `bool` - Returns true if the group exists
+LIBSESSION_EXPORT bool convo_info_volatile_get_group(
+        config_object* conf, convo_info_volatile_group* convo, const char* id)
+        __attribute__((warn_unused_result));
+
+/// API: convo_info_volatile/convo_info_volatile_get_or_construct_group
+///
+/// Same as the above except that when the conversation does not exist, this sets all the convo
+/// fields to defaults and loads it with the given id.
+///
+/// Returns true as long as it is given a valid group id (i.e. 66 hex chars beginning with "03").  A
+/// false return is considered an error, and means the id was not a valid session id; an error
+/// string will be set in `conf->last_error`.
+///
+/// This is the method that should usually be used to create or update a conversation, followed by
+/// setting fields in the convo, and then giving it to convo_info_volatile_set().
+///
+/// Declaration:
+/// ```cpp
+/// BOOL convo_info_volatile_get_or_construct_group(
+///     [in]    config_object*               conf,
+///     [out]   convo_info_volatile_group*   convo,
+///     [in]    const char*                  id
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `convo` -- [out] Pointer to group
+/// - `id` -- [in] Null terminated hex string specifying the ID of the group
+///
+/// Outputs:
+/// - `bool` - Returns true if the call succeeds
+LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_group(
+        config_object* conf, convo_info_volatile_group* convo, const char* id)
+        __attribute__((warn_unused_result));
+
 
 /// API: convo_info_volatile/convo_info_volatile_get_legacy_group
 ///
@@ -233,10 +300,10 @@ LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_community(
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `convo` -- [out] Pointer to legacy group
-/// - `id` -- [in] Null terminated jex string specifying the ID of the legacy group
+/// - `id` -- [in] Null terminated hex string specifying the ID of the legacy group
 ///
 /// Outputs:
-/// - `bool` - Returns true if the community exists
+/// - `bool` - Returns true if the legacy group exists
 LIBSESSION_EXPORT bool convo_info_volatile_get_legacy_group(
         config_object* conf, convo_info_volatile_legacy_group* convo, const char* id)
         __attribute__((warn_unused_result));
@@ -265,10 +332,10 @@ LIBSESSION_EXPORT bool convo_info_volatile_get_legacy_group(
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `convo` -- [out] Pointer to legacy group
-/// - `id` -- [in] Null terminated jex string specifying the ID of the legacy group
+/// - `id` -- [in] Null terminated hex string specifying the ID of the legacy group
 ///
 /// Outputs:
-/// - `bool` - Returns true if the community exists
+/// - `bool` - Returns true if the call succeeds
 LIBSESSION_EXPORT bool convo_info_volatile_get_or_construct_legacy_group(
         config_object* conf, convo_info_volatile_legacy_group* convo, const char* id)
         __attribute__((warn_unused_result));
@@ -309,6 +376,24 @@ LIBSESSION_EXPORT void convo_info_volatile_set_1to1(
 LIBSESSION_EXPORT void convo_info_volatile_set_community(
         config_object* conf, const convo_info_volatile_community* convo);
 
+/// API: convo_info_volatile/convo_info_volatile_set_group
+///
+/// Adds or updates a group from the given convo info
+///
+/// Declaration:
+/// ```cpp
+/// VOID convo_info_volatile_set_group(
+///     [in]    config_object*                       conf,
+///     [in]    const convo_info_volatile_group*     convo
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `convo` -- [in] Pointer to group info structure
+LIBSESSION_EXPORT void convo_info_volatile_set_group(
+        config_object* conf, const convo_info_volatile_group* convo);
+
 /// API: convo_info_volatile/convo_info_volatile_set_legacy_group
 ///
 /// Adds or updates a legacy group from the given convo info
@@ -323,7 +408,7 @@ LIBSESSION_EXPORT void convo_info_volatile_set_community(
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
-/// - `convo` -- [in] Pointer to community info structure
+/// - `convo` -- [in] Pointer to legacy group info structure
 LIBSESSION_EXPORT void convo_info_volatile_set_legacy_group(
         config_object* conf, const convo_info_volatile_legacy_group* convo);
 
@@ -373,6 +458,29 @@ LIBSESSION_EXPORT bool convo_info_volatile_erase_1to1(config_object* conf, const
 /// - `bool` - Returns true if community was found and removed
 LIBSESSION_EXPORT bool convo_info_volatile_erase_community(
         config_object* conf, const char* base_url, const char* room);
+
+/// API: convo_info_volatile/convo_info_volatile_erase_group
+///
+/// Erases a group.  Returns true if the group was found and removed, false if the group was not
+/// present.  You must not call this during iteration.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL convo_info_volatile_erase_group(
+///     [in]    config_object*  conf,
+///     [in]    const char*     group_id
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `group_id` -- [in] Null terminated hex string
+///
+/// Outputs:
+/// - `bool` - Returns true if group was found and removed
+LIBSESSION_EXPORT bool convo_info_volatile_erase_group(
+        config_object* conf, const char* group_id);
+
 
 /// API: convo_info_volatile/convo_info_volatile_erase_legacy_group
 ///
@@ -451,6 +559,24 @@ LIBSESSION_EXPORT size_t convo_info_volatile_size_1to1(const config_object* conf
 /// - `size_t` -- number of communities
 LIBSESSION_EXPORT size_t convo_info_volatile_size_communities(const config_object* conf);
 
+/// API: convo_info_volatile/convo_info_volatile_size_groups
+///
+/// Returns the number of groups.
+///
+/// Declaration:
+/// ```cpp
+/// SIZE_T convo_info_volatile_size_groups(
+///     [in]    const config_object*    conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `size_t` -- number of groups
+LIBSESSION_EXPORT size_t convo_info_volatile_size_groups(const config_object* conf);
+
 /// API: convo_info_volatile/convo_info_volatile_size_legacy_groups
 ///
 /// Returns the number of legacy groups.
@@ -479,15 +605,18 @@ typedef struct convo_info_volatile_iterator convo_info_volatile_iterator;
 /// ```cpp
 ///     convo_info_volatile_1to1 c1;
 ///     convo_info_volatile_community c2;
-///     convo_info_volatile_legacy_group c3;
+///     convo_info_volatile_group c3;
+///     convo_info_volatile_legacy_group c4;
 ///     convo_info_volatile_iterator *it = convo_info_volatile_iterator_new(my_convos);
 ///     for (; !convo_info_volatile_iterator_done(it); convo_info_volatile_iterator_advance(it)) {
 ///         if (convo_info_volatile_it_is_1to1(it, &c1)) {
 ///             // use c1.whatever
 ///         } else if (convo_info_volatile_it_is_community(it, &c2)) {
 ///             // use c2.whatever
-///         } else if (convo_info_volatile_it_is_legacy_group(it, &c3)) {
+///         } else if (convo_info_volatile_it_is_group(it, &c3)) {
 ///             // use c3.whatever
+///         } else if (convo_info_volatile_it_is_legacy_group(it, &c4)) {
+///             // use c4.whatever
 ///         }
 ///     }
 ///     convo_info_volatile_iterator_free(it);
@@ -555,6 +684,29 @@ LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new
 /// Outputs:
 /// - `convo_info_volatile_iterator*` -- Iterator
 LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new_communities(
+        const config_object* conf);
+
+/// API: convo_info_volatile/convo_info_volatile_iterator_new_groups
+///
+/// The same as `convo_info_volatile_iterator_new` except that this iterates *only* over one type of
+/// conversation. You still need to use `convo_info_volatile_it_is_group` (or the alternatives) to
+/// load the data in each pass of the loop.  (You can, however, safely ignore the bool return value
+/// of the `it_is_whatever` function: it will always be true for the particular type being iterated
+/// over).
+///
+/// Declaration:
+/// ```cpp
+/// CONVO_INFO_VOLATILE_ITERATOR* convo_info_volatile_iterator_new_groups(
+///     [in]    const config_object*    conf
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `convo_info_volatile_iterator*` -- Iterator
+LIBSESSION_EXPORT convo_info_volatile_iterator* convo_info_volatile_iterator_new_groups(
         const config_object* conf);
 
 /// API: convo_info_volatile/convo_info_volatile_iterator_new_legacy_groups
@@ -656,7 +808,7 @@ LIBSESSION_EXPORT bool convo_info_volatile_it_is_1to1(
 /// ```cpp
 /// BOOL convo_info_volatile_it_is_community(
 ///     [in]    convo_info_volatile_iterator*   it,
-///     [out]   convo_info_volatile_1to1*       c
+///     [out]   convo_info_volatile_community*  c
 /// );
 /// ```
 ///
@@ -672,6 +824,28 @@ LIBSESSION_EXPORT bool convo_info_volatile_it_is_1to1(
 LIBSESSION_EXPORT bool convo_info_volatile_it_is_community(
         convo_info_volatile_iterator* it, convo_info_volatile_community* c);
 
+/// API: convo_info_volatile/convo_info_volatile_it_is_group
+///
+/// If the current iterator record is a group conversation this sets the details into `g` and
+/// returns true.  Otherwise it returns false.
+///
+/// Declaration:
+/// ```cpp
+/// BOOL convo_info_volatile_it_is_group(
+///     [in]    convo_info_volatile_iterator*   it,
+///     [out]   convo_info_volatile_group*      g
+/// );
+/// ```
+///
+/// Inputs:
+/// - `it` -- [in] The convo_info_volatile_iterator
+/// - `c` -- [out] Pointer to the convo_info_volatile, will be populated if true
+///
+/// Outputs:
+/// - `bool` -- True if the record is a group conversation
+LIBSESSION_EXPORT bool convo_info_volatile_it_is_group(
+        convo_info_volatile_iterator* it, convo_info_volatile_group* c);
+
 /// API: convo_info_volatile/convo_info_volatile_it_is_legacy_group
 ///
 /// If the current iterator record is a legacy group conversation this sets the details into `c` and
@@ -680,8 +854,8 @@ LIBSESSION_EXPORT bool convo_info_volatile_it_is_community(
 /// Declaration:
 /// ```cpp
 /// BOOL convo_info_volatile_it_is_legacy_group(
-///     [in]    convo_info_volatile_iterator*   it,
-///     [out]   convo_info_volatile_1to1*       c
+///     [in]    convo_info_volatile_iterator*     it,
+///     [out]   convo_info_volatile_legacy_group* c
 /// );
 /// ```
 ///
