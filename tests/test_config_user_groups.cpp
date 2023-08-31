@@ -409,7 +409,7 @@ TEST_CASE("User Groups", "[config][groups]") {
     }
 }
 
-TEST_CASE("User Groups (new)", "[config][groups][new]") {
+TEST_CASE("User Groups -- (non-legacy) groups", "[config][groups][new]") {
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
     std::array<unsigned char, 32> ed_pk, curve_pk;
@@ -442,11 +442,19 @@ TEST_CASE("User Groups (new)", "[config][groups][new]") {
 
     auto c = groups.get_or_construct_group(definitely_real_id);
 
+    CHECK(c.secretkey.empty());
     CHECK(c.id == definitely_real_id);
     CHECK(c.priority == 0);
     CHECK(c.joined_at == 0);
     CHECK(c.notifications == session::config::notify_mode::defaulted);
     CHECK(c.mute_until == 0);
+
+    c.secretkey = to_usv(ed_sk);  // This *isn't* the right secret key for the group, so won't
+                                  // propagate, and so auth data will:
+    c.auth_data =
+            "01020304050000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000"_hexbytes;
 
     groups.set(c);
 
@@ -476,6 +484,14 @@ TEST_CASE("User Groups (new)", "[config][groups][new]") {
 
     g2.set(*c2);
 
+    auto c2b = g2.get_or_construct_group("03" + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
+    c2b.secretkey = to_usv(ed_sk);  // This one does match the group ID, so should propagate
+    c2b.auth_data =                 // should get ignored, since we have a valid secret key set:
+            "01020304050000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000"_hexbytes;
+    g2.set(c2b);
+
     std::tie(seqno, to_push, obs) = g2.push();
     g2.confirm_pushed(seqno, "fakehash2");
 
@@ -485,6 +501,11 @@ TEST_CASE("User Groups (new)", "[config][groups][new]") {
 
     auto c3 = groups.get_group(definitely_real_id);
     REQUIRE(c3.has_value());
+    CHECK(c3->secretkey.empty());
+    CHECK(to_hex(c3->auth_data) ==
+          "01020304050000000000000000000000000000000000000000000000000000000000000000000000000000"
+          "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          "0000000000000000000000000000");
     CHECK(c3->id == definitely_real_id);
     CHECK(c3->priority == 123);
     CHECK(c3->joined_at == 1234567890);
@@ -492,6 +513,11 @@ TEST_CASE("User Groups (new)", "[config][groups][new]") {
     CHECK(c3->mute_until == 456789012);
 
     groups.erase(*c3);
+
+    auto c3b = groups.get_group("03" + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
+    REQUIRE(c3b);
+    CHECK(c3b->auth_data.empty());
+    CHECK(to_hex(c3b->secretkey) == to_hex(seed) + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
 
     auto gg = groups.get_or_construct_group(
             "030303030303030303030303030303030303030303030303030303030303030303");

@@ -217,9 +217,10 @@ void group_info::load(const dict& info_dict) {
     base_group_info::load(info_dict);
 
     if (auto seed = maybe_ustring(info_dict, "K"); seed && seed->size() == 32) {
-        std::array<unsigned char, 32> pk;
+        std::array<unsigned char, 33> pk;
+        pk[0] = 0x03;
         secretkey.resize(64);
-        crypto_sign_seed_keypair(pk.data(), secretkey.data(), seed->data());
+        crypto_sign_seed_keypair(pk.data() + 1, secretkey.data(), seed->data());
         if (id != oxenc::to_hex(pk.begin(), pk.end()))
             secretkey.clear();
     }
@@ -388,10 +389,16 @@ void UserGroups::set(const legacy_group_info& g) {
 }
 
 void UserGroups::set(const group_info& g) {
-    auto info = data["g"][session_id_to_bytes(g.id, "03")];
+    auto pk_bytes = session_id_to_bytes(g.id, "03");
+    auto info = data["g"][pk_bytes];
     set_base(g, info);
 
-    if (g.secretkey.size() == 64)
+    if (g.secretkey.size() == 64 &&
+        // Make sure the secretkey's embedded pubkey matches the group id:
+        ustring_view{g.secretkey.data() + 32, 32} ==
+                ustring_view{
+                        reinterpret_cast<const unsigned char*>(pk_bytes.data() + 1),
+                        pk_bytes.size() - 1})
         info["K"] = ustring_view{g.secretkey.data(), 32};
     else {
         info["K"] = ustring_view{};
