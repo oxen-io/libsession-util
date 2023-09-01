@@ -550,7 +550,8 @@ void UserGroups::iterator::_load_val() {
 }
 
 bool UserGroups::iterator::operator==(const iterator& other) const {
-    return _it_group == other._it_group && _it_comm == other._it_comm && _it_legacy == other._it_legacy;
+    return _it_group == other._it_group && _it_comm == other._it_comm &&
+           _it_legacy == other._it_legacy;
 }
 
 bool UserGroups::iterator::done() const {
