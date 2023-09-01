@@ -16,6 +16,7 @@
 #include "session/config/base.h"
 #include "session/config/encrypt.hpp"
 #include "session/export.h"
+#include "session/protos.hpp"
 #include "session/util.hpp"
 
 using namespace std::literals;
@@ -45,6 +46,13 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
+template <typename... Args>
+std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... args) {
+    if (from_dirty)
+        return std::make_unique<MutableConfigMessage>(std::forward<Args>(args)...);
+    return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
+}
+
 int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& configs) {
     std::vector<std::pair<std::string, ustring_view>> config_views;
     config_views.reserve(configs.size());
@@ -53,14 +61,27 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& config
     return merge(config_views);
 }
 
-template <typename... Args>
-std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... args) {
-    if (from_dirty)
-        return std::make_unique<MutableConfigMessage>(std::forward<Args>(args)...);
-    return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
+int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+    if (accepts_protobuf()) {
+        std::list<ustring> keep_alive;
+        std::vector<std::pair<std::string, ustring_view>> parsed;
+        parsed.reserve(configs.size());
+
+        for (auto& [h, c] : configs) {
+            try {
+                parsed.emplace_back(h, keep_alive.emplace_back(protos::handle_incoming(c)));
+            } catch (...) {
+                parsed.emplace_back(h, c);
+            }
+        }
+
+        return _merge(parsed);
+    }
+
+    return _merge(configs);
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+int ConfigBase::_merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
 
     if (_keys.empty())
         throw std::logic_error{"Cannot merge configs without any decryption keys"};
@@ -245,8 +266,9 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     if (_keys.empty())
         throw std::logic_error{"Cannot push data without an encryption key!"};
 
-    std::tuple<seqno_t, ustring, std::vector<std::string>> ret{
-            _config->seqno(), _config->serialize(), {}};
+    auto s = _config->seqno();
+
+    std::tuple<seqno_t, ustring, std::vector<std::string>> ret{s, _config->serialize(), {}};
 
     auto& [seqno, msg, obs] = ret;
     if (auto lvl = compression_level())
@@ -255,6 +277,13 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     pad_message(msg);  // Prefix pad with nulls
     encrypt_inplace(msg, key(), encryption_domain());
 
+    if (accepts_protobuf()) {
+        try {
+            msg = protos::handle_outgoing(msg, s, storage_namespace());
+        } catch (...) {
+            // do nothing
+        }
+    }
     if (msg.size() > MAX_MESSAGE_SIZE)
         throw std::length_error{"Config data is too large"};
 

@@ -529,6 +529,8 @@ class ConvoInfoVolatile : public ConfigBase {
     /// - `bool` -- Returns true if the convesation list is empty
     bool empty() const { return size() == 0; }
 
+    bool accepts_protobuf() const override { return true; }
+
     struct iterator;
     /// API: convo_info_volatile/ConvoInfoVolatile::begin
     ///

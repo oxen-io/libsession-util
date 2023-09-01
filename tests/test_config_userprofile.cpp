@@ -56,14 +56,21 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // We don't need to push since we haven't changed anything, so this call is mainly just for
     // testing:
     config_push_data* to_push = config_push(conf);
+    constexpr auto PROTOBUF_OVERHEAD = 28;  // To be removed once we no longer protobuf wrap this
+    constexpr auto PROTOBUF_DATA_OFFSET = 26;
     REQUIRE(to_push);
     CHECK(to_push->seqno == 0);
-    CHECK(to_push->config_len == 256);
+    CHECK(to_push->config_len == 256 + PROTOBUF_OVERHEAD);
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
     size_t to_push_decr_size;
+
+    // Get the de-protobufed pointer and length:
+    ustring_view inner{
+            to_push->config + PROTOBUF_DATA_OFFSET, to_push->config_len - PROTOBUF_OVERHEAD};
+
     unsigned char* to_push_decrypted = config_decrypt(
-            to_push->config, to_push->config_len, ed_sk.data(), enc_domain, &to_push_decr_size);
+            inner.data(), inner.size(), ed_sk.data(), enc_domain, &to_push_decr_size);
     REQUIRE(to_push_decrypted);
     CHECK(to_push_decr_size == 216);  // 256 - 40 overhead
     CHECK(printable(to_push_decrypted, to_push_decr_size) ==
@@ -146,12 +153,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
             "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
 
-    CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
-          to_hex(exp_push1_encrypted));
+    inner = {to_push->config + PROTOBUF_DATA_OFFSET, to_push->config_len - PROTOBUF_OVERHEAD};
+    CHECK(oxenc::to_hex(inner) == to_hex(exp_push1_encrypted));
 
     // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
     to_push_decrypted = config_decrypt(
-            to_push->config, to_push->config_len, ed_sk.data(), enc_domain, &to_push_decr_size);
+            inner.data(), inner.size(), ed_sk.data(), enc_domain, &to_push_decr_size);
     CHECK(to_push_decr_size == 256 - 40);
     CHECK(printable(to_push_decrypted, to_push_decr_size) ==
           printable(ustring(256 - 40 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));

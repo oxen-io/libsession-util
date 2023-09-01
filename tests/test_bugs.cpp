@@ -50,8 +50,9 @@ TEST_CASE("Dirty/Mutable test case", "[config][dirty]") {
     REQUIRE(seqno3 == 2);
     CHECK(obs2 == std::vector{"fakehash1"s});
 
-    c1.merge(std::vector<std::pair<std::string, ustring_view>>{
+    auto r = c1.merge(std::vector<std::pair<std::string, ustring_view>>{
             {{"fakehash2", data2}, {"fakehash3", data3}}});
+    CHECK(r == 2);
     CHECK(c1.needs_dump());
     CHECK(c1.needs_push());  // because we have the merge conflict to push
     CHECK(c1.is_dirty());

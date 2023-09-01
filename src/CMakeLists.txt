@@ -17,6 +17,7 @@ if(WARNINGS_AS_ERRORS)
     endif()
 endif()
 
+
 set(export_targets)
 macro(add_libsession_util_library name)
     add_library(${name} ${ARGN})
@@ -74,13 +75,30 @@ add_libsession_util_library(onionreq
     onionreq/parser.cpp
 )
 
+add_libsession_util_library(protos
+    protos.cpp
+    ../proto/SessionProtos.pb.cc
+    ../proto/WebSocketResources.pb.cc
+)
+
+
+
+target_link_libraries(protos
+    PUBLIC
+    common
+    PRIVATE
+    protobuf::libprotobuf-lite
+)
+target_include_directories(protos PUBLIC ../proto)
 
 target_link_libraries(crypto
     PUBLIC
     common
     PRIVATE
+    protos
     libsodium::sodium-internal
 )
+
 target_link_libraries(config
     PUBLIC
     crypto
