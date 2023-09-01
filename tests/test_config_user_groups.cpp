@@ -198,6 +198,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     // The new data doesn't get stored until we call this:
     groups.set(og);
 
+    auto fake_group_id = "030101010101010101010101010101010101010101010101010101010101010101"s;
+    auto ggg = groups.get_or_construct_group(fake_group_id);
+    groups.set(ggg);
+
     auto [seqno, to_push, obs] = groups.push();
     auto to_push1 = to_push;
 
@@ -226,9 +230,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(obs.empty());
     CHECK(g2.current_hashes() == std::vector{{"fakehash1"s}});
 
-    CHECK(g2.size() == 2);
+    CHECK(g2.size() == 3);
     CHECK(g2.size_communities() == 1);
     CHECK(g2.size_legacy_groups() == 1);
+    CHECK(g2.size_groups() == 1);
 
     auto x1 = g2.get_legacy_group(definitely_real_id);
     REQUIRE(x1);
@@ -260,12 +265,15 @@ TEST_CASE("User Groups", "[config][groups]") {
                         std::to_string(members) + " members");
             } else if (auto* og = std::get_if<session::config::community_info>(&group)) {
                 seen.push_back("community: " + og->base_url() + "/r/" + og->room());
+            } else if (auto* g = std::get_if<session::config::group_info>(&group)) {
+                seen.push_back("group: " + g->id);
             } else {
                 seen.push_back("unknown");
             }
         }
 
         CHECK(seen == std::vector<std::string>{
+                              "group: " + fake_group_id,
                               "community: http://example.org:5678/r/SudokuRoom",
                               "legacy: Englishmen, 1 admins, 2 members",
                       });
@@ -311,9 +319,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     REQUIRE(x3.has_value());
     CHECK(x3->room() == "sudokuRoom");  // We picked up the capitalization change
 
-    CHECK(groups.size() == 2);
+    CHECK(groups.size() == 3);
     CHECK(groups.size_communities() == 1);
     CHECK(groups.size_legacy_groups() == 1);
+    CHECK(groups.size_groups() == 1);
 
     CHECK(c1.insert(users[4], false));
     CHECK(c1.insert(users[5], true));
@@ -348,9 +357,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     to_merge.clear();
     to_merge.emplace_back("fakehash3", to_push);
     groups.merge(to_merge);
-    CHECK(groups.size() == 1);
+    CHECK(groups.size() == 2);
     CHECK(groups.size_communities() == 0);
     CHECK(groups.size_legacy_groups() == 1);
+    CHECK(groups.size_groups() == 1);
 
     int prio = 0;
     auto beanstalk_pubkey = "0000111122223333444455556666777788889999aaaabbbbccccddddeeeeffff";
@@ -361,9 +371,10 @@ TEST_CASE("User Groups", "[config][groups]") {
         groups.set(g);
     }
 
-    CHECK(groups.size() == 5);
+    CHECK(groups.size() == 6);
     CHECK(groups.size_communities() == 4);
     CHECK(groups.size_legacy_groups() == 1);
+    CHECK(groups.size_groups() == 1);
 
     std::tie(seqno, to_push, obs) = groups.push();
     groups.confirm_pushed(seqno, "fakehash4");
@@ -394,12 +405,15 @@ TEST_CASE("User Groups", "[config][groups]") {
                         std::to_string(members) + " members");
             } else if (auto* og = std::get_if<session::config::community_info>(&group)) {
                 seen.push_back("community: " + og->base_url() + "/r/" + og->room());
+            } else if (auto* g = std::get_if<session::config::group_info>(&group)) {
+                seen.push_back("group: " + g->id);
             } else {
                 seen.push_back("unknown");
             }
         }
 
         CHECK(seen == std::vector<std::string>{
+                              "group: " + fake_group_id,
                               "community: http://jacksbeanstalk.org/r/fee",
                               "community: http://jacksbeanstalk.org/r/fi",
                               "community: http://jacksbeanstalk.org/r/fo",

@@ -550,15 +550,17 @@ void UserGroups::iterator::_load_val() {
 }
 
 bool UserGroups::iterator::operator==(const iterator& other) const {
-    return _it_comm == other._it_comm && _it_legacy == other._it_legacy;
+    return _it_group == other._it_group && _it_comm == other._it_comm && _it_legacy == other._it_legacy;
 }
 
 bool UserGroups::iterator::done() const {
-    return !_it_comm && !_it_legacy;
+    return !_it_group && !_it_comm && !_it_legacy;
 }
 
 UserGroups::iterator& UserGroups::iterator::operator++() {
-    if (_it_comm)
+    if (_it_group)
+        ++*_it_group;
+    else if (_it_comm)
         _it_comm->advance();
     else {
         assert(_it_legacy);
