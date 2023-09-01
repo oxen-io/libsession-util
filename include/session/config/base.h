@@ -281,6 +281,19 @@ typedef struct config_string_list {
 /// - `config_string_list*` -- point to the list of hashes, pointer belongs to the caller
 LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf);
 
+/// API: base/config_groups_keys
+///
+/// Obtains the current group decryption keys.
+///
+/// The returned pointer belongs to the caller and must be freed via `free()` when done with it.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config_object object
+///
+/// Outputs:
+/// - `config_string_list*` -- pointer to the list of keys, pointer belongs to the caller
+LIBSESSION_EXPORT config_string_list* config_groups_keys(const config_object* conf);
+
 /// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
 /// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).
 

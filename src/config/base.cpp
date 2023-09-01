@@ -661,6 +661,29 @@ LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object*
     return ret;
 }
 
+LIBSESSION_EXPORT config_string_list* config_groups_keys(const config_object* conf) {
+    auto keys = unbox(conf)->get_keys();
+    size_t sz = sizeof(config_string_list) + keys.size() * sizeof(char*);
+    for (auto& k : keys)
+        sz += k.size() + 1;
+    void* buf = std::malloc(sz);
+    auto* ret = static_cast<config_string_list*>(buf);
+    ret->len = keys.size();
+
+    static_assert(alignof(config_string_list) >= alignof(char*));
+    ret->value = reinterpret_cast<char**>(ret + 1);
+    char** next_ptr = ret->value;
+    char* next_str = reinterpret_cast<char*>(next_ptr + ret->len);
+
+    for (size_t i = 0; i < ret->len; i++) {
+        *(next_ptr++) = next_str;
+        std::memcpy(next_str, keys[i].data(), keys[i].size() + 1);
+        next_str += keys[i].size() + 1;
+    }
+
+    return ret;
+}
+
 LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key) {
     unbox(conf)->add_key({key, 32});
 }
