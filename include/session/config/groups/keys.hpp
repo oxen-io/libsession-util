@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <unordered_set>
 
 #include "../../config.hpp"
 #include "../base.hpp"
@@ -47,6 +48,8 @@ using namespace std::literals;
 ///      - g -- the key generation
 ///      - k -- the key itself (32 bytes).
 ///      - t -- the storage timestamp of the key (so that recipients know when keys expire)
+/// G -- the maximum generation of the keys included in this message; this is used to track when
+///      this message can be allowed to expire.
 ///
 /// And finally, for both types:
 ///
@@ -91,6 +94,9 @@ class Keys final : public ConfigSig {
     /// have been superceded by another key for a sufficient amount of time (see KEY_EXPIRY).
     sodium_vector<key_info> keys_;
 
+    /// Hashes of messages we have successfully parsed; used for deciding what needs to be renewed.
+    std::map<int64_t, std::unordered_set<std::string>> active_msgs_;
+
     sodium_cleared<std::array<unsigned char, 32>> pending_key_;
     sodium_vector<unsigned char> pending_key_config_;
     int64_t pending_gen_ = -1;
@@ -109,9 +115,8 @@ class Keys final : public ConfigSig {
     // Loads existing state from a previous dump of keys data
     void load_dump(ustring_view dump);
 
-    // Inserts a key into the correct place in `keys_`.  Returns true if the key was inserted, false
-    // if it already existed.
-    bool insert_key(const key_info& key);
+    // Inserts a key into the correct place in `keys_`.
+    void insert_key(std::string_view message_hash, key_info&& key);
 
     // Returned the blinding factor for a given session X25519 pubkey.  This depends on the group's
     // seed and thus is only obtainable by an admin account.
@@ -283,7 +288,8 @@ class Keys final : public ConfigSig {
     /// Outputs:
     /// - `ustring_view` containing the data that needs to be pushed to the config keys namespace
     ///   for the group.  (This can be re-obtained from `push()` if needed until it has been
-    ///   confirmed or superceded).
+    ///   confirmed or superceded).  This data must be consumed or copied from the returned
+    ///   string_view immediately: it will not be valid past other calls on the Keys config object.
     ustring_view rekey(Info& info, Members& members);
 
     /// API: groups/Keys::key_supplement
@@ -498,6 +504,7 @@ class Keys final : public ConfigSig {
     /// usable).
     ///
     /// Inputs:
+    /// - `hash` - the message hash from the swarm
     /// - `data` - the full stored config message value
     /// - `timestamp_ms` - the timestamp (from the swarm) when this message was stored (used to
     ///   track when other keys expire).
@@ -512,7 +519,24 @@ class Keys final : public ConfigSig {
     ///   is mainly informative and does not signal an error: false could mean, for instance, be a
     ///   supplemental message that wasn't for us.  Note also that true doesn't mean keys changed:
     ///   it could mean we decrypted one for us, but already had it.
-    bool load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members);
+    bool load_key_message(
+            std::string_view hash,
+            ustring_view data,
+            int64_t timestamp_ms,
+            Info& info,
+            Members& members);
+
+    /// API: groups/Keys::current_hashes
+    ///
+    /// Returns a set of message hashes of messages that contain currently active decryption keys.
+    /// These are the messages that should be periodically renewed by clients with write access to
+    /// keep them alive for other accounts (or devices) who might need them in the future.
+    ///
+    /// Inputs: none
+    ///
+    /// Outputs:
+    /// - vector of message hashes
+    std::unordered_set<std::string> current_hashes() const;
 
     /// API: groups/Keys::needs_rekey
     ///

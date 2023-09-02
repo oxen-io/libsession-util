@@ -179,22 +179,38 @@ LIBSESSION_EXPORT bool groups_keys_pending_config(
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
+/// - `msg_hash` -- [in] Null-terminated C string containing the message hash
 /// - `data` -- [in] Pointer to the incoming key config message
 /// - `datalen` -- [in] length of `data`
 /// - `timestamp_ms` -- [in] the timestamp (from the swarm) of the message
-/// - `info` -- [in] the info config object to update with new keys, if needed
-/// - `members` -- [in] the members config object to update with new keys, if needed
+/// - `info` -- [in] the info config object to update with newly discovered keys
+/// - `members` -- [in] the members config object to update with newly discovered keys
 ///
 /// Outputs:
 /// Returns `true` if the message was parsed successfully (whether or not any new keys were
 /// decrypted or loaded).  Returns `false` on failure to parse (and sets `conf->last_error`).
 LIBSESSION_EXPORT bool groups_keys_load_message(
         config_group_keys* conf,
+        const char* msg_hash,
         const unsigned char* data,
         size_t datalen,
         int64_t timestamp_ms,
         config_object* info,
         config_object* members) __attribute__((warn_unused_result));
+
+/// API: groups/groups_keys_current_hashes
+///
+/// Returns the hashes of currently active keys messages, that is, messages that have a decryption
+/// key that new devices or clients might require; these are the messages that should have their
+/// expiries renewed periodically.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the keys config object
+///
+/// Outputs:
+/// - `config_string_list*` -- pointer to an array of message hashes.  The returned pointer belongs
+///   to the caller and must be free()d when done.
+LIBSESSION_EXPORT config_string_list* groups_keys_current_hashes(const config_group_keys* conf);
 
 /// API: groups/groups_keys_needs_rekey
 ///

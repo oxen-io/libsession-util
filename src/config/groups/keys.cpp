@@ -14,6 +14,7 @@
 
 #include <chrono>
 #include <stdexcept>
+#include <unordered_set>
 
 #include "../internal.hpp"
 #include "session/config/groups/info.hpp"
@@ -65,6 +66,16 @@ bool Keys::needs_dump() const {
 ustring Keys::dump() {
     oxenc::bt_dict_producer d;
     {
+        auto active = d.append_list("active");
+        for (const auto& [gen, hashes] : active_msgs_) {
+            auto lst = active.append_list();
+            lst.append(gen);
+            for (const auto& h : hashes)
+                lst.append(h);
+        }
+    }
+
+    {
         auto keys = d.append_list("keys");
         for (auto& k : keys_) {
             auto ki = keys.append_dict();
@@ -93,6 +104,18 @@ ustring Keys::dump() {
 
 void Keys::load_dump(ustring_view dump) {
     oxenc::bt_dict_consumer d{from_unsigned_sv(dump)};
+
+    if (d.skip_until("active")) {
+        auto active = d.consume_list_consumer();
+        while (!active.is_finished()) {
+            auto lst = active.consume_list_consumer();
+            auto& hashes = active_msgs_[lst.consume_integer<int64_t>()];
+            while (!lst.is_finished())
+                hashes.insert(lst.consume_string());
+        }
+    } else {
+        throw config_value_error{"Invalid Keys dump: `active` not found"};
+    }
 
     if (d.skip_until("keys")) {
         auto keys = d.consume_list_consumer();
@@ -488,6 +511,8 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
                     "Unable to construct supplemental messages: invalid session ids given"};
     }
 
+    d.append("G", keys_.back().generation);
+
     // Finally we sign the message at put it as the ~ key (which is 0x7f, and thus comes later than
     // any other ascii key).
     auto to_sign = to_unsigned_sv(d.view());
@@ -807,7 +832,7 @@ std::optional<ustring_view> Keys::pending_config() const {
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
 
-bool Keys::insert_key(const key_info& new_key) {
+void Keys::insert_key(std::string_view msg_hash, key_info&& new_key) {
     // Find all keys with the same generation and see if our key is in there (that is: we are
     // deliberately ignoring timestamp so that we don't add the same key with slight timestamp
     // variations).
@@ -816,8 +841,10 @@ bool Keys::insert_key(const key_info& new_key) {
                 return a.generation < b.generation;
             });
     for (auto it = gen_begin; it != gen_end; ++it)
-        if (it->key == new_key.key)
-            return false;
+        if (it->key == new_key.key) {
+            active_msgs_[new_key.generation].emplace(msg_hash);
+            return;
+        }
 
     auto it = std::lower_bound(keys_.begin(), keys_.end(), new_key);
 
@@ -825,16 +852,20 @@ bool Keys::insert_key(const key_info& new_key) {
         keys_.front().timestamp + KEY_EXPIRY < keys_.back().timestamp)
         // The new one is older than the front one, and the front one is already more than
         // KEY_EXPIRY before the last one, so this new one is stale.
-        return false;
+        return;
 
-    keys_.insert(it, new_key);
+    active_msgs_[new_key.generation].emplace(msg_hash);
+    keys_.insert(it, std::move(new_key));
     remove_expired();
     needs_dump_ = true;
-
-    return true;
 }
 
-bool Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info, Members& members) {
+bool Keys::load_key_message(
+        std::string_view hash,
+        ustring_view data,
+        int64_t timestamp_ms,
+        Info& info,
+        Members& members) {
 
     oxenc::bt_dict_consumer d{from_unsigned_sv(data)};
 
@@ -848,6 +879,8 @@ bool Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
     auto nonce = to_unsigned_sv(d.consume_string_view());
 
     sodium_vector<key_info> new_keys;
+    std::optional<int64_t> max_gen;  // If set then associate the message with this generation
+                                     // value, even if we didn't find a key for us.
 
     sodium_cleared<std::array<unsigned char, 32>> member_dec_key;
     if (!admin()) {
@@ -938,8 +971,13 @@ bool Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
                 }
             }
         }
-    } else {
-        // Full message (i.e. not supplemental)
+
+        if (!d.skip_until("G"))
+            throw config_value_error{
+                    "Supplemental key message missing required max generation field (G)"};
+        max_gen = d.consume_integer<int64_t>();
+
+    } else {  // Full message (i.e. not supplemental)
 
         bool found_key = false;
         auto& new_key = new_keys.emplace_back();
@@ -1013,8 +1051,10 @@ bool Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
         if (member_key_count % MESSAGE_KEY_MULTIPLE != 0)
             throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};
 
-        if (!found_key)
+        if (!found_key) {
+            max_gen = new_key.generation;
             new_keys.pop_back();
+        }
     }
 
     verify_config_sig(d, data, verifier_);
@@ -1029,51 +1069,74 @@ bool Keys::load_key_message(ustring_view data, int64_t timestamp_ms, Info& info,
 
     if (!new_keys.empty()) {
         for (auto& k : new_keys)
-            insert_key(k);
+            insert_key(hash, std::move(k));
 
         auto new_key_list = group_keys();
         members.replace_keys(new_key_list, /*dirty=*/false);
         info.replace_keys(new_key_list, /*dirty=*/false);
         return true;
+    } else if (max_gen) {
+        active_msgs_[*max_gen].emplace(hash);
+        remove_expired();
+        needs_dump_ = true;
     }
+
     return false;
 }
 
+std::unordered_set<std::string> Keys::current_hashes() const {
+    std::unordered_set<std::string> hashes;
+    for (const auto& [g, hash] : active_msgs_)
+        hashes.insert(hash.begin(), hash.end());
+    return hashes;
+}
+
 void Keys::remove_expired() {
-    if (keys_.size() < 2)
-        return;
+    if (keys_.size() >= 2) {
+        // When we're done, this will point at the first element we want to keep (i.e. we want to
+        // remove everything in `[ begin(), lapsed_end )`).
+        auto lapsed_end = keys_.begin();
 
-    auto lapsed_end = keys_.begin();
+        for (auto it = keys_.begin(); it != keys_.end();) {
+            // Advance `it` if the next element is an alternate key (with a later timestamp) from
+            // the same generation.  When we finish this little loop, `it` is the last element of
+            // this generation and `it2` is the first element of the next generation.
+            auto it2 = std::next(it);
+            while (it2 != keys_.end() && it2->generation == it->generation)
+                it = it2++;
+            if (it2 == keys_.end())
+                break;
 
-    for (auto it = keys_.begin(); it != keys_.end();) {
-        // Advance `it` if the next element is an alternate key (with a later timestamp) from the
-        // same generation.  When we finish this loop, `it` is the last element of this generation
-        // and `it2` is the first element of the next generation.
-        auto it2 = std::next(it);
-        while (it2 != keys_.end() && it2->generation == it->generation)
-            it = it2++;
-        if (it2 == keys_.end())
-            break;
+            // it2 points at the lowest-timestamp value of the next-largest generation: if there is
+            // something more than 30 days newer than it2, then that tells us that `it`'s generation
+            // is no longer needed since a newer generation passed it more than 30 days ago.  (We
+            // actually use 60 days for paranoid safety, but the logic is the same).
+            //
+            // NB: We don't trust the local system clock here (and the `timestamp` values are
+            // swarm-provided), because devices are notoriously imprecise, which means that since we
+            // only invalidate keys when new keys come in, we can hold onto one obsolete generation
+            // indefinitely (but this is a tiny overhead and not worth trying to build a
+            // system-clock-is-broken workaround to avoid).
+            if (it2->timestamp + KEY_EXPIRY < keys_.back().timestamp)
+                lapsed_end = it2;
+            else
+                break;
+            it = it2;
+        }
 
-        // it2 points at the lowest-timestamp value of the next-largest generation: if there is
-        // something more than 30 days newer than it2, then that tells us that `it`'s generation is
-        // no longer needed since a newer generation passed it more than 30 days ago.  (We actually
-        // use 60 days for paranoid safety, but the logic is the same).
-        //
-        // NB: We don't trust the local system clock here (and the `timestamp` values are
-        // swarm-provided), because devices are notoriously imprecise, which means that since we
-        // only invalidate keys when new keys come in, we can hold onto one obsolete generation
-        // indefinitely (but this is a tiny overhead and not worth trying to build a
-        // system-clock-is-broken workaround to avoid).
-        if (it2->timestamp + KEY_EXPIRY < keys_.back().timestamp)
-            lapsed_end = it2;
-        else
-            break;
-        it = it2;
+        if (lapsed_end != keys_.begin())
+            keys_.erase(keys_.begin(), lapsed_end);
     }
 
-    if (lapsed_end != keys_.begin())
-        keys_.erase(keys_.begin(), lapsed_end);
+    // Drop any active message hashes for generations we are no longer keeping around
+    if (!keys_.empty())
+        active_msgs_.erase(
+                active_msgs_.begin(), active_msgs_.lower_bound(keys_.front().generation));
+    else
+        // Keys is empty, which means we aren't keep *any* keys around (or they are all invalid or
+        // something) and so it isn't really up to us to keep them alive, since that's a history of
+        // the group we apparently don't have access to.
+        active_msgs_.clear();
 }
 
 bool Keys::needs_rekey() const {
@@ -1299,6 +1362,7 @@ LIBSESSION_C_API bool groups_keys_pending_config(
 
 LIBSESSION_C_API bool groups_keys_load_message(
         config_group_keys* conf,
+        const char* msg_hash,
         const unsigned char* data,
         size_t datalen,
         int64_t timestamp_ms,
@@ -1307,6 +1371,7 @@ LIBSESSION_C_API bool groups_keys_load_message(
     assert(data && info && members);
     try {
         unbox(conf).load_key_message(
+                msg_hash,
                 ustring_view{data, datalen},
                 timestamp_ms,
                 *unbox<groups::Info>(info),
@@ -1316,6 +1381,10 @@ LIBSESSION_C_API bool groups_keys_load_message(
         return false;
     }
     return true;
+}
+
+LIBSESSION_C_API config_string_list* groups_keys_current_hashes(const config_group_keys* conf) {
+    return make_string_list(unbox(conf).current_hashes());
 }
 
 LIBSESSION_C_API bool groups_keys_needs_rekey(const config_group_keys* conf) {

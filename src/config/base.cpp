@@ -1,5 +1,7 @@
 #include "session/config/base.hpp"
 
+#include <oxenc/bt_producer.h>
+#include <oxenc/bt_value_producer.h>
 #include <oxenc/hex.h>
 #include <sodium/core.h>
 #include <sodium/crypto_generichash_blake2b.h>
@@ -281,23 +283,20 @@ ustring ConfigBase::dump() {
     auto data_sv = from_unsigned_sv(data);
     oxenc::bt_list old_hashes;
 
+    oxenc::bt_dict_producer d;
+    d.append("!", static_cast<int>(_state));
+    d.append("$", data_sv);
+    d.append("(", _curr_hash);
+
     if (is_readonly())
         _old_hashes.clear();
+    d.append_list(")").append(_old_hashes.begin(), _old_hashes.end());
 
-    for (auto& old : _old_hashes)
-        old_hashes.emplace_back(old);
-    oxenc::bt_dict d{
-            {"!", static_cast<int>(_state)},
-            {"$", data_sv},
-            {"(", _curr_hash},
-            {")", std::move(old_hashes)},
-    };
     if (auto extra = extra_data(); !extra.empty())
-        d.emplace("+", std::move(extra));
+        d.append_bt("+", std::move(extra));
 
     _needs_dump = false;
-    auto dumped = oxenc::bt_serialize(d);
-    return ustring{to_unsigned_sv(dumped)};
+    return ustring{to_unsigned_sv(d.view())};
 }
 
 ConfigBase::ConfigBase(
@@ -337,6 +336,7 @@ void ConfigBase::init_from_dump(std::string_view dump) {
 
     if (!d.skip_until("$"))
         throw std::runtime_error{"Unable to parse dumped config data: did not find '$' data key"};
+    auto data = to_unsigned_sv(d.consume_string_view());
     if (_state == ConfigState::Dirty)
         // If we dumped dirty data then we need to reload it as a mutable config message so that the
         // seqno gets incremented.  This "wastes" one seqno value (since we didn't send the old
@@ -344,13 +344,17 @@ void ConfigBase::init_from_dump(std::string_view dump) {
         // is a little more robust against failure if we actually sent it but got killed before we
         // could store a dump.
         _config = std::make_unique<MutableConfigMessage>(
-                to_unsigned_sv(d.consume_string_view()),
+                data,
                 nullptr,  // We omit verifier and signer for now because we don't want this dump to
                 nullptr,  // be signed (since it's just a dump).
                 config_lags());
     else
         _config = std::make_unique<ConfigMessage>(
-                to_unsigned_sv(d.consume_string_view()), nullptr, nullptr, config_lags());
+                data,
+                nullptr,
+                nullptr,
+                config_lags(),
+                /*trust_signature=*/true);
 
     if (d.skip_until("(")) {
         _curr_hash = d.consume_string();
@@ -639,49 +643,25 @@ LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {
 }
 
 LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf) {
-    auto hashes = unbox(conf)->current_hashes();
-    size_t sz = sizeof(config_string_list) + hashes.size() * sizeof(char*);
-    for (auto& h : hashes)
-        sz += h.size() + 1;
-    void* buf = std::malloc(sz);
-    auto* ret = static_cast<config_string_list*>(buf);
-    ret->len = hashes.size();
-
-    static_assert(alignof(config_string_list) >= alignof(char*));
-    ret->value = reinterpret_cast<char**>(ret + 1);
-    char** next_ptr = ret->value;
-    char* next_str = reinterpret_cast<char*>(next_ptr + ret->len);
-
-    for (size_t i = 0; i < ret->len; i++) {
-        *(next_ptr++) = next_str;
-        std::memcpy(next_str, hashes[i].c_str(), hashes[i].size() + 1);
-        next_str += hashes[i].size() + 1;
-    }
-
-    return ret;
+    return make_string_list(unbox(conf)->current_hashes());
 }
 
-LIBSESSION_EXPORT config_string_list* config_groups_keys(const config_object* conf) {
-    auto keys = unbox(conf)->get_keys();
-    size_t sz = sizeof(config_string_list) + keys.size() * sizeof(char*);
-    for (auto& k : keys)
-        sz += k.size() + 1;
-    void* buf = std::malloc(sz);
-    auto* ret = static_cast<config_string_list*>(buf);
-    ret->len = keys.size();
-
-    static_assert(alignof(config_string_list) >= alignof(char*));
-    ret->value = reinterpret_cast<char**>(ret + 1);
-    char** next_ptr = ret->value;
-    char* next_str = reinterpret_cast<char*>(next_ptr + ret->len);
-
-    for (size_t i = 0; i < ret->len; i++) {
-        *(next_ptr++) = next_str;
-        std::memcpy(next_str, keys[i].data(), keys[i].size() + 1);
-        next_str += keys[i].size() + 1;
+LIBSESSION_EXPORT unsigned char* config_get_keys(const config_object* conf, size_t* len) {
+    const auto keys = unbox(conf)->get_keys();
+    assert(std::count_if(keys.begin(), keys.end(), [](const auto& k) { return k.size() == 32; }) ==
+           keys.size());
+    assert(len);
+    *len = keys.size();
+    if (keys.empty())
+        return nullptr;
+    auto* buf = static_cast<unsigned char*>(std::malloc(32 * keys.size()));
+    auto* cur = buf;
+    for (const auto& k : keys) {
+        std::memcpy(cur, k.data(), 32);
+        cur += 32;
     }
 
-    return ret;
+    return buf;
 }
 
 LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key) {

@@ -674,9 +674,10 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     CHECK(hashes->value[0] == "fakehash1"sv);
     free(hashes);
 
-    config_string_list* keys = config_groups_keys(conf);
+    size_t key_len;
+    unsigned char* keys = config_get_keys(conf, &key_len);
     REQUIRE(keys);
-    REQUIRE(keys->len == 1);
+    REQUIRE(key_len == 1);
 
     session::config::UserGroups c2{ustring_view{seed}, std::nullopt};
 

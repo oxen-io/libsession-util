@@ -11,7 +11,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
-#include <iostream>
 #include <iterator>
 #include <session/config/groups/info.hpp>
 #include <session/config/groups/keys.hpp>
@@ -68,18 +67,21 @@ struct pseudo_client {
             ustring_view seed,
             bool admin,
             const unsigned char* gpk,
-            std::optional<const unsigned char*> gsk) :
+            std::optional<const unsigned char*> gsk,
+            std::optional<ustring_view> info_dump = std::nullopt,
+            std::optional<ustring_view> members_dump = std::nullopt,
+            std::optional<ustring_view> keys_dump = std::nullopt) :
             secret_key{sk_from_seed(seed)},
             info{ustring_view{gpk, 32},
                  admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
-                 std::nullopt},
+                 info_dump},
             members{ustring_view{gpk, 32},
                     admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
-                    std::nullopt},
+                    members_dump},
             keys{to_usv(secret_key),
                  ustring_view{gpk, 32},
                  admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
-                 std::nullopt,
+                 keys_dump,
                  info,
                  members} {}
 };
@@ -169,20 +171,24 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
         message, which they can decrypt with the group secret key.
     */
     for (auto& a : admins) {
-        a.keys.load_key_message(new_keys_config1, get_timestamp(), a.info, a.members);
+        a.keys.load_key_message(
+                "keyhash1", new_keys_config1, get_timestamp_ms(), a.info, a.members);
         CHECK(a.info.merge(info_configs) == 1);
         CHECK(a.members.merge(mem_configs) == 1);
         CHECK(a.members.size() == 1);
+        CHECK(a.keys.current_hashes() == std::unordered_set{{"keyhash1"s}});
     }
 
     /*  All attempts to merge non-admin members will throw, as none of the non admin members
         will be able to decrypt the new info/member configs using the updated keys
     */
     for (auto& m : members) {
-        m.keys.load_key_message(new_keys_config1, get_timestamp(), m.info, m.members);
+        m.keys.load_key_message(
+                "keyhash1", new_keys_config1, get_timestamp_ms(), m.info, m.members);
         CHECK_THROWS(m.info.merge(info_configs));
         CHECK_THROWS(m.members.merge(mem_configs));
         CHECK(m.members.size() == 0);
+        CHECK(m.keys.current_hashes().empty());
     }
 
     info_configs.clear();
@@ -210,17 +216,21 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     mem_configs.emplace_back("fakehash2", new_mem_config2);
 
     for (auto& a : admins) {
-        a.keys.load_key_message(new_keys_config2, get_timestamp(), a.info, a.members);
+        a.keys.load_key_message(
+                "keyhash2", new_keys_config2, get_timestamp_ms(), a.info, a.members);
         CHECK(a.info.merge(info_configs) == 1);
         CHECK(a.members.merge(mem_configs) == 1);
         CHECK(a.members.size() == 5);
+        CHECK(a.keys.current_hashes() == std::unordered_set{{"keyhash1"s, "keyhash2"s}});
     }
 
     for (auto& m : members) {
-        m.keys.load_key_message(new_keys_config2, get_timestamp(), m.info, m.members);
+        m.keys.load_key_message(
+                "keyhash2", new_keys_config2, get_timestamp_ms(), m.info, m.members);
         CHECK(m.info.merge(info_configs) == 1);
         CHECK(m.members.merge(mem_configs) == 1);
         CHECK(m.members.size() == 5);
+        CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash2"s}});
     }
 
     info_configs.clear();
@@ -243,17 +253,22 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     mem_configs.emplace_back("fakehash3", new_mem_config3);
 
     for (auto& a : admins) {
-        a.keys.load_key_message(new_keys_config3, get_timestamp(), a.info, a.members);
+        a.keys.load_key_message(
+                "keyhash3", new_keys_config3, get_timestamp_ms(), a.info, a.members);
         CHECK(a.info.merge(info_configs) == 1);
         CHECK(a.members.merge(mem_configs) == 1);
         CHECK(a.info.get_name() == "tomatosauce"s);
+        CHECK(a.keys.current_hashes() ==
+              std::unordered_set{{"keyhash1"s, "keyhash2"s, "keyhash3"s}});
     }
 
     for (auto& m : members) {
-        m.keys.load_key_message(new_keys_config3, get_timestamp(), m.info, m.members);
+        m.keys.load_key_message(
+                "keyhash3", new_keys_config3, get_timestamp_ms(), m.info, m.members);
         CHECK(m.info.merge(info_configs) == 1);
         CHECK(m.members.merge(mem_configs) == 1);
         CHECK(m.info.get_name() == "tomatosauce"s);
+        CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash2"s, "keyhash3"s}});
     }
 
     info_configs.clear();
@@ -282,17 +297,22 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     mem_configs.emplace_back("fakehash4", new_mem_config4);
 
     for (auto& a : admins) {
-        CHECK(a.keys.load_key_message(new_keys_config4, get_timestamp(), a.info, a.members));
+        CHECK(a.keys.load_key_message(
+                "keyhash4", new_keys_config4, get_timestamp_ms(), a.info, a.members));
         CHECK(a.info.merge(info_configs) == 1);
         CHECK(a.members.merge(mem_configs) == 1);
         CHECK(a.members.size() == 3);
+        CHECK(a.keys.current_hashes() ==
+              std::unordered_set{{"keyhash1"s, "keyhash2"s, "keyhash3"s, "keyhash4"s}});
     }
 
     for (int i = 0; i < members.size(); i++) {
         auto& m = members[i];
-        bool found_key =
-                m.keys.load_key_message(new_keys_config2, get_timestamp(), m.info, m.members);
+        bool found_key = m.keys.load_key_message(
+                "keyhash4", new_keys_config2, get_timestamp_ms(), m.info, m.members);
 
+        CHECK(m.keys.current_hashes() ==
+              std::unordered_set{{"keyhash2"s, "keyhash3"s, "keyhash4"s}});
         if (i < 2) {  // We should still be in the group
             CHECK(found_key);
             CHECK(m.info.merge(info_configs) == 1);
@@ -330,6 +350,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
 
         auto memb = admin1.members.get_or_construct(m.session_id);
         memb.set_invited();
+        memb.name = i == 0 ? "fred" : "JOHN";
         admin1.members.set(memb);
 
         CHECK_FALSE(m.keys.admin());
@@ -355,30 +376,131 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     admin1.members.confirm_pushed(mseq5, "fakehash5");
     info_configs.emplace_back("fakehash4", new_info_config4);
 
+    for (auto& a : admins) {
+        CHECK_FALSE(
+                a.keys.load_key_message("keyhash5", supp, get_timestamp_ms(), a.info, a.members));
+    }
+
     for (size_t i = 0; i < members.size(); i++) {
-        DYNAMIC_SECTION("supp key load " << i) {
-            auto& m = members[i];
-            bool found_key = m.keys.load_key_message(supp, get_timestamp(), m.info, m.members);
+        auto& m = members[i];
+        bool found_key =
+                m.keys.load_key_message("keyhash5", supp, get_timestamp_ms(), m.info, m.members);
 
-            if (i < 1) {
-                // This supp key wasn't for us
-                CHECK_FALSE(found_key);
-                CHECK(m.keys.size() == 3);
-                CHECK(m.keys.group_keys().size() == 3);
-            } else {
-                CHECK(found_key);
-                // new_keys_config1 never went to the initial members, but did go out in the
-                // supplement, which is why we have the extra key here.
-                CHECK(m.keys.size() == 4);
-                CHECK(m.keys.group_keys().size() == 4);
-            }
-
-            CHECK(m.info.merge(info_configs) == 1);
-            CHECK(m.members.merge(mem_configs) == 1);
-            REQUIRE(m.info.get_name());
-            CHECK(*m.info.get_name() == "tomatosauce"sv);
-            CHECK(m.members.size() == 5);
+        if (i < 1) {
+            // This supp key wasn't for us
+            CHECK_FALSE(found_key);
+            CHECK(m.keys.size() == 3);
+            CHECK(m.keys.group_keys().size() == 3);
+        } else {
+            CHECK(found_key);
+            // new_keys_config1 never went to the initial members, but did go out in the
+            // supplement, which is why we have the extra key here.
+            CHECK(m.keys.size() == 4);
+            CHECK(m.keys.group_keys().size() == 4);
         }
+
+        CHECK(m.info.merge(info_configs) == 1);
+        CHECK(m.members.merge(mem_configs) == 1);
+        REQUIRE(m.info.get_name());
+        CHECK(*m.info.get_name() == "tomatosauce"sv);
+        CHECK(m.members.size() == 5);
+
+        if (i < 2)
+            CHECK(m.keys.current_hashes() ==
+                  std::unordered_set{{"keyhash2"s, "keyhash3"s, "keyhash4"s, "keyhash5"s}});
+        else
+            CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash5"s}});
+    }
+
+    // Duplicate members[1] from dumps
+    auto& m1b = members.emplace_back(
+            member_seeds[1],
+            false,
+            group_pk.data(),
+            std::nullopt,
+            members[1].info.dump(),
+            members[1].members.dump(),
+            members[1].keys.dump());
+    CHECK(m1b.keys.size() == 4);
+    CHECK(m1b.keys.group_keys().size() == 4);
+    CHECK(m1b.keys.current_hashes() ==
+          std::unordered_set{{"keyhash2"s, "keyhash3"s, "keyhash4"s, "keyhash5"s}});
+    CHECK(m1b.members.size() == 5);
+    auto m1b_m2 = m1b.members.get(members[2].session_id);
+    REQUIRE(m1b_m2);
+    CHECK(m1b_m2->invite_pending());
+    CHECK(m1b_m2->name == "fred");
+
+    // Rekey after 10d, then again after 71d (10+61) and everything except those two new gens should
+    // get dropped as stale.
+    info_configs.clear();
+    mem_configs.clear();
+    ustring new_keys_config6{admin1.keys.rekey(admin1.info, admin1.members)};
+    auto [iseq6, ipush6, iobs6] = admin1.info.push();
+    info_configs.emplace_back("ifakehash6", ipush6);
+    admin1.info.confirm_pushed(iseq6, "ifakehash6");
+    auto [mseq6, mpush6, mobs6] = admin1.members.push();
+    mem_configs.emplace_back("mfakehash6", mpush6);
+    admin1.members.confirm_pushed(mseq6, "mfakehash6");
+
+    for (auto& a : admins) {
+        CHECK(a.keys.load_key_message(
+                "keyhash6",
+                new_keys_config6,
+                get_timestamp_ms() + 10LL * 86400 * 1000,
+                a.info,
+                a.members));
+        CHECK(a.info.merge(info_configs) == 1);
+        CHECK(a.members.merge(mem_configs) == 1);
+        CHECK(a.members.size() == 5);
+        CHECK(a.keys.current_hashes() == std::unordered_set{
+                                                 {"keyhash1"s,
+                                                  "keyhash2"s,
+                                                  "keyhash3"s,
+                                                  "keyhash4"s,
+                                                  "keyhash5"s,
+                                                  "keyhash6"s}});
+    }
+
+    ustring new_keys_config7{admin1.keys.rekey(admin1.info, admin1.members)};
+    auto [iseq7, ipush7, iobs7] = admin1.info.push();
+    info_configs.emplace_back("ifakehash7", ipush7);
+    admin1.info.confirm_pushed(iseq7, "ifakehash7");
+    auto [mseq7, mpush7, mobs7] = admin1.members.push();
+    mem_configs.emplace_back("mfakehash7", mpush7);
+    admin1.members.confirm_pushed(mseq7, "mfakehash7");
+
+    for (auto& a : admins) {
+        CHECK(a.keys.load_key_message(
+                "keyhash7",
+                new_keys_config7,
+                get_timestamp_ms() + 71LL * 86400 * 1000,
+                a.info,
+                a.members));
+        CHECK(a.info.merge(info_configs) == 2);
+        CHECK(a.members.merge(mem_configs) == 2);
+        CHECK(a.members.size() == 5);
+        CHECK(a.keys.current_hashes() == std::unordered_set{{"keyhash6"s, "keyhash7"s}});
+    }
+
+    for (int i = 0; i < members.size(); i++) {
+        auto& m = members[i];
+        CHECK(m.keys.load_key_message(
+                "keyhash6",
+                new_keys_config6,
+                get_timestamp_ms() + 10LL * 86400 * 1000,
+                m.info,
+                m.members));
+        CHECK(m.keys.load_key_message(
+                "keyhash7",
+                new_keys_config7,
+                get_timestamp_ms() + 71LL * 86400 * 1000,
+                m.info,
+                m.members));
+        CHECK(m.info.merge(info_configs) == 2);
+        CHECK(m.members.merge(mem_configs) == 2);
+        CHECK(m.members.size() == 5);
+        CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash6"s, "keyhash7"s}});
     }
 }
 
@@ -514,7 +636,13 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     */
     for (auto& a : admins) {
         REQUIRE(groups_keys_load_message(
-                a.keys, new_keys_config_1, key_len1, get_timestamp(), a.info, a.members));
+                a.keys,
+                "fakekeyshash1",
+                new_keys_config_1,
+                key_len1,
+                get_timestamp_ms(),
+                a.info,
+                a.members));
         REQUIRE(config_merge(a.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
         config_confirm_pushed(a.info, new_info_config1->seqno, "fakehash1");
 
@@ -531,7 +659,13 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
         // this will return true if the message was parsed successfully, NOT if the keys were
         // decrypted
         REQUIRE(groups_keys_load_message(
-                m.keys, new_keys_config_1, key_len1, get_timestamp(), m.info, m.members));
+                m.keys,
+                "fakekeyshash1",
+                new_keys_config_1,
+                key_len1,
+                get_timestamp_ms(),
+                m.info,
+                m.members));
         REQUIRE_THROWS(config_merge(m.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
         REQUIRE_THROWS(config_merge(m.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
 
@@ -577,7 +711,13 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
 
     for (auto& a : admins) {
         REQUIRE(groups_keys_load_message(
-                a.keys, new_keys_config_2, key_len2, get_timestamp(), a.info, a.members));
+                a.keys,
+                "fakekeyshash2",
+                new_keys_config_2,
+                key_len2,
+                get_timestamp_ms(),
+                a.info,
+                a.members));
         REQUIRE(config_merge(a.info, merge_hash2, &merge_data2[0], &merge_size2[0], 1));
         config_confirm_pushed(a.info, new_info_config2->seqno, "fakehash2");
 

@@ -433,7 +433,8 @@ void verify_config_sig(
         oxenc::bt_dict_consumer dict,
         ustring_view config_msg,
         const ConfigMessage::verify_callable& verifier,
-        std::optional<std::array<unsigned char, 64>>* verified_signature) {
+        std::optional<std::array<unsigned char, 64>>* verified_signature,
+        bool trust_signature) {
     ustring_view to_verify, sig;
     dict.skip_until("~");
     if (!dict.is_finished() && dict.key() == "~") {
@@ -456,12 +457,13 @@ void verify_config_sig(
     if (!dict.is_finished())
         throw config_parse_error{"Invalid config: dict has invalid key(s) after \"~\""};
 
-    if (verifier) {
-        if (sig.empty())
-            throw missing_signature{"Config signature is missing"};
-        else if (sig.size() != 64)
+    if (verifier || trust_signature) {
+        if (sig.empty()) {
+            if (!trust_signature)
+                throw missing_signature{"Config signature is missing"};
+        } else if (sig.size() != 64)
             throw signature_error{"Config signature is invalid (not 64B)"};
-        else if (!verifier(to_verify, sig))
+        else if (verifier && !verifier(to_verify, sig))
             throw signature_error{"Config signature failed verification"};
         else if (verified_signature) {
             if (!*verified_signature)
@@ -542,7 +544,11 @@ ConfigMessage::ConfigMessage() {
 }
 
 ConfigMessage::ConfigMessage(
-        ustring_view serialized, verify_callable verifier_, sign_callable signer_, int lag) :
+        ustring_view serialized,
+        verify_callable verifier_,
+        sign_callable signer_,
+        int lag,
+        bool trust_signature) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     oxenc::bt_dict_consumer dict{from_unsigned_sv(serialized)};
@@ -569,7 +575,7 @@ ConfigMessage::ConfigMessage(
 
         load_unknowns(unknown_, dict, "=", "~");
 
-        verify_config_sig(dict, serialized, verifier, &verified_signature_);
+        verify_config_sig(dict, serialized, verifier, &verified_signature_, trust_signature);
     } catch (const oxenc::bt_deserialize_invalid& err) {
         throw config_parse_error{"Failed to parse config file: "s + err.what()};
     }

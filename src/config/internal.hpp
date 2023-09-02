@@ -5,7 +5,9 @@
 #include <cassert>
 #include <memory>
 #include <string_view>
+#include <type_traits>
 
+#include "session/config/base.h"
 #include "session/config/base.hpp"
 #include "session/config/error.h"
 #include "session/types.hpp"
@@ -78,6 +80,50 @@ void copy_c_str(char (&dest)[N], std::string_view src) {
         src.remove_suffix(src.size() - N - 1);
     std::memcpy(dest, src.data(), src.size());
     dest[src.size()] = 0;
+}
+
+// Copies a container of std::strings into a self-contained malloc'ed config_string_list for
+// returning to C code with the strings and pointers of the string list in the same malloced space,
+// hanging off the end (so that everything, including string values, is freed by a single `free()`).
+template <
+        typename Container,
+        typename = std::enable_if_t<std::is_same_v<typename Container::value_type, std::string>>>
+config_string_list* make_string_list(Container vals) {
+    // We malloc space for the config_string_list struct itself, plus the required number of string
+    // pointers to store its strings, and the space to actually contain a copy of the string data.
+    // When we're done, the malloced memory we grab is going to look like this:
+    //
+    // {config_string_list}
+    // {pointer1}{pointer2}...
+    // {string data 1\0}{string data 2\0}...
+    //
+    // where config_string_list.value points at the beginning of {pointer1}, and each pointerN
+    // points at the beginning of the {string data N\0} c string.
+    //
+    // Since we malloc it all at once, when the user frees it, they also free the entire thing.
+    size_t sz = sizeof(config_string_list) + vals.size() * sizeof(char*);
+    // plus, for each string, the space to store it (including the null)
+    for (auto& v : vals)
+        sz += v.size() + 1;
+
+    auto* ret = static_cast<config_string_list*>(std::malloc(sz));
+    ret->len = vals.size();
+
+    static_assert(alignof(config_string_list) >= alignof(char*));
+
+    // value points at the space immediately after the struct itself, which is the first element in
+    // the array of c string pointers.
+    ret->value = reinterpret_cast<char**>(ret + 1);
+    char** next_ptr = ret->value;
+    char* next_str = reinterpret_cast<char*>(next_ptr + ret->len);
+
+    for (const auto& v : vals) {
+        *(next_ptr++) = next_str;
+        std::memcpy(next_str, v.c_str(), v.size() + 1);
+        next_str += v.size() + 1;
+    }
+
+    return ret;
 }
 
 // Throws std::invalid_argument if session_id doesn't look valid.  Can optionally be passed a prefix

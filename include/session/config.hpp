@@ -127,7 +127,8 @@ class ConfigMessage {
             ustring_view serialized,
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
-            int lag = DEFAULT_DIFF_LAGS);
+            int lag = DEFAULT_DIFF_LAGS,
+            bool trust_signature = false);
 
     /// Constructs a new ConfigMessage by loading and potentially merging multiple serialized
     /// ConfigMessages together, according to the config conflict resolution rules.  The result
@@ -210,10 +211,13 @@ class ConfigMessage {
     /// data), this will return -1.
     int unmerged_index() const { return unmerged_; }
 
-    /// Returns true if this message contained a valid, verified signature when it was parsed.
-    /// Returns false otherwise (e.g. not loaded from verification at all; loaded without a
-    /// verification function; or had no signature and a signature wasn't required).
-    bool verified_signature() const { return verified_signature_.has_value(); }
+    /// Read-only access to the optional verified signature if this message contained a valid,
+    /// verified signature when it was parsed.  Returns nullopt otherwise (e.g. not loaded from
+    /// verification at all; loaded without a verification function; or had no signature and a
+    /// signature wasn't required).
+    const std::optional<std::array<unsigned char, 64>>& verified_signature() {
+        return verified_signature_;
+    }
 
     /// Constructs a new MutableConfigMessage from this config message with an incremented seqno.
     /// The new config message's diff will reflect changes made after this construction.
@@ -367,6 +371,9 @@ class MutableConfigMessage : public ConfigMessage {
 /// - `verified_signature` is a pointer to a std::optional array of signature data; if this is
 ///   specified and not nullptr then the optional with be emplaced with the signature bytes if the
 ///   signature successfully validates.
+/// - `trust_signature` bypasses the verification and signature requirements, blinding trusting a
+///   signature if present.  This is intended for use when restoring from a dump (along with a
+///   nullptr verifier).
 ///
 /// Outputs:
 /// - returns with no value on success
@@ -375,7 +382,8 @@ void verify_config_sig(
         oxenc::bt_dict_consumer dict,
         ustring_view config_msg,
         const ConfigMessage::verify_callable& verifier,
-        std::optional<std::array<unsigned char, 64>>* verified_signature = nullptr);
+        std::optional<std::array<unsigned char, 64>>* verified_signature = nullptr,
+        bool trust_signature = false);
 
 }  // namespace session::config
 

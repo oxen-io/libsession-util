@@ -281,18 +281,26 @@ typedef struct config_string_list {
 /// - `config_string_list*` -- point to the list of hashes, pointer belongs to the caller
 LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf);
 
-/// API: base/config_groups_keys
+/// API: base/config_get_keys
 ///
 /// Obtains the current group decryption keys.
 ///
-/// The returned pointer belongs to the caller and must be freed via `free()` when done with it.
+/// Returns a buffer where each consecutive 32 bytes is an encryption key for the object, in
+/// priority order (i.e. the key at 0 is the encryption key, and the first decryption key).
+///
+/// This function is mainly for debugging/diagnostics purposes; most config types have one single
+/// key (based on the secret key), and multi-keyed configs such as groups have their own methods for
+/// encryption/decryption that are already aware of the multiple keys.
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config_object object
+/// - `len` -- [out] Pointer where the number of keys will be written (that is: the returned pointer
+///   will be to a buffer which has a size of of this value times 32).
 ///
 /// Outputs:
-/// - `config_string_list*` -- pointer to the list of keys, pointer belongs to the caller
-LIBSESSION_EXPORT config_string_list* config_groups_keys(const config_object* conf);
+/// - `unsigned char*` -- pointer to newly malloced key data (a multiple of 32 bytes); the pointer
+///   belongs to the caller and must be `free()`d when done with it.
+LIBSESSION_EXPORT unsigned char* config_get_keys(const config_object* conf, size_t* len);
 
 /// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
 /// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).

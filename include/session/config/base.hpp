@@ -1120,6 +1120,10 @@ class ConfigBase : public ConfigSig {
     /// Returns a vector of encryption keys, in priority order (i.e. element 0 is the encryption
     /// key, and the first decryption key).
     ///
+    /// This method is mainly for debugging/diagnostics purposes; most config types have one single
+    /// key (based on the secret key), and multi-keyed configs such as groups have their own methods
+    /// for encryption/decryption that are already aware of the multiple keys.
+    ///
     /// Inputs: None
     ///
     /// Outputs:
