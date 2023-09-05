@@ -287,8 +287,8 @@ class Keys final : public ConfigSig {
     ///
     /// Outputs:
     /// - `ustring_view` containing the data that needs to be pushed to the config keys namespace
-    ///   for the group.  (This can be re-obtained from `push()` if needed until it has been
-    ///   confirmed or superceded).  This data must be consumed or copied from the returned
+    ///   for the group.  (This can be re-obtained from `pending_config()` if needed until it has
+    ///   been confirmed or superceded).  This data must be consumed or copied from the returned
     ///   string_view immediately: it will not be valid past other calls on the Keys config object.
     ustring_view rekey(Info& info, Members& members);
 
