@@ -39,6 +39,7 @@ static void base_into(const base_group_info& self, T& c) {
     c.joined_at = self.joined_at;
     c.notifications = static_cast<CONVO_NOTIFY_MODE>(self.notifications);
     c.mute_until = self.mute_until;
+    c.invited = self.invited;
 }
 
 template <typename T>
@@ -47,6 +48,7 @@ static void base_from(base_group_info& self, const T& c) {
     self.joined_at = c.joined_at;
     self.notifications = static_cast<notify_mode>(c.notifications);
     self.mute_until = c.mute_until;
+    self.invited = c.invited;
 }
 
 group_info::group_info(std::string sid) : id{std::move(sid)} {
@@ -71,10 +73,12 @@ void community_info::into(ugroups_community_info& c) const {
     std::memcpy(c.pubkey, pubkey().data(), 32);
 }
 
-static_assert(sizeof(ugroups_legacy_group_info::name) == legacy_group_info::NAME_MAX_LENGTH + 1);
+static_assert(sizeof(ugroups_legacy_group_info::name) == base_group_info::NAME_MAX_LENGTH + 1);
+static_assert(sizeof(ugroups_group_info::name) == base_group_info::NAME_MAX_LENGTH + 1);
 
 legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c, impl_t) :
-        session_id{c.session_id, 66}, name{c.name}, disappearing_timer{c.disappearing_timer} {
+        session_id{c.session_id, 66}, disappearing_timer{c.disappearing_timer} {
+    name = c.name;
     assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
     base_from(*this, c);
     if (c.have_enc_keys) {
@@ -134,14 +138,17 @@ void base_group_info::load(const dict& info_dict) {
         notifications = notify_mode::defaulted;
 
     mute_until = maybe_int(info_dict, "!").value_or(0);
+
+    invited = maybe_int(info_dict, "i").value_or(0);
 }
 
 void legacy_group_info::load(const dict& info_dict) {
     base_group_info::load(info_dict);
 
     if (auto n = maybe_string(info_dict, "n"))
-        name = *n;
-    // otherwise leave the current `name` alone at whatever the object was constructed with
+        name = std::move(*n);
+    else
+        name.clear();
 
     auto enc_pub = maybe_ustring(info_dict, "k");
     auto enc_sec = maybe_ustring(info_dict, "K");
@@ -197,6 +204,10 @@ bool legacy_group_info::erase(const std::string& session_id) {
 
 group_info::group_info(const ugroups_group_info& c) : id{c.id, 66} {
     base_from(*this, c);
+
+    name = c.name;
+    assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
+
     if (c.have_secretkey)
         secretkey.assign(c.secretkey, 64);
     if (c.have_auth_data)
@@ -207,6 +218,7 @@ void group_info::into(ugroups_group_info& c) const {
     assert(id.size() == 66);
     base_into(*this, c);
     copy_c_str(c.id, id);
+    copy_c_str(c.name, name);
     if ((c.have_secretkey = secretkey.size() == 64))
         std::memcpy(c.secretkey, secretkey.data(), 64);
     if ((c.have_auth_data = auth_data.size() == 100))
@@ -215,6 +227,11 @@ void group_info::into(ugroups_group_info& c) const {
 
 void group_info::load(const dict& info_dict) {
     base_group_info::load(info_dict);
+
+    if (auto n = maybe_string(info_dict, "n"))
+        name = std::move(*n);
+    else
+        name.clear();
 
     if (auto seed = maybe_ustring(info_dict, "K"); seed && seed->size() == 32) {
         std::array<unsigned char, 33> pk;
@@ -228,11 +245,20 @@ void group_info::load(const dict& info_dict) {
         auth_data = std::move(*sig);
 }
 
+void group_info::setKicked() {
+    secretkey.clear();
+    auth_data.clear();
+}
+
+bool group_info::kicked() const {
+    return secretkey.empty() && auth_data.empty();
+}
+
 void community_info::load(const dict& info_dict) {
     base_group_info::load(info_dict);
 
     if (auto n = maybe_string(info_dict, "n"))
-        set_room(*n);
+        set_room(std::move(*n));
 }
 
 UserGroups::UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
@@ -361,15 +387,14 @@ void UserGroups::set_base(const base_group_info& bg, DictFieldProxy& info) const
     set_positive_int(info["j"], bg.joined_at);
     set_positive_int(info["@"], static_cast<int>(bg.notifications));
     set_positive_int(info["!"], bg.mute_until);
+    set_flag(info["i"], bg.invited);
+    // We don't set n here because it's subtly different in the three group types
 }
 
 void UserGroups::set(const legacy_group_info& g) {
     auto info = data["C"][session_id_to_bytes(g.session_id)];
     set_base(g, info);
-    if (g.name.size() > legacy_group_info::NAME_MAX_LENGTH)
-        info["n"] = g.name.substr(0, legacy_group_info::NAME_MAX_LENGTH);
-    else
-        info["n"] = g.name;
+    info["n"] = std::string_view{g.name}.substr(0, legacy_group_info::NAME_MAX_LENGTH);
 
     set_pair_if(
             g.enc_pubkey.size() == 32 && g.enc_seckey.size() == 32,
@@ -392,6 +417,9 @@ void UserGroups::set(const group_info& g) {
     auto pk_bytes = session_id_to_bytes(g.id, "03");
     auto info = data["g"][pk_bytes];
     set_base(g, info);
+
+    set_nonempty_str(
+            info["n"], std::string_view{g.name}.substr(0, legacy_group_info::NAME_MAX_LENGTH));
 
     if (g.secretkey.size() == 64 &&
         // Make sure the secretkey's embedded pubkey matches the group id:
@@ -724,6 +752,15 @@ LIBSESSION_C_API bool user_groups_erase_legacy_group(config_object* conf, const 
     } catch (...) {
         return false;
     }
+}
+
+LIBSESSION_C_API void ugroups_group_set_kicked(ugroups_group_info* group) {
+    assert(group);
+    group->have_auth_data = false;
+    group->have_secretkey = false;
+}
+LIBSESSION_C_API bool ugroups_group_is_kicked(const ugroups_group_info* group) {
+    return !(group->have_auth_data || group->have_secretkey);
 }
 
 struct ugroups_legacy_members_iterator {

@@ -21,15 +21,8 @@ namespace session::config {
 
 /// keys used in this config, either currently or in the past (so that we don't reuse):
 ///
-/// g - dict of groups (AKA closed groups) for new-style closed groups (i.e. not legacy closed
-///     groups; see below for those).  Each key is the group's public key (without 0x03 prefix).
+/// *Within* the group dicts (i.e. not at the top level), we use these common values:
 ///
-///     K - group seed, if known (i.e. an admin).  This is just the seed, which is just the first
-///         half (32 bytes) of the 64-byte libsodium-style Ed25519 secret key value (i.e. it omits
-///         the cached public key in the second half).  This field is always set, but will be empty
-///         if the seed is not known.
-///     s - authentication signature; this is used by non-admins to authenticate.  Omitted when K is
-///         non-empty.
 ///     @ - notification setting (int).  Omitted = use default setting; 1 = all, 2 = disabled, 3 =
 ///         mentions-only.
 ///     ! - mute timestamp: if set then don't show notifications for this contact's messages until
@@ -39,7 +32,25 @@ namespace session::config {
 ///         Integer.  Omitted means not pinned; -1 means hidden, and a positive value is a pinned
 ///         message for which higher priority values means the conversation is meant to appear
 ///         earlier in the pinned conversation list.
+///     i - 1 if this is a pending invite (i.e. we have a request but haven't yet joined it),
+///         deleted once joined.
 ///     j - joined at unix timestamp.  Omitted if 0.
+///     n - the room/group/etc. friendly name.  See details for each group type below.
+///
+/// Top-level keys:
+///
+/// g - dict of groups (AKA closed groups) for new-style closed groups (i.e. not legacy closed
+///     groups; see below for those).  Each key is the group's public key (without 0x03 prefix).
+///
+///     K - group seed, if known (i.e. an admin).  This is just the seed, which is just the first
+///         half (32 bytes) of the 64-byte libsodium-style Ed25519 secret key value (i.e. it omits
+///         the cached public key in the second half).  This field is always set, but will be empty
+///         if the seed is not known.
+///     s - authentication signature; this is used by non-admins to authenticate.  Omitted when K is
+///         non-empty.
+///     n - the room name, from a the group invitation; this is intended to be removed once the
+///         invitation has been accepted, as the name contained in the group info supercedes this).
+///     @, !, +, i, j -- see common values, above.
 ///
 /// o - dict of communities (AKA open groups); within this dict (which deliberately has the same
 ///     layout as convo_info_volatile) each key is the SOGS base URL (in canonical form), and value
@@ -51,33 +62,35 @@ namespace session::config {
 ///             appropriate).  For instance, a room name SudokuSolvers would be "sudokusolvers" in
 ///             the outer key, with the capitalization variation in use ("SudokuSolvers") in this
 ///             key.  This key is *always* present (to keep the room dict non-empty).
-///         @ - notification setting (same values as groups, above).
-///         ! - mute timestamp (see above).
-///         + - the conversation priority, for pinning/hiding this community room.  See above.
-///         j - joined at unix timestamp.  Omitted if 0.
+///         @, !, +, i, j - see common values, above.
 ///
 /// C - dict of legacy groups; within this dict each key is the group pubkey (binary, 33 bytes) and
 /// value is a dict containing keys:
 ///
-///     n - name (string).  Always set, even if empty.
+///     n - name (string).  Always set, even if empty (to make sure there is always something set to
+///         keep the entry alive).
 ///     k - encryption public key (32 bytes).  Optional.
 ///     K - encryption secret key (32 bytes).  Optional.
 ///     m - set of member session ids (each 33 bytes).
 ///     a - set of admin session ids (each 33 bytes).
 ///     E - disappearing messages duration, in seconds, > 0.  Omitted if disappearing messages is
 ///         disabled.  (Note that legacy groups only support expire after-read)
-///     @ - notification setting (int).  Same as above.
-///         ! - mute timestamp (see above).
-///     + - the conversation priority, for pinned/hidden conversations.  See above.
-///     j - joined at unix timestamp.  Omitted if 0.
+///     @, !, +, i, j - see common values, above.
 
 /// Common base type with fields shared by all the groups
 struct base_group_info {
+    static constexpr size_t NAME_MAX_LENGTH = 100;  // in bytes; name will be truncated if exceeded
+
     int priority = 0;       // The priority; 0 means unpinned, -1 means hidden, positive means
                             // pinned higher (i.e.  higher priority conversations come first).
     int64_t joined_at = 0;  // unix timestamp (seconds) when the group was joined (or re-joined)
     notify_mode notifications = notify_mode::defaulted;  // When the user wants notifications
     int64_t mute_until = 0;  // unix timestamp (seconds) until which notifications are disabled
+
+    std::string name;  // human-readable; always set for a legacy closed group, only used before
+                       // joining a new closed group (after joining the group info provide the name)
+
+    bool invited = false;  // True if this is currently in the invite-but-not-accepted state.
 
   protected:
     void load(const dict& info_dict);
@@ -85,11 +98,7 @@ struct base_group_info {
 
 /// Struct containing legacy group info (aka "closed groups").
 struct legacy_group_info : base_group_info {
-    static constexpr size_t NAME_MAX_LENGTH = 100;  // in bytes; name will be truncated if exceeded
-
-    std::string session_id;  // The legacy group "session id" (33 bytes).
-    std::string name;  // human-readable; this should normally always be set, but in theory could be
-                       // set to an empty string.
+    std::string session_id;                      // The legacy group "session id" (33 bytes).
     ustring enc_pubkey;                          // bytes (32 or empty)
     ustring enc_seckey;                          // bytes (32 or empty)
     std::chrono::seconds disappearing_timer{0};  // 0 == disabled.
@@ -195,6 +204,14 @@ struct group_info : base_group_info {
     // Internal ctor/method for C API implementations:
     group_info(const struct ugroups_group_info& c);  // From c struct
     void into(struct ugroups_group_info& c) const;   // Into c struct
+
+    /// Shortcut for clearing both secretkey and auth_data, which indicates that we were kicked from
+    /// the group.
+    void setKicked();
+
+    /// Returns true if we don't have room access, i.e. we were kicked and both secretkey and
+    /// auth_data are empty.
+    bool kicked() const;
 
   private:
     friend class UserGroups;

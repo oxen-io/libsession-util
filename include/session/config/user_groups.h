@@ -35,6 +35,8 @@ typedef struct ugroups_legacy_group_info {
     int64_t mute_until;  // Mute notifications until this timestamp (overrides `notifications`
                          // setting until the timestamp)
 
+    bool invited;  // True if this is in the invite-but-not-accepted state.
+
     // For members use the ugroups_legacy_group_members and associated calls.
 
     void* _internal;  // Internal storage, do not touch.
@@ -44,6 +46,9 @@ typedef struct ugroups_legacy_group_info {
 /// via either `ugroups_group_free()` or `ugroups_set_free_group()` when finished with it.
 typedef struct ugroups_group_info {
     char id[67];  // in hex; 66 hex chars + null terminator
+
+    char name[101];  // Null-terminated C string (human-readable).  Max length is 100 (plus 1 for
+                     // null).  Will always be set (even if an empty string).
 
     bool have_secretkey;          // Will be true if the `secretkey` is populated
     unsigned char secretkey[64];  // If `have_secretkey` is set then this is the libsodium-style
@@ -59,6 +64,9 @@ typedef struct ugroups_group_info {
     CONVO_NOTIFY_MODE notifications;  // When the user wants notifications
     int64_t mute_until;  // Mute notifications until this timestamp (overrides `notifications`
                          // setting until the timestamp)
+
+    bool invited;  // True if this is in the invite-but-not-accepted state.
+
 } ugroups_group_info;
 
 typedef struct ugroups_community_info {
@@ -75,6 +83,9 @@ typedef struct ugroups_community_info {
     CONVO_NOTIFY_MODE notifications;  // When the user wants notifications
     int64_t mute_until;  // Mute notifications until this timestamp (overrides `notifications`
                          // setting until the timestamp)
+
+    bool invited;  // True if this is in the invite-but-not-accepted state.
+
 } ugroups_community_info;
 
 /// API: user_groups/user_groups_init
@@ -425,6 +436,25 @@ LIBSESSION_EXPORT bool user_groups_erase_group(config_object* conf, const char* 
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
 LIBSESSION_EXPORT bool user_groups_erase_legacy_group(config_object* conf, const char* group_id);
+
+/// API: user_groups/ugroups_group_set_kicked
+///
+/// Call when we have been kicked from a group; this clears group's secret key and auth key from the
+/// group config setting.
+///
+/// Inputs:
+/// - `group` -- [in] pointer to the group info which we should set to kicked
+///
+LIBSESSION_EXPORT void ugroups_group_set_kicked(ugroups_group_info* group);
+
+/// API: user_groups/ugroups_group_is_kicked
+///
+/// Returns true if we have been kicked (i.e. our secret key and auth data are empty).
+///
+/// Inputs:
+/// - `group` -- [in] pointer to the group info to query
+///
+LIBSESSION_EXPORT bool ugroups_group_is_kicked(const ugroups_group_info* group);
 
 typedef struct ugroups_legacy_members_iterator ugroups_legacy_members_iterator;
 

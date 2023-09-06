@@ -490,11 +490,15 @@ TEST_CASE("User Groups -- (non-legacy) groups", "[config][groups][new]") {
     CHECK(c2->joined_at == 0);
     CHECK(c2->notifications == session::config::notify_mode::defaulted);
     CHECK(c2->mute_until == 0);
+    CHECK_FALSE(c2->invited);
+    CHECK(c2->name == "");
 
     c2->priority = 123;
     c2->joined_at = 1234567890;
     c2->notifications = session::config::notify_mode::mentions_only;
     c2->mute_until = 456789012;
+    c2->invited = true;
+    c2->name = "Magic Special Room";
 
     g2.set(*c2);
 
@@ -525,6 +529,8 @@ TEST_CASE("User Groups -- (non-legacy) groups", "[config][groups][new]") {
     CHECK(c3->joined_at == 1234567890);
     CHECK(c3->notifications == session::config::notify_mode::mentions_only);
     CHECK(c3->mute_until == 456789012);
+    CHECK(c3->invited);
+    CHECK(c3->name == "Magic Special Room");
 
     groups.erase(*c3);
 
@@ -532,6 +538,16 @@ TEST_CASE("User Groups -- (non-legacy) groups", "[config][groups][new]") {
     REQUIRE(c3b);
     CHECK(c3b->auth_data.empty());
     CHECK(to_hex(c3b->secretkey) == to_hex(seed) + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
+    CHECK_FALSE(c3b->kicked());
+    c3b->auth_data.resize(100);
+    CHECK_FALSE(c3b->kicked());
+    c3b->setKicked();
+    CHECK(c3b->kicked());
+    CHECK(c3b->secretkey.empty());
+    CHECK(c3b->auth_data.empty());
+    c3b->auth_data.resize(100);
+    CHECK_FALSE(c3b->kicked());
+    c3b->auth_data.clear();
 
     auto gg = groups.get_or_construct_group(
             "030303030303030303030303030303030303030303030303030303030303030303");
