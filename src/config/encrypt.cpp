@@ -40,7 +40,8 @@ static std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> ma
     // We hash the key because we're using a deterministic nonce: the `key_base` value is expected
     // to be a long-term value for which nonce reuse (via hash collision) would be bad: by
     // incorporating the domain and message size we at least vary the key to further restrict the
-    // nonce reuse concern to messages of identical sizes and identical domain.
+    // nonce reuse concern so that you would not only have to hash collide but also have it happen
+    // on messages of identical sizes and identical domain.
     std::array<unsigned char, crypto_aead_xchacha20poly1305_ietf_KEYBYTES> key{0};
     crypto_generichash_blake2b_state state;
     crypto_generichash_blake2b_init(&state, nullptr, 0, key.size());

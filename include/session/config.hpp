@@ -60,6 +60,11 @@ struct missing_signature : signature_error {
 struct config_parse_error : config_error {
     using config_error::config_error;
 };
+/// Type thrown for some bad value in a config (e.g. missing required key, or key with an
+/// unexpected/unhandled value).
+struct config_value_error : config_parse_error {
+    using config_parse_error::config_parse_error;
+};
 
 /// Class for a parsed, read-only config message; also serves as the base class of a
 /// MutableConfigMessage which allows setting values.
@@ -87,7 +92,7 @@ class ConfigMessage {
     /// (so that they can return a reference to it).
     seqno_hash_t seqno_hash_{0, {0}};
 
-    bool verified_signature_ = false;
+    std::optional<std::array<unsigned char, 64>> verified_signature_;
 
     // This will be set during construction from configs based on the merge result:
     // -1 means we had to merge one or more configs together into a new merged config
@@ -123,7 +128,7 @@ class ConfigMessage {
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
             int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false);
+            bool trust_signature = false);
 
     /// Constructs a new ConfigMessage by loading and potentially merging multiple serialized
     /// ConfigMessages together, according to the config conflict resolution rules.  The result
@@ -147,10 +152,6 @@ class ConfigMessage {
     /// diffs that exceeding this lag value will have those early lagged diffs dropping during
     /// loading.
     ///
-    /// signature_optional - if true then accept a message with no signature even when a verifier is
-    /// set, thus allowing unsigned messages (though messages with an invalid signature are still
-    /// not allowed).  This option is ignored when verifier is not set.
-    ///
     /// error_handler - if set then any config message parsing error will be passed to this function
     /// for handling with the index of `configs` that failed and the error exception: the callback
     /// typically warns and, if the overall construction should abort, rethrows the error.  If this
@@ -163,7 +164,6 @@ class ConfigMessage {
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
             int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false,
             std::function<void(size_t, const config_error&)> error_handler = nullptr);
 
     /// Returns a read-only reference to the contained data.  (To get a mutable config object use
@@ -211,10 +211,13 @@ class ConfigMessage {
     /// data), this will return -1.
     int unmerged_index() const { return unmerged_; }
 
-    /// Returns true if this message contained a valid, verified signature when it was parsed.
-    /// Returns false otherwise (e.g. not loaded from verification at all; loaded without a
-    /// verification function; or had no signature and a signature wasn't required).
-    bool verified_signature() const { return verified_signature_; }
+    /// Read-only access to the optional verified signature if this message contained a valid,
+    /// verified signature when it was parsed.  Returns nullopt otherwise (e.g. not loaded from
+    /// verification at all; loaded without a verification function; or had no signature and a
+    /// signature wasn't required).
+    const std::optional<std::array<unsigned char, 64>>& verified_signature() {
+        return verified_signature_;
+    }
 
     /// Constructs a new MutableConfigMessage from this config message with an incremented seqno.
     /// The new config message's diff will reflect changes made after this construction.
@@ -283,7 +286,6 @@ class MutableConfigMessage : public ConfigMessage {
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
             int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false,
             std::function<void(size_t, const config_error&)> error_handler = nullptr);
 
     /// Wrapper around the above that takes a single string view to load a single message, doesn't
@@ -293,8 +295,7 @@ class MutableConfigMessage : public ConfigMessage {
             ustring_view config,
             verify_callable verifier = nullptr,
             sign_callable signer = nullptr,
-            int lag = DEFAULT_DIFF_LAGS,
-            bool signature_optional = false);
+            int lag = DEFAULT_DIFF_LAGS);
 
     /// Does the same as the base incrementing, but also records any diff info from the current
     /// MutableConfigMessage.  *this* object gets pruned and signed as part of this call.  If the
@@ -341,6 +342,48 @@ class MutableConfigMessage : public ConfigMessage {
     const hash_t& hash(ustring_view serialized);
     void increment_impl();
 };
+
+/// API: base/verify_config_sig
+///
+/// Verifies a config message signature, throwing a missing_signature or signature_error exception
+/// if the signature is missing or invalid.
+///
+/// A config message signature is always in the "~" key of a config message, which must be the
+/// very last key of the message, and signs the config value up to (but not including) the ~
+/// key-value pair in the serialized config message.
+///
+/// For instance, for a config message of:
+///
+///     d[...configdata...]1:~64:[sigdata]e
+///
+/// the signature signs the value `d[...configdata...]` (i.e. the `1:~64:[sigdata]` signature
+/// pair, and the final closing `e` of the config message, are not included).  No keys may
+/// follow the signature key/value.
+///
+/// Inputs:
+/// - `dict` -- a `bt_dict_consumer` positioned at or before the "~" key where the signature is
+///   expected.  (If the bt_dict_consumer has already consumed the "~" key then this call will fail
+///   as if the signature was missing).
+/// - `config_msg` -- the full config message; this must be a view of the same data in memory that
+///   `dict` is parsing (i.e. it cannot be a copy).
+/// - `verifier` -- a callback to invoke to verify the signature of the message.  If the callback is
+///   empty then the signature will be ignored (it is neither required nor verified).
+/// - `verified_signature` is a pointer to a std::optional array of signature data; if this is
+///   specified and not nullptr then the optional with be emplaced with the signature bytes if the
+///   signature successfully validates.
+/// - `trust_signature` bypasses the verification and signature requirements, blinding trusting a
+///   signature if present.  This is intended for use when restoring from a dump (along with a
+///   nullptr verifier).
+///
+/// Outputs:
+/// - returns with no value on success
+/// - throws on failure
+void verify_config_sig(
+        oxenc::bt_dict_consumer dict,
+        ustring_view config_msg,
+        const ConfigMessage::verify_callable& verifier,
+        std::optional<std::array<unsigned char, 64>>* verified_signature = nullptr,
+        bool trust_signature = false);
 
 }  // namespace session::config
 

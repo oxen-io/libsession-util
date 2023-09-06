@@ -35,6 +35,9 @@ TEST_CASE("Conversations", "[config][conversations]") {
     constexpr auto definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000"sv;
 
+    constexpr auto benders_nightmare_group =
+            "030111101001001000101010011011010010101010111010000110100001210000"sv;
+
     CHECK_FALSE(convos.get_1to1(definitely_real_id));
 
     CHECK(convos.empty());
@@ -79,6 +82,17 @@ TEST_CASE("Conversations", "[config][conversations]") {
     // The new data doesn't get stored until we call this:
     convos.set(og);
 
+    CHECK_FALSE(convos.get_group(benders_nightmare_group));
+
+    auto g = convos.get_or_construct_group(benders_nightmare_group);
+    CHECK(g.id == benders_nightmare_group);
+    CHECK(g.last_read == 0);
+    CHECK_FALSE(g.unread);
+
+    g.last_read = now_ms;
+    g.unread = true;
+    convos.set(g);
+
     auto [seqno, to_push, obs] = convos.push();
 
     CHECK(seqno == 1);
@@ -110,6 +124,11 @@ TEST_CASE("Conversations", "[config][conversations]") {
     CHECK(x2->room() == "sudokuroom");
     CHECK(x2->pubkey_hex() == to_hex(open_group_pubkey));
     CHECK(x2->unread);
+
+    auto x3 = convos2.get_group(benders_nightmare_group);
+    REQUIRE(x3);
+    CHECK(x3->last_read == now_ms);
+    CHECK(x3->unread);
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111"sv;
     auto c2 = convos.get_or_construct_1to1(another_id);
@@ -143,7 +162,7 @@ TEST_CASE("Conversations", "[config][conversations]") {
     for (auto* conv : {&convos, &convos2}) {
         // Iterate through and make sure we got everything we expected
         seen.clear();
-        CHECK(conv->size() == 4);
+        CHECK(conv->size() == 5);
         CHECK(conv->size_1to1() == 2);
         CHECK(conv->size_communities() == 1);
         CHECK(conv->size_legacy_groups() == 1);
@@ -174,8 +193,9 @@ TEST_CASE("Conversations", "[config][conversations]") {
     CHECK_FALSE(convos.needs_push());
     convos.erase_1to1("055000000000000000000000000000000000000000000000000000000000000000");
     CHECK(convos.needs_push());
-    CHECK(convos.size() == 3);
+    CHECK(convos.size() == 4);
     CHECK(convos.size_1to1() == 1);
+    CHECK(convos.size_groups() == 1);
 
     // Check the single-type iterators:
     seen.clear();

@@ -30,22 +30,6 @@ static_assert(CONVO_NOTIFY_ALL == static_cast<int>(notify_mode::all));
 static_assert(CONVO_NOTIFY_DISABLED == static_cast<int>(notify_mode::disabled));
 static_assert(CONVO_NOTIFY_MENTIONS_ONLY == static_cast<int>(notify_mode::mentions_only));
 
-namespace {
-
-void check_session_id(std::string_view session_id) {
-    if (session_id.size() != 66 || !oxenc::is_hex(session_id))
-        throw std::invalid_argument{
-                "Invalid pubkey: expected 66 hex digits, got " + std::to_string(session_id.size()) +
-                " and/or not hex"};
-}
-
-std::string session_id_to_bytes(std::string_view session_id) {
-    check_session_id(session_id);
-    return oxenc::from_hex(session_id);
-}
-
-}  // namespace
-
 LIBSESSION_C_API bool session_id_is_valid(const char* session_id) {
     return std::strlen(session_id) == 66 && oxenc::is_hex(session_id, session_id + 66);
 }
@@ -354,7 +338,6 @@ void Contacts::iterator::_load_info() {
         if (_it->first.size() == 33) {
             if (auto* info_dict = std::get_if<dict>(&_it->second)) {
                 _val = std::make_shared<contact_info>(oxenc::to_hex(_it->first));
-                auto hex = oxenc::to_hex(_it->first);
                 _val->load(*info_dict);
                 return;
             }
@@ -372,6 +355,9 @@ bool Contacts::iterator::operator==(const iterator& other) const {
     if (!other._contacts)
         // other is an "end" tombstone: return whether we are at the end
         return _it == _contacts->end();
+    if (!_contacts)
+        // we are an "end" tombstone: return whether the other one is at the end
+        return other._it == other._contacts->end();
     return _it == other._it;
 }
 

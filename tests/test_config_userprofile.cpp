@@ -12,6 +12,14 @@
 using namespace std::literals;
 using namespace oxenc::literals;
 
+void log_msg(config_log_level lvl, const char* msg, void*) {
+    INFO((lvl == LOG_LEVEL_ERROR     ? "ERROR"
+          : lvl == LOG_LEVEL_WARNING ? "Warning"
+          : lvl == LOG_LEVEL_INFO    ? "Info"
+                                     : "debug")
+         << ": " << msg);
+}
+
 TEST_CASE("user profile C API", "[config][user_profile][c]") {
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hex;

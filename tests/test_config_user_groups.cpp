@@ -8,6 +8,7 @@
 #include <string_view>
 #include <variant>
 
+#include "session/config/notify.hpp"
 #include "utils.hpp"
 
 using namespace std::literals;
@@ -197,6 +198,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     // The new data doesn't get stored until we call this:
     groups.set(og);
 
+    auto fake_group_id = "030101010101010101010101010101010101010101010101010101010101010101"s;
+    auto ggg = groups.get_or_construct_group(fake_group_id);
+    groups.set(ggg);
+
     auto [seqno, to_push, obs] = groups.push();
     auto to_push1 = to_push;
 
@@ -225,9 +230,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     CHECK(obs.empty());
     CHECK(g2.current_hashes() == std::vector{{"fakehash1"s}});
 
-    CHECK(g2.size() == 2);
+    CHECK(g2.size() == 3);
     CHECK(g2.size_communities() == 1);
     CHECK(g2.size_legacy_groups() == 1);
+    CHECK(g2.size_groups() == 1);
 
     auto x1 = g2.get_legacy_group(definitely_real_id);
     REQUIRE(x1);
@@ -259,12 +265,15 @@ TEST_CASE("User Groups", "[config][groups]") {
                         std::to_string(members) + " members");
             } else if (auto* og = std::get_if<session::config::community_info>(&group)) {
                 seen.push_back("community: " + og->base_url() + "/r/" + og->room());
+            } else if (auto* g = std::get_if<session::config::group_info>(&group)) {
+                seen.push_back("group: " + g->id);
             } else {
                 seen.push_back("unknown");
             }
         }
 
         CHECK(seen == std::vector<std::string>{
+                              "group: " + fake_group_id,
                               "community: http://example.org:5678/r/SudokuRoom",
                               "legacy: Englishmen, 1 admins, 2 members",
                       });
@@ -310,9 +319,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     REQUIRE(x3.has_value());
     CHECK(x3->room() == "sudokuRoom");  // We picked up the capitalization change
 
-    CHECK(groups.size() == 2);
+    CHECK(groups.size() == 3);
     CHECK(groups.size_communities() == 1);
     CHECK(groups.size_legacy_groups() == 1);
+    CHECK(groups.size_groups() == 1);
 
     CHECK(c1.insert(users[4], false));
     CHECK(c1.insert(users[5], true));
@@ -347,9 +357,10 @@ TEST_CASE("User Groups", "[config][groups]") {
     to_merge.clear();
     to_merge.emplace_back("fakehash3", to_push);
     groups.merge(to_merge);
-    CHECK(groups.size() == 1);
+    CHECK(groups.size() == 2);
     CHECK(groups.size_communities() == 0);
     CHECK(groups.size_legacy_groups() == 1);
+    CHECK(groups.size_groups() == 1);
 
     int prio = 0;
     auto beanstalk_pubkey = "0000111122223333444455556666777788889999aaaabbbbccccddddeeeeffff";
@@ -360,9 +371,10 @@ TEST_CASE("User Groups", "[config][groups]") {
         groups.set(g);
     }
 
-    CHECK(groups.size() == 5);
+    CHECK(groups.size() == 6);
     CHECK(groups.size_communities() == 4);
     CHECK(groups.size_legacy_groups() == 1);
+    CHECK(groups.size_groups() == 1);
 
     std::tie(seqno, to_push, obs) = groups.push();
     groups.confirm_pushed(seqno, "fakehash4");
@@ -393,12 +405,15 @@ TEST_CASE("User Groups", "[config][groups]") {
                         std::to_string(members) + " members");
             } else if (auto* og = std::get_if<session::config::community_info>(&group)) {
                 seen.push_back("community: " + og->base_url() + "/r/" + og->room());
+            } else if (auto* g = std::get_if<session::config::group_info>(&group)) {
+                seen.push_back("group: " + g->id);
             } else {
                 seen.push_back("unknown");
             }
         }
 
         CHECK(seen == std::vector<std::string>{
+                              "group: " + fake_group_id,
                               "community: http://jacksbeanstalk.org/r/fee",
                               "community: http://jacksbeanstalk.org/r/fi",
                               "community: http://jacksbeanstalk.org/r/fo",
@@ -406,6 +421,141 @@ TEST_CASE("User Groups", "[config][groups]") {
                               "legacy: Englishmen, 3 admins, 2 members",
                       });
     }
+}
+
+TEST_CASE("User Groups -- (non-legacy) groups", "[config][groups][new]") {
+
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
+    std::array<unsigned char, 32> ed_pk, curve_pk;
+    std::array<unsigned char, 64> ed_sk;
+    crypto_sign_ed25519_seed_keypair(
+            ed_pk.data(), ed_sk.data(), reinterpret_cast<const unsigned char*>(seed.data()));
+    int rc = crypto_sign_ed25519_pk_to_curve25519(curve_pk.data(), ed_pk.data());
+    REQUIRE(rc == 0);
+
+    REQUIRE(oxenc::to_hex(ed_pk.begin(), ed_pk.end()) ==
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
+    REQUIRE(oxenc::to_hex(curve_pk.begin(), curve_pk.end()) ==
+            "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
+          oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
+
+    session::config::UserGroups groups{ustring_view{seed}, std::nullopt};
+
+    constexpr auto definitely_real_id =
+            "035000000000000000000000000000000000000000000000000000000000000000"sv;
+
+    int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+    CHECK_FALSE(groups.get_group(definitely_real_id));
+
+    CHECK(groups.empty());
+    CHECK(groups.size() == 0);
+
+    auto c = groups.get_or_construct_group(definitely_real_id);
+
+    CHECK(c.secretkey.empty());
+    CHECK(c.id == definitely_real_id);
+    CHECK(c.priority == 0);
+    CHECK(c.joined_at == 0);
+    CHECK(c.notifications == session::config::notify_mode::defaulted);
+    CHECK(c.mute_until == 0);
+
+    c.secretkey = to_usv(ed_sk);  // This *isn't* the right secret key for the group, so won't
+                                  // propagate, and so auth data will:
+    c.auth_data =
+            "01020304050000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000"_hexbytes;
+
+    groups.set(c);
+
+    CHECK(groups.needs_push());
+    CHECK(groups.needs_dump());
+
+    auto [seqno, to_push, obs] = groups.push();
+    groups.confirm_pushed(seqno, "fakehash1");
+
+    auto d1 = groups.dump();
+
+    session::config::UserGroups g2{ustring_view{seed}, d1};
+
+    auto c2 = g2.get_group(definitely_real_id);
+    REQUIRE(c2.has_value());
+
+    CHECK(c2->id == definitely_real_id);
+    CHECK(c2->priority == 0);
+    CHECK(c2->joined_at == 0);
+    CHECK(c2->notifications == session::config::notify_mode::defaulted);
+    CHECK(c2->mute_until == 0);
+    CHECK_FALSE(c2->invited);
+    CHECK(c2->name == "");
+
+    c2->priority = 123;
+    c2->joined_at = 1234567890;
+    c2->notifications = session::config::notify_mode::mentions_only;
+    c2->mute_until = 456789012;
+    c2->invited = true;
+    c2->name = "Magic Special Room";
+
+    g2.set(*c2);
+
+    auto c2b = g2.get_or_construct_group("03" + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
+    c2b.secretkey = to_usv(ed_sk);  // This one does match the group ID, so should propagate
+    c2b.auth_data =                 // should get ignored, since we have a valid secret key set:
+            "01020304050000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000"_hexbytes;
+    g2.set(c2b);
+
+    std::tie(seqno, to_push, obs) = g2.push();
+    g2.confirm_pushed(seqno, "fakehash2");
+
+    std::vector<std::pair<std::string, ustring>> to_merge;
+    to_merge.emplace_back("fakehash2", to_push);
+    groups.merge(to_merge);
+
+    auto c3 = groups.get_group(definitely_real_id);
+    REQUIRE(c3.has_value());
+    CHECK(c3->secretkey.empty());
+    CHECK(to_hex(c3->auth_data) ==
+          "01020304050000000000000000000000000000000000000000000000000000000000000000000000000000"
+          "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          "0000000000000000000000000000");
+    CHECK(c3->id == definitely_real_id);
+    CHECK(c3->priority == 123);
+    CHECK(c3->joined_at == 1234567890);
+    CHECK(c3->notifications == session::config::notify_mode::mentions_only);
+    CHECK(c3->mute_until == 456789012);
+    CHECK(c3->invited);
+    CHECK(c3->name == "Magic Special Room");
+
+    groups.erase(*c3);
+
+    auto c3b = groups.get_group("03" + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
+    REQUIRE(c3b);
+    CHECK(c3b->auth_data.empty());
+    CHECK(to_hex(c3b->secretkey) == to_hex(seed) + oxenc::to_hex(ed_pk.begin(), ed_pk.end()));
+    CHECK_FALSE(c3b->kicked());
+    c3b->auth_data.resize(100);
+    CHECK_FALSE(c3b->kicked());
+    c3b->setKicked();
+    CHECK(c3b->kicked());
+    CHECK(c3b->secretkey.empty());
+    CHECK(c3b->auth_data.empty());
+    c3b->auth_data.resize(100);
+    CHECK_FALSE(c3b->kicked());
+    c3b->auth_data.clear();
+
+    auto gg = groups.get_or_construct_group(
+            "030303030303030303030303030303030303030303030303030303030303030303");
+    groups.set(gg);
+    CHECK(groups.erase_group("030303030303030303030303030303030303030303030303030303030303030303"));
+    CHECK_FALSE(
+            groups.erase_group("03030303030303030303030303030303030303030303030303030303030303030"
+                               "3"));
 }
 
 TEST_CASE("User Groups members C API", "[config][groups][c]") {
@@ -539,6 +689,11 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     REQUIRE(hashes->len == 1);
     CHECK(hashes->value[0] == "fakehash1"sv);
     free(hashes);
+
+    size_t key_len;
+    unsigned char* keys = config_get_keys(conf, &key_len);
+    REQUIRE(keys);
+    REQUIRE(key_len == 1);
 
     session::config::UserGroups c2{ustring_view{seed}, std::nullopt};
 

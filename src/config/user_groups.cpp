@@ -5,6 +5,7 @@
 #include <oxenc/hex.h>
 #include <oxenc/variant.h>
 #include <sodium/crypto_generichash_blake2b.h>
+#include <sodium/crypto_sign.h>
 
 #include <charconv>
 #include <iterator>
@@ -38,6 +39,7 @@ static void base_into(const base_group_info& self, T& c) {
     c.joined_at = self.joined_at;
     c.notifications = static_cast<CONVO_NOTIFY_MODE>(self.notifications);
     c.mute_until = self.mute_until;
+    c.invited = self.invited;
 }
 
 template <typename T>
@@ -46,6 +48,11 @@ static void base_from(base_group_info& self, const T& c) {
     self.joined_at = c.joined_at;
     self.notifications = static_cast<notify_mode>(c.notifications);
     self.mute_until = c.mute_until;
+    self.invited = c.invited;
+}
+
+group_info::group_info(std::string sid) : id{std::move(sid)} {
+    check_session_id(id, "03");
 }
 
 legacy_group_info::legacy_group_info(std::string sid) : session_id{std::move(sid)} {
@@ -66,10 +73,12 @@ void community_info::into(ugroups_community_info& c) const {
     std::memcpy(c.pubkey, pubkey().data(), 32);
 }
 
-static_assert(sizeof(ugroups_legacy_group_info::name) == legacy_group_info::NAME_MAX_LENGTH + 1);
+static_assert(sizeof(ugroups_legacy_group_info::name) == base_group_info::NAME_MAX_LENGTH + 1);
+static_assert(sizeof(ugroups_group_info::name) == base_group_info::NAME_MAX_LENGTH + 1);
 
 legacy_group_info::legacy_group_info(const ugroups_legacy_group_info& c, impl_t) :
-        session_id{c.session_id, 66}, name{c.name}, disappearing_timer{c.disappearing_timer} {
+        session_id{c.session_id, 66}, disappearing_timer{c.disappearing_timer} {
+    name = c.name;
     assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
     base_from(*this, c);
     if (c.have_enc_keys) {
@@ -129,14 +138,17 @@ void base_group_info::load(const dict& info_dict) {
         notifications = notify_mode::defaulted;
 
     mute_until = maybe_int(info_dict, "!").value_or(0);
+
+    invited = maybe_int(info_dict, "i").value_or(0);
 }
 
 void legacy_group_info::load(const dict& info_dict) {
     base_group_info::load(info_dict);
 
     if (auto n = maybe_string(info_dict, "n"))
-        name = *n;
-    // otherwise leave the current `name` alone at whatever the object was constructed with
+        name = std::move(*n);
+    else
+        name.clear();
 
     auto enc_pub = maybe_ustring(info_dict, "k");
     auto enc_sec = maybe_ustring(info_dict, "K");
@@ -190,11 +202,63 @@ bool legacy_group_info::erase(const std::string& session_id) {
     return members_.erase(session_id);
 }
 
+group_info::group_info(const ugroups_group_info& c) : id{c.id, 66} {
+    base_from(*this, c);
+
+    name = c.name;
+    assert(name.size() <= NAME_MAX_LENGTH);  // Otherwise the caller messed up
+
+    if (c.have_secretkey)
+        secretkey.assign(c.secretkey, 64);
+    if (c.have_auth_data)
+        auth_data.assign(c.auth_data, sizeof(c.auth_data));
+}
+
+void group_info::into(ugroups_group_info& c) const {
+    assert(id.size() == 66);
+    base_into(*this, c);
+    copy_c_str(c.id, id);
+    copy_c_str(c.name, name);
+    if ((c.have_secretkey = secretkey.size() == 64))
+        std::memcpy(c.secretkey, secretkey.data(), 64);
+    if ((c.have_auth_data = auth_data.size() == 100))
+        std::memcpy(c.auth_data, auth_data.data(), 100);
+}
+
+void group_info::load(const dict& info_dict) {
+    base_group_info::load(info_dict);
+
+    if (auto n = maybe_string(info_dict, "n"))
+        name = std::move(*n);
+    else
+        name.clear();
+
+    if (auto seed = maybe_ustring(info_dict, "K"); seed && seed->size() == 32) {
+        std::array<unsigned char, 33> pk;
+        pk[0] = 0x03;
+        secretkey.resize(64);
+        crypto_sign_seed_keypair(pk.data() + 1, secretkey.data(), seed->data());
+        if (id != oxenc::to_hex(pk.begin(), pk.end()))
+            secretkey.clear();
+    }
+    if (auto sig = maybe_ustring(info_dict, "s"); sig && sig->size() == 100)
+        auth_data = std::move(*sig);
+}
+
+void group_info::setKicked() {
+    secretkey.clear();
+    auth_data.clear();
+}
+
+bool group_info::kicked() const {
+    return secretkey.empty() && auth_data.empty();
+}
+
 void community_info::load(const dict& info_dict) {
     base_group_info::load(info_dict);
 
     if (auto n = maybe_string(info_dict, "n"))
-        set_room(*n);
+        set_room(std::move(*n));
 }
 
 UserGroups::UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
@@ -277,6 +341,40 @@ legacy_group_info UserGroups::get_or_construct_legacy_group(std::string_view pub
     return legacy_group_info{std::string{pubkey_hex}};
 }
 
+std::optional<group_info> UserGroups::get_group(std::string_view pubkey_hex) const {
+    std::string pubkey = session_id_to_bytes(pubkey_hex, "03");
+
+    auto* info_dict = data["g"][pubkey].dict();
+    if (!info_dict)
+        return std::nullopt;
+
+    auto result = std::make_optional<group_info>(std::string{pubkey_hex});
+    result->load(*info_dict);
+    return result;
+}
+
+group_info UserGroups::get_or_construct_group(std::string_view pubkey_hex) const {
+    if (auto maybe = get_group(pubkey_hex))
+        return *std::move(maybe);
+
+    return group_info{std::string{pubkey_hex}};
+}
+
+group_info UserGroups::create_group() const {
+    std::array<unsigned char, 32> pk;
+    ustring sk;
+    sk.resize(64);
+    crypto_sign_keypair(pk.data(), sk.data());
+    std::string pk_hex;
+    pk_hex.reserve(66);
+    pk_hex += "03";
+    oxenc::to_hex(pk.begin(), pk.end(), std::back_inserter(pk_hex));
+
+    group_info gr{std::move(pk_hex)};
+    gr.secretkey = std::move(sk);
+    return gr;
+}
+
 void UserGroups::set(const community_info& c) {
     data["o"][c.base_url()]["#"] = c.pubkey();
     auto info = community_field(c);  // data["o"][base]["R"][lc_room]
@@ -289,15 +387,14 @@ void UserGroups::set_base(const base_group_info& bg, DictFieldProxy& info) const
     set_positive_int(info["j"], bg.joined_at);
     set_positive_int(info["@"], static_cast<int>(bg.notifications));
     set_positive_int(info["!"], bg.mute_until);
+    set_flag(info["i"], bg.invited);
+    // We don't set n here because it's subtly different in the three group types
 }
 
 void UserGroups::set(const legacy_group_info& g) {
     auto info = data["C"][session_id_to_bytes(g.session_id)];
     set_base(g, info);
-    if (g.name.size() > legacy_group_info::NAME_MAX_LENGTH)
-        info["n"] = g.name.substr(0, legacy_group_info::NAME_MAX_LENGTH);
-    else
-        info["n"] = g.name;
+    info["n"] = std::string_view{g.name}.substr(0, legacy_group_info::NAME_MAX_LENGTH);
 
     set_pair_if(
             g.enc_pubkey.size() == 32 && g.enc_seckey.size() == 32,
@@ -314,6 +411,28 @@ void UserGroups::set(const legacy_group_info& g) {
     info["m"] = std::move(members);
     info["a"] = std::move(admins);
     set_positive_int(info["E"], g.disappearing_timer.count());
+}
+
+void UserGroups::set(const group_info& g) {
+    auto pk_bytes = session_id_to_bytes(g.id, "03");
+    auto info = data["g"][pk_bytes];
+    set_base(g, info);
+
+    set_nonempty_str(
+            info["n"], std::string_view{g.name}.substr(0, legacy_group_info::NAME_MAX_LENGTH));
+
+    if (g.secretkey.size() == 64 &&
+        // Make sure the secretkey's embedded pubkey matches the group id:
+        ustring_view{g.secretkey.data() + 32, 32} ==
+                ustring_view{
+                        reinterpret_cast<const unsigned char*>(pk_bytes.data() + 1),
+                        pk_bytes.size() - 1})
+        info["K"] = ustring_view{g.secretkey.data(), 32};
+    else {
+        info["K"] = ustring_view{};
+        if (g.auth_data.size() == 100)
+            info["s"] = g.auth_data;
+    }
 }
 
 template <typename Field>
@@ -337,6 +456,9 @@ bool UserGroups::erase(const community_info& c) {
     }
     return gone;
 }
+bool UserGroups::erase(const group_info& c) {
+    return erase_impl(data["g"][session_id_to_bytes(c.id, "03")]);
+}
 bool UserGroups::erase(const legacy_group_info& c) {
     return erase_impl(data["C"][session_id_to_bytes(c.session_id)]);
 }
@@ -349,6 +471,9 @@ bool UserGroups::erase_community(std::string_view base_url, std::string_view roo
 }
 bool UserGroups::erase_legacy_group(std::string_view id) {
     return erase(legacy_group_info{std::string{id}});
+}
+bool UserGroups::erase_group(std::string_view id) {
+    return erase(group_info{std::string{id}});
 }
 
 size_t UserGroups::size_communities() const {
@@ -373,11 +498,23 @@ size_t UserGroups::size_legacy_groups() const {
     return 0;
 }
 
-size_t UserGroups::size() const {
-    return size_communities() + size_legacy_groups();
+size_t UserGroups::size_groups() const {
+    if (auto* d = data["g"].dict())
+        return d->size();
+    return 0;
 }
 
-UserGroups::iterator::iterator(const DictFieldRoot& data, bool communities, bool legacy_groups) {
+size_t UserGroups::size() const {
+    return size_communities() + size_legacy_groups() + size_groups();
+}
+
+UserGroups::iterator::iterator(
+        const DictFieldRoot& data, bool groups, bool communities, bool legacy_groups) {
+    if (groups)
+        if (auto* d = data["g"].dict()) {
+            _it_group = d->begin();
+            _end_group = d->end();
+        }
     if (communities)
         if (auto* d = data["o"].dict())
             _it_comm.emplace(d->begin(), d->end());
@@ -389,13 +526,46 @@ UserGroups::iterator::iterator(const DictFieldRoot& data, bool communities, bool
     _load_val();
 }
 
-/// Load _val from the current iterator position; if it is invalid, skip to the next key until we
-/// find one that is valid (or hit the end).  We also span across three different iterators: first
-/// we exhaust communities, then legacy groups.
+template <typename GroupInfo>
+bool UserGroups::iterator::check_it() {
+    static_assert(
+            std::is_same_v<GroupInfo, legacy_group_info> || std::is_same_v<GroupInfo, group_info>);
+    constexpr bool legacy = std::is_same_v<GroupInfo, legacy_group_info>;
+    auto& it = legacy ? _it_legacy : _it_group;
+    auto& end = legacy ? _end_legacy : _end_group;
+
+    constexpr char prefix = legacy ? 0x05 : 0x03;
+    while (it) {
+        if (*it == *end) {
+            it.reset();
+            end.reset();
+            break;
+        }
+
+        auto& [k, v] = **it;
+
+        if (k.size() == 33 && k[0] == prefix) {
+            if (auto* info_dict = std::get_if<dict>(&v)) {
+                _val = std::make_shared<any_group_info>(GroupInfo{oxenc::to_hex(k)});
+                std::get<GroupInfo>(*_val).load(*info_dict);
+                return true;
+            }
+        }
+        ++*it;
+    }
+    return false;
+}
+
+/// Load _val from the current iterator position; if it is invalid, skip to the next key until
+/// we find one that is valid (or hit the end).  We also span across three different iterators:
+/// first we exhaust communities, then legacy groups.
 ///
-/// We *always* call this after incrementing the iterators (and after iterator initialization), and
-/// this is responsible for making sure that the the _it variables are set up as required.
+/// We *always* call this after incrementing the iterators (and after iterator initialization),
+/// and this is responsible for making sure that the the _it variables are set up as required.
 void UserGroups::iterator::_load_val() {
+    if (check_it<group_info>())
+        return;
+
     if (_it_comm) {
         if (_it_comm->load<community_info>(_val))
             return;
@@ -403,36 +573,23 @@ void UserGroups::iterator::_load_val() {
             _it_comm.reset();
     }
 
-    while (_it_legacy) {
-        if (*_it_legacy == *_end_legacy) {
-            _it_legacy.reset();
-            _end_legacy.reset();
-            break;
-        }
-
-        auto& [k, v] = **_it_legacy;
-
-        if (k.size() == 33 && k[0] == 0x05) {
-            if (auto* info_dict = std::get_if<dict>(&v)) {
-                _val = std::make_shared<any_group_info>(legacy_group_info{oxenc::to_hex(k)});
-                std::get<legacy_group_info>(*_val).load(*info_dict);
-                return;
-            }
-        }
-        ++*_it_legacy;
-    }
+    if (check_it<legacy_group_info>())
+        return;
 }
 
 bool UserGroups::iterator::operator==(const iterator& other) const {
-    return _it_comm == other._it_comm && _it_legacy == other._it_legacy;
+    return _it_group == other._it_group && _it_comm == other._it_comm &&
+           _it_legacy == other._it_legacy;
 }
 
 bool UserGroups::iterator::done() const {
-    return !_it_comm && !_it_legacy;
+    return !_it_group && !_it_comm && !_it_legacy;
 }
 
 UserGroups::iterator& UserGroups::iterator::operator++() {
-    if (_it_comm)
+    if (_it_group)
+        ++*_it_group;
+    else if (_it_comm)
         _it_comm->advance();
     else {
         assert(_it_legacy);
@@ -494,6 +651,30 @@ LIBSESSION_C_API bool user_groups_get_or_construct_community(
         return false;
     }
 }
+LIBSESSION_C_API bool user_groups_get_group(
+        config_object* conf, ugroups_group_info* group, const char* group_id) {
+    try {
+        conf->last_error = nullptr;
+        if (auto g = unbox<UserGroups>(conf)->get_group(group_id)) {
+            g->into(*group);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+    }
+    return false;
+}
+LIBSESSION_C_API bool user_groups_get_or_construct_group(
+        config_object* conf, ugroups_group_info* group, const char* group_id) {
+    try {
+        conf->last_error = nullptr;
+        unbox<UserGroups>(conf)->get_or_construct_group(group_id).into(*group);
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+}
 
 LIBSESSION_C_API void ugroups_legacy_group_free(ugroups_legacy_group_info* group) {
     if (group && group->_internal) {
@@ -538,6 +719,9 @@ LIBSESSION_C_API void user_groups_set_community(
         config_object* conf, const ugroups_community_info* comm) {
     unbox<UserGroups>(conf)->set(community_info{*comm});
 }
+LIBSESSION_C_API void user_groups_set_group(config_object* conf, const ugroups_group_info* group) {
+    unbox<UserGroups>(conf)->set(group_info{*group});
+}
 LIBSESSION_C_API void user_groups_set_legacy_group(
         config_object* conf, const ugroups_legacy_group_info* group) {
     unbox<UserGroups>(conf)->set(legacy_group_info{*group});
@@ -555,12 +739,28 @@ LIBSESSION_C_API bool user_groups_erase_community(
         return false;
     }
 }
+LIBSESSION_C_API bool user_groups_erase_group(config_object* conf, const char* group_id) {
+    try {
+        return unbox<UserGroups>(conf)->erase_group(group_id);
+    } catch (...) {
+        return false;
+    }
+}
 LIBSESSION_C_API bool user_groups_erase_legacy_group(config_object* conf, const char* group_id) {
     try {
         return unbox<UserGroups>(conf)->erase_legacy_group(group_id);
     } catch (...) {
         return false;
     }
+}
+
+LIBSESSION_C_API void ugroups_group_set_kicked(ugroups_group_info* group) {
+    assert(group);
+    group->have_auth_data = false;
+    group->have_secretkey = false;
+}
+LIBSESSION_C_API bool ugroups_group_is_kicked(const ugroups_group_info* group) {
+    return !(group->have_auth_data || group->have_secretkey);
 }
 
 struct ugroups_legacy_members_iterator {
@@ -653,6 +853,9 @@ LIBSESSION_C_API size_t user_groups_size(const config_object* conf) {
 LIBSESSION_C_API size_t user_groups_size_communities(const config_object* conf) {
     return unbox<UserGroups>(conf)->size_communities();
 }
+LIBSESSION_C_API size_t user_groups_size_groups(const config_object* conf) {
+    return unbox<UserGroups>(conf)->size_groups();
+}
 LIBSESSION_C_API size_t user_groups_size_legacy_groups(const config_object* conf) {
     return unbox<UserGroups>(conf)->size_legacy_groups();
 }
@@ -664,6 +867,9 @@ LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new(const config_obj
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_communities(
         const config_object* conf) {
     return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_communities()}};
+}
+LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_groups(const config_object* conf) {
+    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_groups()}};
 }
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_legacy_groups(
         const config_object* conf) {
@@ -697,6 +903,10 @@ bool user_groups_it_is_impl(user_groups_iterator* it, C* c) {
 LIBSESSION_C_API bool user_groups_it_is_community(
         user_groups_iterator* it, ugroups_community_info* c) {
     return user_groups_it_is_impl<community_info>(it, c);
+}
+
+LIBSESSION_C_API bool user_groups_it_is_group(user_groups_iterator* it, ugroups_group_info* g) {
+    return user_groups_it_is_impl<group_info>(it, g);
 }
 
 LIBSESSION_C_API bool user_groups_it_is_legacy_group(

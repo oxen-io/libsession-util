@@ -3,6 +3,8 @@
 #include <cassert>
 #include <memory>
 #include <session/config.hpp>
+#include <session/util.hpp>
+#include <stdexcept>
 #include <type_traits>
 #include <unordered_set>
 #include <variant>
@@ -43,9 +45,97 @@ enum class ConfigState : int {
     Waiting = 2,
 };
 
+using Ed25519PubKey = std::array<unsigned char, 32>;
+using Ed25519Secret = sodium_array<unsigned char>;
+
+// Helper base class for holding a config signing keypair
+class ConfigSig {
+  protected:
+    // Contains an optional signing keypair; if the public key is set then incoming messages must
+    // contain a valid signature from that key to be loaded.  If the private key is set then a
+    // signature will be added to the message signed by that key.  (Note that if a public key is set
+    // but not a private key then this config object cannot push config changes!)
+    std::optional<Ed25519PubKey> _sign_pk = std::nullopt;
+    Ed25519Secret _sign_sk;
+
+    ConfigSig() = default;
+
+    // Returns a blake2b 32-byte hash of the config signing seed using hash key `key`.  `key` must
+    // be 64 bytes or less, and should generally be unique for each key use case.
+    //
+    // Throws if a secret key hasn't been set via `set_sig_keys`.
+    std::array<unsigned char, 32> seed_hash(std::string_view key) const;
+
+    virtual void set_verifier(ConfigMessage::verify_callable v) = 0;
+    virtual void set_signer(ConfigMessage::sign_callable v) = 0;
+
+    // Meant to be called from the subclass constructor after other necessary initialization; calls
+    // set_sig_keys, set_sig_pubkey, or clear_sig_keys() for you, based on which are non-nullopt.
+    //
+    // Throws if given invalid data (i.e. wrong key size, or mismatched pubkey/secretkey).
+    void init_sig_keys(
+            std::optional<ustring_view> ed25519_pubkey,
+            std::optional<ustring_view> ed25519_secretkey);
+
+  public:
+    virtual ~ConfigSig() = default;
+
+    /// API: base/ConfigSig::set_sig_keys
+    ///
+    /// Sets an Ed25519 keypair pair for signing and verifying config messages.  When set, this adds
+    /// an additional signature for verification into the config message (*after* decryption) that
+    /// validates a config message.
+    ///
+    /// This is used in config contexts where the encryption/decryption keys are insufficient for
+    /// permission verification to produce new messages, such as in groups where non-admins need to
+    /// be able to decrypt group data, but are not permitted to push new group data.  In such a case
+    /// only the admins have the secret key with which messages can be signed; regular users can
+    /// only read, but cannot write, config messages.
+    ///
+    /// When a signature public key (with or without a secret key) is set the config object enters
+    /// a "signing-required" mode, which has some implications worth noting:
+    /// - incoming messages must contain a signature that verifies with the public key; messages
+    ///   without such a signature will be dropped as invalid.
+    /// - because of the above, a config object cannot push config updates without the secret key:
+    ///   thus any attempt to modify the config message with a pubkey-only config object will raise
+    ///   an exception.
+    ///
+    /// Inputs:
+    /// - `secret` -- the 64-byte sodium-style Ed25519 "secret key" (actually the seed+pubkey
+    ///   concatenated together) that sets both the secret key and public key.
+    void set_sig_keys(ustring_view secret);
+
+    /// API: base/ConfigSig::set_sig_pubkey
+    ///
+    /// Sets a Ed25519 signing pubkey which incoming messages must be signed by to be acceptable.
+    /// This is intended for use when the secret key is not known (see `set_sig_keys()` to set both
+    /// secret and pubkey keys together).
+    ///
+    /// Inputs:
+    /// - `pubkey` -- the 32 byte Ed25519 pubkey that must have signed incoming messages
+    void set_sig_pubkey(ustring_view pubkey);
+
+    /// API: base/ConfigSig::get_sig_pubkey
+    ///
+    /// Returns a const reference to the 32-byte Ed25519 signing pubkey, if set.
+    ///
+    /// Inputs: none.
+    ///
+    /// Outputs:
+    /// - reference to the 32-byte pubkey, or `std::nullopt` if not set.
+    const std::optional<std::array<unsigned char, 32>>& get_sig_pubkey() const { return _sign_pk; }
+
+    /// API: base/ConfigSig::clear_sig_keys
+    ///
+    /// Drops the signature pubkey and/or secret key, if the object has them.
+    ///
+    /// Inputs: none.
+    void clear_sig_keys();
+};
+
 /// Base config type for client-side configs containing common functionality needed by all config
 /// sub-types.
-class ConfigBase {
+class ConfigBase : public ConfigSig {
   private:
     // The object (either base config message or MutableConfigMessage) that stores the current
     // config message.  Subclasses do not directly access this: instead they call `dirty()` if they
@@ -55,15 +145,15 @@ class ConfigBase {
     // Tracks our current state
     ConfigState _state = ConfigState::Clean;
 
+    void init_from_dump(std::string_view dump);
+
     static constexpr size_t KEY_SIZE = 32;
 
     // Contains the base key(s) we use to encrypt/decrypt messages.  If non-empty, the .front()
     // element will be used when encrypting a new message to push.  When decrypting, we attempt each
     // of them, starting with .front(), until decryption succeeds.
     using Key = std::array<unsigned char, KEY_SIZE>;
-    Key* _keys = nullptr;
-    size_t _keys_size = 0;
-    size_t _keys_capacity = 0;
+    sodium_vector<Key> _keys;
 
     // Contains the current active message hash, as fed into us in `confirm_pushed()`.  Empty if we
     // don't know it yet.  When we dirty the config this value gets moved into `old_hashes_` to be
@@ -78,7 +168,15 @@ class ConfigBase {
     // Constructs a base config by loading the data from a dump as produced by `dump()`.  If the
     // dump is nullopt then an empty base config is constructed with no config settings and seqno
     // set to 0.
-    explicit ConfigBase(std::optional<ustring_view> dump = std::nullopt);
+    //
+    // Can optionally be passed a pubkey or secretkey (or both, but the pubkey can be obtained from
+    // the secretkey automatically): if either is given, the config object is set up to require
+    // verification of incoming messages using the associated pubkey, and will be signed using the
+    // secretkey (if a secret key is given).
+    explicit ConfigBase(
+            std::optional<ustring_view> dump = std::nullopt,
+            std::optional<ustring_view> ed25519_pubkey = std::nullopt,
+            std::optional<ustring_view> ed25519_secretkey = std::nullopt);
 
     // Tracks whether we need to dump again; most mutating methods should set this to true (unless
     // calling set_state, which sets to to true implicitly).
@@ -98,6 +196,9 @@ class ConfigBase {
     // Returns a reference to the current MutableConfigMessage.  If the current message is not
     // already dirty (i.e. Clean or Waiting) then calling this increments the seqno counter.
     MutableConfigMessage& dirty();
+
+    void set_verifier(ConfigMessage::verify_callable v) override;
+    void set_signer(ConfigMessage::sign_callable s) override;
 
   public:
     // class for proxying subfield access; this class should never be stored but only used
@@ -682,7 +783,14 @@ class ConfigBase {
     void load_key(ustring_view ed25519_secretkey);
 
   public:
-    virtual ~ConfigBase();
+    virtual ~ConfigBase() = default;
+
+    // Object is non-movable and non-copyable; you need to hold it in a smart pointer if it needs to
+    // be managed.
+    ConfigBase(ConfigBase&&) = delete;
+    ConfigBase(const ConfigBase&) = delete;
+    ConfigBase& operator=(ConfigBase&&) = delete;
+    ConfigBase& operator=(const ConfigBase&) = delete;
 
     // Proxy class providing read and write access to the contained config data.
     const DictFieldRoot data{*this};
@@ -793,6 +901,43 @@ class ConfigBase {
     /// Outputs:
     /// - `bool` -- Returns true if changes have been serialized
     bool is_clean() const { return _state == ConfigState::Clean; }
+
+    /// API: base/ConfigBase::is_readonly
+    ///
+    /// Returns true if this config object is in read-only mode: specifically that means that this
+    /// config object can only absorb new config entries but is incapable of producing new entries,
+    /// and thus cannot modify or merge configs.
+    ///
+    /// This currently happens for config messages that require verification of a signature but do
+    /// not have the private keys required to *produce* a signature.  For private config types, such
+    /// as single-user configs, this will never be the case (as those can only be decrypted in the
+    /// first place if you possess the private key).  Note, however, that additional conditions for
+    /// read-only could be added in the future, so this being true should not *strictly* be
+    /// interpreted as a cannot-sign issue.
+    ///
+    /// There are some consequences of being readonly:
+    ///
+    /// - any attempt to modify config values will throw an exception.
+    /// - when multiple conflicting config objects are loaded only the "best" (i.e. higher seqno,
+    ///   with ties determined by hashed value) config is loaded; if values need to be merged this
+    ///   config will ignore the alternate values until someone who can produce a signature produces
+    ///   a merged config that properly incorporates (and signs) the updated config.
+    /// - read-only configurations never have anything to push, that is, `needs_push()` will always
+    ///   be false.
+    /// - it is still possible to `push()` a config anyway, but this only returns the current config
+    ///   and signature of the message currently being used, and *never* returns any obsolete
+    ///   hashes.  Typically this is unlikely to be useful, as it is expected that only signers (who
+    ///   can update and merge) are likely also the only ones who can actually push new configs to
+    ///   the swarm.
+    /// - read-only configurations do not reliably track obsolete hashes as the obsolesence logic
+    ///   depends on the results of merging, which read-only configs do not support.  (If you do
+    ///   call `push()`, you'll always just get back an empty list of obsolete hashes).
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `bool` true if this config object is read-only
+    bool is_readonly() const { return _config->verifier && !_config->signer; }
 
     /// API: base/ConfigBase::current_hashes
     ///
@@ -919,19 +1064,24 @@ class ConfigBase {
     /// Inputs:
     /// - `ustring_view key` -- 32 byte binary key
     /// - `high_priority` -- Whether to add to front or back of key list. If true then key is added
-    /// to beginning and replace highest-priority key for encryption
-    void add_key(ustring_view key, bool high_priority = true);
+    ///   to beginning and replace highest-priority key for encryption
+    /// - `dirty_config` -- if true then mark the config as dirty (incrementing seqno and needing a
+    ///   push) if the first key (i.e. the key used for encryption) is changed as a result of this
+    ///   call.  Ignored if the config is not modifiable.
+    void add_key(ustring_view key, bool high_priority = true, bool dirty_config = false);
 
     /// API: base/ConfigBase::clear_keys
     ///
     /// Clears all stored encryption/decryption keys.  This is typically immediately followed with
     /// one or more `add_key` call to replace existing keys.  Returns the number of keys removed.
     ///
-    /// Inputs: None
+    /// Inputs:
+    /// - `dirty_config` -- if this removes a key then mark the config as dirty (incrementing seqno
+    ///   and requiring a push).  Only has an effect if the config is modifiable.
     ///
     /// Outputs:
     /// - `int` -- Returns number of keys removed
-    int clear_keys();
+    int clear_keys(bool dirty_config = false);
 
     /// API: base/ConfigBase::remove_key
     ///
@@ -944,15 +1094,35 @@ class ConfigBase {
     /// Inputs:
     /// - `key` -- the key to remove from the key list
     /// - `from` -- optional agrument to specify which position to remove from, usually omitted
+    /// - `dirty_config` -- if true, and the *first* key (the encryption key) is removed from the
+    ///   list then mark the config as dirty (incrementing seqno and requiring a re-push).  Ignored
+    ///   if the config is not modifiable.
     ///
     /// Outputs:
     /// - `bool` -- Returns true if found and removed
-    bool remove_key(ustring_view key, size_t from = 0);
+    bool remove_key(ustring_view key, size_t from = 0, bool dirty_config = false);
+
+    /// API: base/ConfigBase::replace_keys
+    ///
+    /// Replaces the full set of keys with the given vector of keys.  This is equivalent to calling
+    /// `clear_keys()` and then `add_key` with the keys, in order (and so the first key in the
+    /// vector becomes the highest priority, i.e. the key used for encryption).
+    ///
+    /// Inputs:
+    /// - `new_keys` -- the new decryption keys; the first key becomes the new encryption key
+    /// - `dirty_config` -- if true then set the config status to dirty (incrementing seqno and
+    ///   requiring a repush) if the old and new first key are not the same.  Ignored if the config
+    ///   is not modifiable.
+    void replace_keys(const std::vector<ustring_view>& new_keys, bool dirty_config = false);
 
     /// API: base/ConfigBase::get_keys
     ///
     /// Returns a vector of encryption keys, in priority order (i.e. element 0 is the encryption
     /// key, and the first decryption key).
+    ///
+    /// This method is mainly for debugging/diagnostics purposes; most config types have one single
+    /// key (based on the secret key), and multi-keyed configs such as groups have their own methods
+    /// for encryption/decryption that are already aware of the multiple keys.
     ///
     /// Inputs: None
     ///
@@ -993,7 +1163,7 @@ class ConfigBase {
     /// Outputs:
     /// - `ustring_view` -- binary data of the key
     ustring_view key(size_t i = 0) const {
-        assert(i < _keys_size);
+        assert(i < _keys.size());
         return {_keys[i].data(), _keys[i].size()};
     }
 };

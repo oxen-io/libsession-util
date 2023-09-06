@@ -15,6 +15,7 @@
 #include <utility>
 #include <variant>
 
+#include "config/internal.hpp"
 #include "session/bt_merge.hpp"
 #include "session/util.hpp"
 
@@ -347,44 +348,6 @@ namespace {
         return std::string_view{reinterpret_cast<const char*>(hash.data()), hash.size()};
     }
 
-    oxenc::bt_dict::iterator append_unknown(
-            oxenc::bt_dict_producer& out,
-            oxenc::bt_dict::iterator it,
-            oxenc::bt_dict::iterator end,
-            std::string_view until) {
-        for (; it != end && it->first < until; ++it)
-            out.append_bt(it->first, it->second);
-
-        assert(!(it != end && it->first == until));
-        return it;
-    }
-
-    /// Extracts and unknown keys in the top-level dict into `unknown` that have keys (strictly)
-    /// between previous and until.
-    void load_unknowns(
-            oxenc::bt_dict& unknown,
-            oxenc::bt_dict_consumer& in,
-            std::string_view previous,
-            std::string_view until) {
-        while (!in.is_finished() && in.key() < until) {
-            std::string key{in.key()};
-            if (key <= previous || (!unknown.empty() && key <= unknown.rbegin()->first))
-                throw oxenc::bt_deserialize_invalid{"top-level keys are out of order"};
-            if (in.is_string())
-                unknown.emplace_hint(unknown.end(), std::move(key), in.consume_string());
-            else if (in.is_negative_integer())
-                unknown.emplace_hint(unknown.end(), std::move(key), in.consume_integer<int64_t>());
-            else if (in.is_integer())
-                unknown.emplace_hint(unknown.end(), std::move(key), in.consume_integer<uint64_t>());
-            else if (in.is_list())
-                unknown.emplace_hint(unknown.end(), std::move(key), in.consume_list());
-            else if (in.is_dict())
-                unknown.emplace_hint(unknown.end(), std::move(key), in.consume_dict());
-            else
-                throw oxenc::bt_deserialize_invalid{"invalid bencoded value type"};
-        }
-    }
-
     hash_t& hash_msg(hash_t& into, ustring_view serialized) {
         crypto_generichash_blake2b(
                 into.data(), into.size(), serialized.data(), serialized.size(), nullptr, 0);
@@ -466,6 +429,50 @@ namespace {
     }
 }  // namespace
 
+void verify_config_sig(
+        oxenc::bt_dict_consumer dict,
+        ustring_view config_msg,
+        const ConfigMessage::verify_callable& verifier,
+        std::optional<std::array<unsigned char, 64>>* verified_signature,
+        bool trust_signature) {
+    ustring_view to_verify, sig;
+    dict.skip_until("~");
+    if (!dict.is_finished() && dict.key() == "~") {
+        // We get the key string_view here because it points into the buffer that we need.
+        // Currently it will be pointing at the "~", i.e.:
+        //
+        //    [...previousdata...]1:~64:[sigdata]
+        //                          ^-- here
+        //
+        // but what we need is the data up to the end of `]`, so we subtract 2 off that to
+        // figure out the range of the full serialized data that should have been signed:
+
+        auto key = dict.key();
+        assert(to_unsigned(key.data()) > config_msg.data() &&
+               to_unsigned(key.data()) < config_msg.data() + config_msg.size());
+        to_verify = config_msg.substr(0, to_unsigned(key.data()) - config_msg.data() - 2);
+        sig = to_unsigned_sv(dict.consume_string_view());
+    }
+
+    if (!dict.is_finished())
+        throw config_parse_error{"Invalid config: dict has invalid key(s) after \"~\""};
+
+    if (verifier || trust_signature) {
+        if (sig.empty()) {
+            if (!trust_signature)
+                throw missing_signature{"Config signature is missing"};
+        } else if (sig.size() != 64)
+            throw signature_error{"Config signature is invalid (not 64B)"};
+        else if (verifier && !verifier(to_verify, sig))
+            throw signature_error{"Config signature failed verification"};
+        else if (verified_signature) {
+            if (!*verified_signature)
+                verified_signature->emplace();
+            std::memcpy((*verified_signature)->data(), sig.data(), 64);
+        }
+    }
+}
+
 bool MutableConfigMessage::prune() {
     return prune_(data_).second;
 }
@@ -541,7 +548,7 @@ ConfigMessage::ConfigMessage(
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
-        bool signature_optional) :
+        bool trust_signature) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
     oxenc::bt_dict_consumer dict{from_unsigned_sv(serialized)};
@@ -568,35 +575,7 @@ ConfigMessage::ConfigMessage(
 
         load_unknowns(unknown_, dict, "=", "~");
 
-        ustring_view to_verify, sig;
-        if (!dict.is_finished() && dict.key() == "~") {
-            // We get the key string_view here because it points into the buffer that we need.
-            // Currently it will be pointing at the "~", i.e.:
-            //
-            //    [...previousdata...]1:~64:[sigdata]
-            //                          ^-- here
-            //
-            // but what we need is the data up to the end of `]`, so we subtract 2 off that to
-            // figure out the range of the full serialized data that should have been signed:
-
-            auto key = dict.key();
-            assert(to_unsigned(key.data()) > serialized.data() &&
-                   to_unsigned(key.data()) < serialized.data() + serialized.size());
-            to_verify = serialized.substr(0, to_unsigned(key.data()) - serialized.data() - 2);
-            sig = to_unsigned_sv(dict.consume_string_view());
-        }
-
-        if (!dict.is_finished())
-            throw config_parse_error{"Invalid config: dict has invalid key(s) after \"~\""};
-
-        if (verifier) {
-            if (sig.empty()) {
-                if (!signature_optional)
-                    throw missing_signature{"Config signature is missing"};
-            } else if (verified_signature_ = verifier(to_verify, sig); !verified_signature_) {
-                throw signature_error{"Config signature failed verification"};
-            }
-        }
+        verify_config_sig(dict, serialized, verifier, &verified_signature_, trust_signature);
     } catch (const oxenc::bt_deserialize_invalid& err) {
         throw config_parse_error{"Failed to parse config file: "s + err.what()};
     }
@@ -607,7 +586,6 @@ ConfigMessage::ConfigMessage(
         verify_callable verifier_,
         sign_callable signer_,
         int lag,
-        bool signature_optional,
         std::function<void(size_t, const config_error&)> error_handler) :
         verifier{std::move(verifier_)}, signer{std::move(signer_)}, lag{lag} {
 
@@ -615,7 +593,7 @@ ConfigMessage::ConfigMessage(
     for (size_t i = 0; i < serialized_confs.size(); i++) {
         const auto& data = serialized_confs[i];
         try {
-            ConfigMessage m{data, verifier, signer, lag, signature_optional};
+            ConfigMessage m{data, verifier, signer, lag};
             configs.emplace_back(std::move(m), false);
         } catch (const config_error& e) {
             if (error_handler)
@@ -657,7 +635,7 @@ ConfigMessage::ConfigMessage(
     assert(curr_confs >= 1);
 
     if (curr_confs == 1) {
-        // We have just one config left after all that, so we become it directly as-is
+        // We have just one non-redundant config left after all that, so we become it directly as-is
         for (int i = 0; i < configs.size(); i++) {
             if (!configs[i].second) {
                 *this = std::move(configs[i].first);
@@ -665,12 +643,31 @@ ConfigMessage::ConfigMessage(
                 return;
             }
         }
-        assert(false);
+        assert(!"we counted one good config but couldn't find it?!");
+    }
+
+    // Otherwise we have more than one valid config, so have to merge them.
+
+    // ... Unless we require signature verification but can't sign, in which case  we can't actually
+    // produce a proper merge, so we will just keep the highest (highest seqno, hash) config and use
+    // that, dropping the rest.  Someone else (with signing power) will have to merge and push the
+    // merge out to us.
+    if (verifier && !signer) {
+        auto best_it =
+                std::max_element(configs.begin(), configs.end(), [](const auto& a, const auto& b) {
+                    if (a.second != b.second)  // Exactly one of the two is redundant
+                        return a.second;       // a < b iff a is redundant
+                    return a.first.seqno_hash_ < b.first.seqno_hash_;
+                });
+        *this = std::move(best_it->first);
+        unmerged_ = std::distance(configs.begin(), best_it);
+        return;
     }
 
     unmerged_ = -1;
 
-    // Clear any redundant messages
+    // Clear any redundant messages. (we do it *here* rather than above because, in the
+    // single-good-config case, above, we need the index of the good config for `unmerged_`).
     configs.erase(
             std::remove_if(configs.begin(), configs.end(), [](const auto& c) { return c.second; }),
             configs.end());
@@ -718,31 +715,24 @@ MutableConfigMessage::MutableConfigMessage(
         verify_callable verifier,
         sign_callable signer,
         int lag,
-        bool signature_optional,
         std::function<void(size_t, const config_error&)> error_handler) :
         ConfigMessage{
                 serialized_confs,
                 std::move(verifier),
                 std::move(signer),
                 lag,
-                signature_optional,
                 std::move(error_handler)} {
     if (!merged())
         increment_impl();
 }
 
 MutableConfigMessage::MutableConfigMessage(
-        ustring_view config,
-        verify_callable verifier,
-        sign_callable signer,
-        int lag,
-        bool signature_optional) :
+        ustring_view config, verify_callable verifier, sign_callable signer, int lag) :
         MutableConfigMessage{
                 std::vector{{config}},
                 std::move(verifier),
                 std::move(signer),
                 lag,
-                signature_optional,
                 [](size_t, const config_error& e) { throw e; }} {}
 
 const oxenc::bt_dict& ConfigMessage::diff() {
@@ -750,6 +740,7 @@ const oxenc::bt_dict& ConfigMessage::diff() {
 }
 
 const oxenc::bt_dict& MutableConfigMessage::diff() {
+    verified_signature_.reset();
     prune();
     diff_ = diff_impl(orig_data_, data_).value_or(oxenc::bt_dict{});
     return diff_;
@@ -792,7 +783,15 @@ ustring ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enab
     unknown_it = append_unknown(outer, unknown_it, unknown_.end(), "~");
     assert(unknown_it == unknown_.end());
 
-    if (signer && enable_signing) {
+    if (verified_signature_) {
+        // We have the signature attached to the current message, so use it.  (This will get cleared
+        // if we do anything that changes the config).
+        outer.append(
+                "~",
+                std::string_view{
+                        reinterpret_cast<const char*>(verified_signature_->data()),
+                        verified_signature_->size()});
+    } else if (signer && enable_signing) {
         auto to_sign = to_unsigned_sv(outer.view());
         // The view contains the trailing "e", but we don't sign it (we are going to append the
         // signature there instead):

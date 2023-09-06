@@ -20,19 +20,6 @@ using bytes = std::array<unsigned char, N>;
 
 namespace {
 
-    // constant time `if (b) f = g;` implementation
-    template <size_t N>
-    void constant_time_conditional_assign(bytes<N>& f, const bytes<N>& g, bool b) {
-        bytes<N> x;
-        for (size_t i = 0; i < x.size(); i++)
-            x[i] = f[i] ^ g[i];
-        unsigned char mask = (unsigned char)(-(signed char)b);
-        for (size_t i = 0; i < x.size(); i++)
-            x[i] &= mask;
-        for (size_t i = 0; i < x.size(); i++)
-            f[i] ^= x[i];
-    }
-
     void fe25519_montx_to_edy(fe25519 y, const fe25519 u) {
         fe25519 one;
         crypto_internal_fe25519_1(one);

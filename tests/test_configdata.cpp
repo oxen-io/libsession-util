@@ -397,6 +397,7 @@ TEST_CASE("config message signature", "[config][signing]") {
     CHECK(msg.hash() == m.hash());
     CHECK(printable(msg.serialize()) == printable(m_expected));
 
+    // Deliberately modify the signature to break it:
     auto m_broken = m_expected;
     REQUIRE(m_broken[m_broken.size() - 2] == 0x07);
     m_broken[m_broken.size() - 2] = 0x17;
@@ -422,7 +423,6 @@ TEST_CASE("config message signature", "[config][signing]") {
                     verifier,
                     nullptr,
                     ConfigMessage::DEFAULT_DIFF_LAGS,
-                    false,
                     [](size_t, const auto& exc) { throw exc; }),
             config::config_error,
             Message("Config signature failed verification"));
@@ -432,20 +432,6 @@ TEST_CASE("config message signature", "[config][signing]") {
             ConfigMessage(m_unsigned, verifier),
             config::missing_signature,
             Message("Config signature is missing"));
-
-    ConfigMessage m_no_sig{m_unsigned, verifier, nullptr, ConfigMessage::DEFAULT_DIFF_LAGS, true};
-    CHECK(m_no_sig.seqno() == 10);
-    CHECK(m_no_sig.data() == m.data());
-    // The hash will differ because of the lack of signature
-    CHECK(m_no_sig.hash() != m.hash());
-
-    CHECK(printable(m_no_sig.serialize()) == printable(m_unsigned));
-
-    // If we set a signer and serialize again, we're going to get the *signed* message.  (This is
-    // not something that should be done, really, because this message does not agree with the
-    // hash).
-    m_no_sig.signer = signer;
-    CHECK(printable(m_no_sig.serialize()) == printable(m_expected));
 }
 
 const config::dict data118{

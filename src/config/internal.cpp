@@ -2,24 +2,34 @@
 
 #include <oxenc/base32z.h>
 #include <oxenc/base64.h>
+#include <oxenc/bt_value_producer.h>
 #include <oxenc/hex.h>
+#include <zstd.h>
 
 #include <iterator>
 #include <optional>
 
 namespace session::config {
 
-void check_session_id(std::string_view session_id) {
-    if (!(session_id.size() == 66 && oxenc::is_hex(session_id) && session_id[0] == '0' &&
-          session_id[1] == '5'))
+void check_session_id(std::string_view session_id, std::string_view prefix) {
+    if (!(session_id.size() == 64 + prefix.size() && oxenc::is_hex(session_id) &&
+          session_id.substr(0, prefix.size()) == prefix))
         throw std::invalid_argument{
-                "Invalid session ID: expected 66 hex digits starting with 05; got " +
-                std::string{session_id}};
+                "Invalid session ID: expected 66 hex digits starting with " + std::string{prefix} +
+                "; got " + std::string{session_id}};
 }
 
-std::string session_id_to_bytes(std::string_view session_id) {
-    check_session_id(session_id);
+std::string session_id_to_bytes(std::string_view session_id, std::string_view prefix) {
+    check_session_id(session_id, prefix);
     return oxenc::from_hex(session_id);
+}
+
+std::array<unsigned char, 32> session_id_pk(std::string_view session_id, std::string_view prefix) {
+    check_session_id(session_id, prefix);
+    std::array<unsigned char, 32> pk;
+    session_id.remove_prefix(2);
+    oxenc::from_hex(session_id.begin(), session_id.end(), pk.begin());
+    return pk;
 }
 
 void check_encoded_pubkey(std::string_view pk) {
@@ -123,6 +133,101 @@ void set_nonempty_str(ConfigBase::DictFieldProxy&& field, std::string_view val) 
         field = val;
     else
         field.erase();
+}
+
+/// Writes all the dict elements in `[it, E)` into `out`; E is whichever of `end` or an element with
+/// a key >= `until` comes first.
+oxenc::bt_dict::iterator append_unknown(
+        oxenc::bt_dict_producer& out,
+        oxenc::bt_dict::iterator it,
+        oxenc::bt_dict::iterator end,
+        std::string_view until) {
+    for (; it != end && it->first < until; ++it)
+        out.append_bt(it->first, it->second);
+
+    assert(!(it != end && it->first == until));
+    return it;
+}
+
+/// Extracts and unknown keys in the top-level dict into `unknown` that have keys (strictly)
+/// between previous and until.
+void load_unknowns(
+        oxenc::bt_dict& unknown,
+        oxenc::bt_dict_consumer& in,
+        std::string_view previous,
+        std::string_view until) {
+    while (!in.is_finished() && in.key() < until) {
+        std::string key{in.key()};
+        if (key <= previous || (!unknown.empty() && key <= unknown.rbegin()->first))
+            throw oxenc::bt_deserialize_invalid{"top-level keys are out of order"};
+        if (in.is_string())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_string());
+        else if (in.is_negative_integer())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_integer<int64_t>());
+        else if (in.is_integer())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_integer<uint64_t>());
+        else if (in.is_list())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_list());
+        else if (in.is_dict())
+            unknown.emplace_hint(unknown.end(), std::move(key), in.consume_dict());
+        else
+            throw oxenc::bt_deserialize_invalid{"invalid bencoded value type"};
+    }
+}
+
+namespace {
+    struct zstd_decomp_freer {
+        void operator()(ZSTD_DStream* z) const { ZSTD_freeDStream(z); }
+    };
+
+    using zstd_decomp_ptr = std::unique_ptr<ZSTD_DStream, zstd_decomp_freer>;
+}  // namespace
+
+ustring zstd_compress(ustring_view data, int level, ustring_view prefix) {
+    ustring compressed;
+    if (prefix.empty())
+        compressed.resize(ZSTD_compressBound(data.size()));
+    else {
+        compressed.resize(prefix.size() + ZSTD_compressBound(data.size()));
+        compressed.replace(0, prefix.size(), prefix);
+    }
+    auto size = ZSTD_compress(
+            compressed.data() + prefix.size(),
+            compressed.size() - prefix.size(),
+            data.data(),
+            data.size(),
+            level);
+    if (ZSTD_isError(size))
+        throw std::runtime_error{"Compression failed: " + std::string{ZSTD_getErrorName(size)}};
+
+    compressed.resize(prefix.size() + size);
+    return compressed;
+}
+
+std::optional<ustring> zstd_decompress(ustring_view data, size_t max_size) {
+    zstd_decomp_ptr z_decompressor{ZSTD_createDStream()};
+    auto* zds = z_decompressor.get();
+
+    ZSTD_initDStream(zds);
+    ZSTD_inBuffer input{/*.src=*/data.data(), /*.size=*/data.size(), /*.pos=*/0};
+    std::array<unsigned char, 4096> out_buf;
+    ZSTD_outBuffer output{/*.dst=*/out_buf.data(), /*.size=*/out_buf.size()};
+
+    ustring decompressed;
+
+    size_t ret;
+    do {
+        output.pos = 0;
+        if (ret = ZSTD_decompressStream(zds, &output, &input); ZSTD_isError(ret))
+            return std::nullopt;
+
+        if (max_size > 0 && decompressed.size() + output.pos > max_size)
+            return std::nullopt;
+
+        decompressed.append(out_buf.data(), output.pos);
+    } while (ret > 0 || input.pos < input.size);
+
+    return decompressed;
 }
 
 }  // namespace session::config
