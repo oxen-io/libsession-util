@@ -502,6 +502,22 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
         CHECK(m.members.size() == 5);
         CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash6"s, "keyhash7"s}});
     }
+
+    // Make sure keys propagate on dump restore to info/members:
+    pseudo_client admin1b{
+            admin1_seed,
+            true,
+            group_pk.data(),
+            group_sk.data(),
+            admin1.info.dump(),
+            admin1.members.dump(),
+            admin1.keys.dump()};
+    admin1b.info.set_name("Test New Name");
+    CHECK_NOTHROW(admin1b.info.push());
+    admin1b.members.set(
+            admin1b.members.get_or_construct("05124076571076017981235497801235098712093870981273590"
+                                             "8746387172343"));
+    CHECK_NOTHROW(admin1b.members.push());
 }
 
 TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {

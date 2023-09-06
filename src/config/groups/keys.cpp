@@ -54,6 +54,9 @@ Keys::Keys(
 
     if (dumped) {
         load_dump(*dumped);
+        auto key_list = group_keys();
+        members.replace_keys(key_list, /*dirty=*/false);
+        info.replace_keys(key_list, /*dirty=*/false);
     } else if (admin()) {
         rekey(info, members);
     }
