@@ -583,7 +583,6 @@ LIBSESSION_C_API bool convo_info_volatile_get_or_construct_group(
     }
 }
 
-
 LIBSESSION_C_API bool convo_info_volatile_get_legacy_group(
         config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
     try {
@@ -644,8 +643,7 @@ LIBSESSION_C_API bool convo_info_volatile_erase_community(
         return false;
     }
 }
-LIBSESSION_C_API bool convo_info_volatile_erase_group(
-        config_object* conf, const char* group_id) {
+LIBSESSION_C_API bool convo_info_volatile_erase_group(config_object* conf, const char* group_id) {
     try {
         return unbox<ConvoInfoVolatile>(conf)->erase_group(group_id);
     } catch (...) {
