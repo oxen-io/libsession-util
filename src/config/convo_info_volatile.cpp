@@ -555,6 +555,35 @@ LIBSESSION_C_API bool convo_info_volatile_get_or_construct_community(
     }
 }
 
+LIBSESSION_C_API bool convo_info_volatile_get_group(
+        config_object* conf, convo_info_volatile_group* convo, const char* id) {
+    try {
+        conf->last_error = nullptr;
+        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_group(id)) {
+            c->into(*convo);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool convo_info_volatile_get_or_construct_group(
+        config_object* conf, convo_info_volatile_group* convo, const char* id) {
+    try {
+        conf->last_error = nullptr;
+        unbox<ConvoInfoVolatile>(conf)->get_or_construct_group(id).into(*convo);
+        return true;
+    } catch (const std::exception& e) {
+        copy_c_str(conf->_error_buf, e.what());
+        conf->last_error = conf->_error_buf;
+        return false;
+    }
+}
+
+
 LIBSESSION_C_API bool convo_info_volatile_get_legacy_group(
         config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
     try {
@@ -591,6 +620,10 @@ LIBSESSION_C_API void convo_info_volatile_set_community(
         config_object* conf, const convo_info_volatile_community* convo) {
     unbox<ConvoInfoVolatile>(conf)->set(convo::community{*convo});
 }
+LIBSESSION_C_API void convo_info_volatile_set_group(
+        config_object* conf, const convo_info_volatile_group* convo) {
+    unbox<ConvoInfoVolatile>(conf)->set(convo::group{*convo});
+}
 LIBSESSION_C_API void convo_info_volatile_set_legacy_group(
         config_object* conf, const convo_info_volatile_legacy_group* convo) {
     unbox<ConvoInfoVolatile>(conf)->set(convo::legacy_group{*convo});
@@ -607,6 +640,14 @@ LIBSESSION_C_API bool convo_info_volatile_erase_community(
         config_object* conf, const char* base_url, const char* room) {
     try {
         return unbox<ConvoInfoVolatile>(conf)->erase_community(base_url, room);
+    } catch (...) {
+        return false;
+    }
+}
+LIBSESSION_C_API bool convo_info_volatile_erase_group(
+        config_object* conf, const char* group_id) {
+    try {
+        return unbox<ConvoInfoVolatile>(conf)->erase_group(group_id);
     } catch (...) {
         return false;
     }
@@ -628,6 +669,9 @@ LIBSESSION_C_API size_t convo_info_volatile_size_1to1(const config_object* conf)
 }
 LIBSESSION_C_API size_t convo_info_volatile_size_communities(const config_object* conf) {
     return unbox<ConvoInfoVolatile>(conf)->size_communities();
+}
+LIBSESSION_C_API size_t convo_info_volatile_size_groups(const config_object* conf) {
+    return unbox<ConvoInfoVolatile>(conf)->size_groups();
 }
 LIBSESSION_C_API size_t convo_info_volatile_size_legacy_groups(const config_object* conf) {
     return unbox<ConvoInfoVolatile>(conf)->size_legacy_groups();
@@ -651,6 +695,13 @@ LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_
     auto* it = new convo_info_volatile_iterator{};
     it->_internals =
             new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_communities()};
+    return it;
+}
+LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_groups(
+        const config_object* conf) {
+    auto* it = new convo_info_volatile_iterator{};
+    it->_internals =
+            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_groups()};
     return it;
 }
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_groups(
@@ -695,6 +746,11 @@ LIBSESSION_C_API bool convo_info_volatile_it_is_1to1(
 LIBSESSION_C_API bool convo_info_volatile_it_is_community(
         convo_info_volatile_iterator* it, convo_info_volatile_community* c) {
     return convo_info_volatile_it_is_impl<convo::community>(it, c);
+}
+
+LIBSESSION_C_API bool convo_info_volatile_it_is_group(
+        convo_info_volatile_iterator* it, convo_info_volatile_group* c) {
+    return convo_info_volatile_it_is_impl<convo::group>(it, c);
 }
 
 LIBSESSION_C_API bool convo_info_volatile_it_is_legacy_group(
