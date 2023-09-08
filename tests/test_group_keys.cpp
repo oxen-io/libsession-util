@@ -412,6 +412,18 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash5"s}});
     }
 
+    auto decrypted1 = members.back().keys.decrypt_message(compressed);
+    REQUIRE(decrypted1);
+    CHECK(to_sv(*decrypted1) == msg);
+
+    auto decrypted2 = members.back().keys.decrypt_message(uncompressed);
+    REQUIRE(decrypted2);
+    CHECK(to_sv(*decrypted2) == msg);
+
+    auto bad_compressed = compressed;
+    bad_compressed.back() ^= 0b100;
+    CHECK_FALSE(members.back().keys.decrypt_message(bad_compressed));
+
     // Duplicate members[1] from dumps
     auto& m1b = members.emplace_back(
             member_seeds[1],
