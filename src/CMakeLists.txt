@@ -24,6 +24,19 @@ macro(add_libsession_util_library name)
 endmacro()
 
 
+find_package(nlohmann_json REQUIRED)
+
+if(NOT BUILD_STATIC_DEPS)
+    find_package(PkgConfig REQUIRED)
+
+    if(NOT target nettle)
+        pkg_check_modules(NETTLE nettle IMPORTED_TARGET)
+        add_library(nettle INTERFACE)
+        target_link_libraries(nettle INTERFACE PkgConfig::NETTLE)
+    endif()
+endif()
+
+
 add_libsession_util_library(crypto
     xed25519.cpp
 )
@@ -47,6 +60,13 @@ add_libsession_util_library(config
     util.cpp
 )
 
+add_libsession_util_library(onionreq
+    onionreq/channel_encryption.cpp
+    onionreq/key_types.cpp
+    onionreq/parser.cpp
+)
+
+
 target_link_libraries(crypto
     PUBLIC
     common
@@ -60,6 +80,16 @@ target_link_libraries(config
     PRIVATE
     libsodium::sodium-internal
     libzstd::static
+)
+
+target_link_libraries(onionreq
+    PUBLIC
+    crypto
+    common
+    PRIVATE
+    nlohmann_json::nlohmann_json
+    libsodium::sodium-internal
+    nettle
 )
 
 
