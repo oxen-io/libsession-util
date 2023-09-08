@@ -1212,7 +1212,9 @@ std::optional<ustring> Keys::decrypt_message(ustring_view ciphertext) const {
         case 'x': {
             auto nonce = ciphertext.substr(0, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
             ciphertext.remove_prefix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-            plain.resize(ciphertext.size() - OVERHEAD);
+            plain.resize(
+                    ciphertext.size() -
+                    (OVERHEAD - 1 - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES));
             for (auto& k : keys_) {
                 if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
                                  plain.data(),
