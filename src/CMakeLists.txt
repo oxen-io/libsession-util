@@ -24,8 +24,6 @@ macro(add_libsession_util_library name)
 endmacro()
 
 
-find_package(nlohmann_json REQUIRED)
-
 if(NOT BUILD_STATIC_DEPS)
     find_package(PkgConfig REQUIRED)
 

@@ -27,6 +27,7 @@ if(SUBMODULE_CHECK)
     check_submodule(ios-cmake)
     check_submodule(libsodium-internal)
     check_submodule(oxen-encoding)
+    check_submodule(nlohmann-json)
     check_submodule(zstd)
   endif()
 endif()
@@ -151,3 +152,8 @@ export(
     FILE libsessionZstd.cmake
 )
 libsession_static_bundle(libzstd_static)
+
+
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install ON CACHE INTERNAL "") # Required to export targets that we use
+system_or_submodule(NLOHMANN nlohmann_json nlohmann_json>=3.7.0 nlohmann-json)

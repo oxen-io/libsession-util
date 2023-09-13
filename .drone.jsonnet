@@ -12,7 +12,7 @@ local submodules = {
 
 local apt_get_quiet = 'apt-get -o=Dpkg::Use-Pty=0 -q';
 
-local default_deps_nocxx = [];
+local default_deps_nocxx = ['nlohmann-json3-dev'];
 local default_deps = ['g++'] + default_deps_nocxx;
 
 local docker_base = 'registry.oxen.rocks/lokinet-ci-';
