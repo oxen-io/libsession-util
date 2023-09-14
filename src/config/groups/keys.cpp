@@ -863,6 +863,46 @@ void Keys::insert_key(std::string_view msg_hash, key_info&& new_key) {
     needs_dump_ = true;
 }
 
+// Attempts xchacha20 decryption.
+//
+// Preconditions:
+// - `ciphertext` must be at least 16 [crypto_aead_xchacha20poly1305_ietf_ABYTES]
+// - `out` must have enough space (ciphertext.size() - 16
+// [crypto_aead_xchacha20poly1305_ietf_ABYTES])
+// - `nonce` must be 24 bytes [crypto_aead_xchacha20poly1305_ietf_NPUBBYTES]
+// - `key` must be 32 bytes [crypto_aead_xchacha20poly1305_ietf_KEYBYTES]
+//
+// The latter two are asserted in a debug build, but not otherwise checked.
+//
+// Returns true (after writing to `out`) if decryption succeeds, false if it fails.
+namespace {
+    bool try_decrypting(
+            unsigned char* out, ustring_view encrypted, ustring_view nonce, ustring_view key) {
+        assert(encrypted.size() >= crypto_aead_xchacha20poly1305_ietf_ABYTES);
+        assert(nonce.size() == crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+        assert(key.size() == crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
+
+        return 0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
+                            out,
+                            nullptr,
+                            nullptr,
+                            encrypted.data(),
+                            encrypted.size(),
+                            nullptr,
+                            0,
+                            nonce.data(),
+                            key.data());
+    }
+    bool try_decrypting(
+            unsigned char* out,
+            ustring_view encrypted,
+            ustring_view nonce,
+
+            const std::array<unsigned char, 32>& key) {
+        return try_decrypting(out, encrypted, nonce, ustring_view{key.data(), key.size()});
+    }
+}  // namespace
+
 bool Keys::load_key_message(
         std::string_view hash,
         ustring_view data,
@@ -938,16 +978,7 @@ bool Keys::load_key_message(
                 ustring plaintext;
                 plaintext.resize(encrypted.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
 
-                if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
-                                 plaintext.data(),
-                                 nullptr,
-                                 nullptr,
-                                 encrypted.data(),
-                                 encrypted.size(),
-                                 nullptr,
-                                 0,
-                                 nonce.data(),
-                                 member_dec_key.data())) {
+                if (try_decrypting(plaintext.data(), encrypted, nonce, member_dec_key)) {
                     // Decryption success, we found our key list!
 
                     oxenc::bt_list_consumer key_infos{from_unsigned_sv(plaintext)};
@@ -1004,16 +1035,7 @@ bool Keys::load_key_message(
         if (admin()) {
             auto k = seed_hash(enc_key_admin_hash_key);
 
-            if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
-                             new_key.key.data(),
-                             nullptr,
-                             nullptr,
-                             admin_key.data(),
-                             admin_key.size(),
-                             nullptr,
-                             0,
-                             nonce.data(),
-                             k.data()))
+            if (!try_decrypting(new_key.key.data(), admin_key, nonce, k))
                 throw config_value_error{"Failed to decrypt admin key from key message"};
 
             found_key = true;
@@ -1036,16 +1058,7 @@ bool Keys::load_key_message(
             if (found_key)
                 continue;
 
-            if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
-                             new_key.key.data(),
-                             nullptr,
-                             nullptr,
-                             member_key.data(),
-                             member_key.size(),
-                             nullptr,
-                             0,
-                             nonce.data(),
-                             member_dec_key.data())) {
+            if (try_decrypting(new_key.key.data(), member_key, nonce, member_dec_key)) {
                 // Decryption success, we found our key!
                 found_key = true;
             }
@@ -1215,19 +1228,19 @@ std::optional<ustring> Keys::decrypt_message(ustring_view ciphertext) const {
             plain.resize(
                     ciphertext.size() -
                     (OVERHEAD - 1 - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES));
-            for (auto& k : keys_) {
-                if (0 == crypto_aead_xchacha20poly1305_ietf_decrypt(
-                                 plain.data(),
-                                 nullptr,
-                                 nullptr,
-                                 ciphertext.data(),
-                                 ciphertext.size(),
-                                 nullptr,
-                                 0,
-                                 nonce.data(),
-                                 k.key.data())) {
-                    success = true;
-                    break;
+
+            if (auto pending = pending_key();
+                pending && try_decrypting(plain.data(), ciphertext, nonce, *pending)) {
+
+                success = true;
+
+            } else {
+
+                for (auto& k : keys_) {
+                    if (try_decrypting(plain.data(), ciphertext, nonce, k.key)) {
+                        success = true;
+                        break;
+                    }
                 }
             }
             break;
