@@ -475,6 +475,10 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     }
 
     ustring new_keys_config7{admin1.keys.rekey(admin1.info, admin1.members)};
+
+    // Make sure we can encrypt & decrypt even if the rekey is still pending:
+    CHECK(admin1.keys.decrypt_message(admin1.keys.encrypt_message(to_usv("abc"))));
+
     auto [iseq7, ipush7, iobs7] = admin1.info.push();
     info_configs.emplace_back("ifakehash7", ipush7);
     admin1.info.confirm_pushed(iseq7, "ifakehash7");
