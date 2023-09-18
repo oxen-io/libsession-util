@@ -67,6 +67,13 @@ bool Keys::needs_dump() const {
 }
 
 ustring Keys::dump() {
+    auto dumped = this->debug_dump();
+
+    needs_dump_ = false;
+    return dumped;
+}
+
+ustring Keys::debug_dump() {
     oxenc::bt_dict_producer d;
     {
         auto active = d.append_list("active");
@@ -101,7 +108,6 @@ ustring Keys::dump() {
         pending.append("k", from_unsigned_sv(pending_key_));
     }
 
-    needs_dump_ = false;
     return ustring{to_unsigned_sv(d.view())};
 }
 

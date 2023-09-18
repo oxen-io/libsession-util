@@ -1020,13 +1020,24 @@ class ConfigBase : public ConfigSig {
     /// Returns a dump of the current state for storage in the database; this value would get passed
     /// into the constructor to reconstitute the object (including the push/not pushed status). This
     /// method is *not* virtual: if subclasses need to store extra data they should set it in the
-    /// `subclass_data` field.
+    /// `subclass_data` field. Updates the internal needs_dump flag to false.
     ///
     /// Inputs: None
     ///
     /// Outputs:
     /// - `ustring` -- Returns binary data of the state dump
     ustring dump();
+
+    /// API: base/ConfigBase::debug_dump
+    ///
+    /// Returns a dump of the current state for debugging. Does *not* update the
+    /// internal needs_dump flag.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `ustring` -- Returns binary data of the state dump
+    ustring debug_dump();
 
     /// API: base/ConfigBase::needs_dump
     ///

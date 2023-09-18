@@ -580,7 +580,7 @@ class Keys final : public ConfigSig {
     /// API: groups/Keys::dump
     ///
     /// Returns a dump of the current state of this keys config that allows the Keys object to be
-    /// reinstantiated from scratch.
+    /// reinstantiated from scratch. Updates the internal needs_dump flag to false.
     ///
     /// Although this can be called at any time, it is recommended to only do so when
     /// `needs_dump()` returns true.
@@ -591,6 +591,17 @@ class Keys final : public ConfigSig {
     /// - opaque binary data containing the group keys and other Keys config data that can be passed
     ///   to the `Keys` constructor to reinitialize a Keys object with the current state.
     ustring dump();
+
+    /// API: groups/Keys::debug_dump
+    ///
+    /// Returns a dump of the current state for debugging. Does *not* update the
+    /// internal needs_dump flag.
+
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `ustring` -- Returns binary data of the state dump
+    ustring debug_dump();
 
     /// API: groups/Keys::encrypt_message
     ///
