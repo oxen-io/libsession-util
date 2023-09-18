@@ -279,6 +279,15 @@ void ConfigBase::confirm_pushed(seqno_t seqno, std::string msg_hash) {
 }
 
 ustring ConfigBase::dump() {
+    if (is_readonly())
+        _old_hashes.clear();
+
+    auto d = make_dump();
+    _needs_dump = false;
+    return d;
+}
+
+ustring ConfigBase::make_dump() const {
     auto data = _config->serialize(false /* disable signing for local storage */);
     auto data_sv = from_unsigned_sv(data);
     oxenc::bt_list old_hashes;
@@ -288,14 +297,11 @@ ustring ConfigBase::dump() {
     d.append("$", data_sv);
     d.append("(", _curr_hash);
 
-    if (is_readonly())
-        _old_hashes.clear();
     d.append_list(")").append(_old_hashes.begin(), _old_hashes.end());
 
     if (auto extra = extra_data(); !extra.empty())
         d.append_bt("+", std::move(extra));
 
-    _needs_dump = false;
     return ustring{to_unsigned_sv(d.view())};
 }
 
