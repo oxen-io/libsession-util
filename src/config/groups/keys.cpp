@@ -67,13 +67,13 @@ bool Keys::needs_dump() const {
 }
 
 ustring Keys::dump() {
-    auto dumped = this->debug_dump();
+    auto dumped = make_dump();
 
     needs_dump_ = false;
     return dumped;
 }
 
-ustring Keys::debug_dump() {
+ustring Keys::make_dump() const {
     oxenc::bt_dict_producer d;
     {
         auto active = d.append_list("active");

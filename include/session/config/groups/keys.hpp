@@ -592,16 +592,17 @@ class Keys final : public ConfigSig {
     ///   to the `Keys` constructor to reinitialize a Keys object with the current state.
     ustring dump();
 
-    /// API: groups/Keys::debug_dump
+    /// API: groups/Keys::make_dump
     ///
-    /// Returns a dump of the current state for debugging. Does *not* update the
-    /// internal needs_dump flag.
-
+    /// Returns a dump of the current state; unlike `dump()` this does *not* update the internal
+    /// needs_dump flag; it is mostly used internally (by `dump()`), but can also be called
+    /// externally for debugging purposes.
+    ///
     /// Inputs: None
     ///
     /// Outputs:
     /// - `ustring` -- Returns binary data of the state dump
-    ustring debug_dump();
+    ustring make_dump() const;
 
     /// API: groups/Keys::encrypt_message
     ///
