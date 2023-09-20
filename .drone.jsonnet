@@ -39,7 +39,7 @@ local debian_pipeline(name,
       image: image,
       pull: 'always',
       [if allow_fail then 'failure']: 'ignore',
-      environment: { SSH_KEY: { from_secret: 'SSH_KEY' } },
+      environment: { SSH_KEY: { from_secret: 'SSH_KEY' }, WINEDEBUG: '-all' },
       commands: [
         'echo "Building on ${DRONE_STAGE_MACHINE}"',
         'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
@@ -131,6 +131,7 @@ local windows_cross_pipeline(name,
   allow_fail=allow_fail,
   deps=[
     'g++-mingw-w64-' + winarch + '-posix',
+    'wine',
   ],
   build=[
     'mkdir build',
