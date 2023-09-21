@@ -499,10 +499,11 @@ LIBSESSION_EXPORT bool groups_keys_swarm_subaccount_token_flags(
 
 /// API: groups/groups_keys_encrypt_message
 ///
-/// Encrypts a message using the most recent group encryption key of this object.  The message will
-/// be compressed (if that reduces the size) before being encrypted.  Decryption (and decompression,
-/// if compression was applied) is performed by passing such a message into
-/// groups_keys_decrypt_message.
+/// Encrypts a message using the most recent group encryption key of this object.
+///
+/// The message will be compressed (if that reduces the size), padded, authored, and signed before
+/// being encrypted.  Decryption and verification (and decompression, if compression was applied) is
+/// performed by passing such a message into groups_keys_decrypt_message.
 ///
 /// Note: this method can fail if there are no encryption keys at all, or if the incoming message
 /// decompresses to a huge value (more than 1MB).  If it fails then `ciphertext_out` is set to NULL
@@ -526,25 +527,37 @@ LIBSESSION_EXPORT void groups_keys_encrypt_message(
 /// API: groups/groups_keys_decrypt_message
 ///
 /// Attempts to decrypt a message using all of the known active encryption keys of this object.  The
-/// message will be decompressed after decryption, if required.
+/// message will be de-padded, decompressed (if compressed), and have its signature verified after
+/// decryption.
+///
+/// Upon failure this returns false and sets `conf.last_error` to a string containing a diagnostic
+/// reason the decryption failed (intended for logging, not for end-user display).
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `ciphertext_in` -- [in] Pointer to a data buffer containing the encrypted data (as was
 ///   produced by `groups_keys_encrypt_message`).
 /// - `ciphertext_len` -- [in] Length of `ciphertext_in`
+/// - `session_id_out` -- [out] pointer to a buffer of at least 67 bytes where the null-terminated,
+///   hex-encoded session_id of the message's author will be written if decryption/verification was
+///   successful.
 /// - `plaintext_out` -- [out] Pointer-pointer to an output buffer; a new buffer is allocated, the
 ///   decrypted/decompressed data written to it, and then the pointer to that buffer is stored here.
-///   This buffer must be `free()`d by the caller when done with it!
+///   This buffer must be `free()`d by the caller when done with it *unless* the function returns
+///   false, in which case the buffer pointer will not be set.
 /// - `plaintext_len` -- [out] Pointer to a size_t where the length of `plaintext_out` is stored.
+///   Not touched if the function returns false.
 ///
 /// Outputs:
 /// - `bool` -- True if the message was successfully decrypted, false if decryption (or parsing or
-///   decompression) failed with all of our known keys.
+///   decompression) failed with all of our known keys.  If (and only if) true is returned then
+///   `plaintext_out` must be freed when done with it.  If false is returned then `conf.last_error`
+///   will contain a diagnostic message describing why the decryption failed.
 LIBSESSION_EXPORT bool groups_keys_decrypt_message(
-        const config_group_keys* conf,
+        config_group_keys* conf,
         const unsigned char* cipherext_in,
         size_t cipherext_len,
+        char* session_id_out,
         unsigned char** plaintext_out,
         size_t* plaintext_len);
 

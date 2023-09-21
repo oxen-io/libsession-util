@@ -339,10 +339,11 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
         msg += msg;
 
     auto compressed = admin1.keys.encrypt_message(to_usv(msg));
+    CHECK(compressed.size() == 256);
     auto uncompressed = admin1.keys.encrypt_message(to_usv(msg), false);
+    CHECK(uncompressed.size() == 2048);
 
     CHECK(compressed.size() < msg.size());
-    CHECK(compressed.size() < uncompressed.size());
 
     // Add two new members and send them supplemental keys
     for (int i = 0; i < 2; ++i) {
@@ -412,17 +413,20 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash5"s}});
     }
 
-    auto decrypted1 = members.back().keys.decrypt_message(compressed);
-    REQUIRE(decrypted1);
-    CHECK(to_sv(*decrypted1) == msg);
+    std::pair<std::string, ustring> decrypted1, decrypted2;
+    REQUIRE_NOTHROW(decrypted1 = members.back().keys.decrypt_message(compressed));
+    CHECK(decrypted1.first == admin1.session_id);
+    CHECK(to_sv(decrypted1.second) == msg);
 
-    auto decrypted2 = members.back().keys.decrypt_message(uncompressed);
-    REQUIRE(decrypted2);
-    CHECK(to_sv(*decrypted2) == msg);
+    REQUIRE_NOTHROW(decrypted2 = members.back().keys.decrypt_message(uncompressed));
+    CHECK(decrypted2.first == admin1.session_id);
+    CHECK(to_sv(decrypted2.second) == msg);
 
     auto bad_compressed = compressed;
     bad_compressed.back() ^= 0b100;
-    CHECK_FALSE(members.back().keys.decrypt_message(bad_compressed));
+    CHECK_THROWS_WITH(
+            members.back().keys.decrypt_message(bad_compressed),
+            "unable to decrypt ciphertext with any current group keys");
 
     // Duplicate members[1] from dumps
     auto& m1b = members.emplace_back(
@@ -477,7 +481,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     ustring new_keys_config7{admin1.keys.rekey(admin1.info, admin1.members)};
 
     // Make sure we can encrypt & decrypt even if the rekey is still pending:
-    CHECK(admin1.keys.decrypt_message(admin1.keys.encrypt_message(to_usv("abc"))));
+    CHECK_NOTHROW(admin1.keys.decrypt_message(admin1.keys.encrypt_message(to_usv("abc"))));
 
     auto [iseq7, ipush7, iobs7] = admin1.info.push();
     info_configs.emplace_back("ifakehash7", ipush7);
