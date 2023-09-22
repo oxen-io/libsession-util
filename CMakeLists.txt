@@ -86,6 +86,7 @@ if(STATIC_LIBSTD)
     endif()
 endif()
 
+include(AddStaticBundleLib)
 
 # Always build PIC
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -97,12 +98,7 @@ add_subdirectory(src)
 if(STATIC_BUNDLE)
     include(combine_archives)
 
-    combine_archives(session-util
-        crypto
-        config
-        version
-        libsodium::sodium-internal
-        libzstd_static)
+    combine_archives(session-util libsession-static-bundle "${LIBSESSION_STATIC_BUNDLE_LIBS}")
     set(lib_folder lib)
     if(IOS)
         set(lib_folder "${lib_folder}-${ARCH}")

@@ -1,4 +1,4 @@
-function(combine_archives output_archive)
+function(combine_archives output_archive dep_target)
   set(FULL_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/lib${output_archive}.a)
 
   if(NOT APPLE)

@@ -64,6 +64,7 @@ endif()
 
 
 add_subdirectory(libsodium-internal)
+libsession_static_bundle(libsodium::sodium-internal)
 
 
 set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "")
@@ -84,3 +85,4 @@ export(
     NAMESPACE libsession::
     FILE libsessionZstd.cmake
 )
+libsession_static_bundle(libzstd_static)
