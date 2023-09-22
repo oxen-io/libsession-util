@@ -13,6 +13,7 @@
 #include <sodium/utils.h>
 
 #include <chrono>
+#include <iterator>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -295,7 +296,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
             unsigned char,
             crypto_aead_xchacha20poly1305_ietf_KEYBYTES + crypto_aead_xchacha20poly1305_ietf_ABYTES>
             encrypted;
-    std::string_view enc_sv{reinterpret_cast<const char*>(encrypted.data()), encrypted.size()};
+    std::string_view enc_sv = from_unsigned_sv(encrypted);
 
     // Shared key for admins
     auto member_k = seed_hash(enc_key_admin_hash_key);
@@ -362,8 +363,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
             crypto_generichash_blake2b_final(&st, rng_seed.data(), rng_seed.size());
 
             randombytes_buf_deterministic(junk_data.data(), junk_data.size(), rng_seed.data());
-            std::string_view junk_view{
-                    reinterpret_cast<const char*>(junk_data.data()), junk_data.size()};
+            std::string_view junk_view = from_unsigned_sv(junk_data);
             while (!junk_view.empty()) {
                 member_keys.append(junk_view.substr(0, encrypted.size()));
                 junk_view.remove_prefix(encrypted.size());
@@ -730,16 +730,13 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
             hseed.size(),
             user_ed25519_sk.data(),
             32,
-            reinterpret_cast<const unsigned char*>(seed_hash_key.data()),
+            to_unsigned(seed_hash_key.data()),
             seed_hash_key.size());
 
     std::array<unsigned char, 64> tmp;
     crypto_generichash_blake2b_state st;
     crypto_generichash_blake2b_init(
-            &st,
-            reinterpret_cast<const unsigned char*>(r_hash_key.data()),
-            r_hash_key.size(),
-            tmp.size());
+            &st, to_unsigned(r_hash_key.data()), r_hash_key.size(), tmp.size());
     crypto_generichash_blake2b_update(&st, hseed.data(), hseed.size());
     crypto_generichash_blake2b_update(&st, kT.data(), kT.size());
     crypto_generichash_blake2b_update(&st, msg.data(), msg.size());
@@ -1178,11 +1175,10 @@ std::optional<ustring_view> Keys::pending_key() const {
     return std::nullopt;
 }
 
-static constexpr size_t OVERHEAD = 1  // encryption type indicator
-                                 + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES +
-                                   crypto_aead_xchacha20poly1305_ietf_ABYTES;
+static constexpr size_t ENCRYPT_OVERHEAD =
+        crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + crypto_aead_xchacha20poly1305_ietf_ABYTES;
 
-ustring Keys::encrypt_message(ustring_view plaintext, bool compress) const {
+ustring Keys::encrypt_message(ustring_view plaintext, bool compress, size_t padding) const {
     if (plaintext.size() > MAX_PLAINTEXT_MESSAGE_SIZE)
         throw std::runtime_error{"Cannot encrypt plaintext: message size is too large"};
     ustring _compressed;
@@ -1196,16 +1192,44 @@ ustring Keys::encrypt_message(ustring_view plaintext, bool compress) const {
         }
     }
 
+    oxenc::bt_dict_producer dict{};
+    dict.append(
+            "", 1);  // encoded data version (bump this if something changes in an incompatible way)
+    dict.append("a", std::string_view{from_unsigned(user_ed25519_sk.data()) + 32, 32});
+
+    std::array<unsigned char, 64> signature;
+    crypto_sign_ed25519_detached(
+            signature.data(), nullptr, plaintext.data(), plaintext.size(), user_ed25519_sk.data());
+
+    if (!compress)
+        dict.append("d", from_unsigned_sv(plaintext));
+
+    dict.append("s", from_unsigned_sv(signature));
+
+    if (compress)
+        dict.append("z", from_unsigned_sv(plaintext));
+
+    auto encoded = std::move(dict).str();
+
+    // suppose size == 250, padding = 256
+    // so size + overhead(40) == 290
+    // need padding of (256 - (290 % 256)) = 256 - 34 = 222
+    // thus 290 + 222 = 512
+    size_t final_len = ENCRYPT_OVERHEAD + encoded.size();
+    if (padding > 1 && final_len % padding != 0) {
+        size_t to_append = padding - (final_len % padding);
+        encoded.resize(encoded.size() + to_append);
+    }
+
     ustring ciphertext;
-    ciphertext.resize(OVERHEAD + plaintext.size());
-    ciphertext[0] = compress ? 'X' : 'x';
-    randombytes_buf(ciphertext.data() + 1, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    ustring_view nonce{ciphertext.data() + 1, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES};
+    ciphertext.resize(ENCRYPT_OVERHEAD + encoded.size());
+    randombytes_buf(ciphertext.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    ustring_view nonce{ciphertext.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES};
     if (0 != crypto_aead_xchacha20poly1305_ietf_encrypt(
-                     ciphertext.data() + 1 + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
+                     ciphertext.data() + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
                      nullptr,
-                     plaintext.data(),
-                     plaintext.size(),
+                     to_unsigned(encoded.data()),
+                     encoded.size(),
                      nullptr,
                      0,
                      nullptr,
@@ -1216,59 +1240,115 @@ ustring Keys::encrypt_message(ustring_view plaintext, bool compress) const {
     return ciphertext;
 }
 
-std::optional<ustring> Keys::decrypt_message(ustring_view ciphertext) const {
-    if (ciphertext.size() < OVERHEAD)
-        return std::nullopt;
+std::pair<std::string, ustring> Keys::decrypt_message(ustring_view ciphertext) const {
+    if (ciphertext.size() < ENCRYPT_OVERHEAD)
+        throw std::runtime_error{"ciphertext is too small to be encrypted data"};
 
     ustring plain;
 
-    bool success = false;
-    bool compressed = false;
-    char type = static_cast<char>(ciphertext[0]);
-    ciphertext.remove_prefix(1);
-    switch (type) {
-        case 'X': compressed = true; [[fallthrough]];
-        case 'x': {
-            auto nonce = ciphertext.substr(0, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-            ciphertext.remove_prefix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-            plain.resize(
-                    ciphertext.size() -
-                    (OVERHEAD - 1 - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES));
+    auto nonce = ciphertext.substr(0, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    ciphertext.remove_prefix(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    plain.resize(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
 
-            if (auto pending = pending_key();
-                pending && try_decrypting(plain.data(), ciphertext, nonce, *pending)) {
-
-                success = true;
-
-            } else {
-
-                for (auto& k : keys_) {
-                    if (try_decrypting(plain.data(), ciphertext, nonce, k.key)) {
-                        success = true;
-                        break;
-                    }
-                }
+    //
+    // Decrypt, using all the possible keys, starting with a pending one (if we have one)
+    //
+    bool decrypt_success = false;
+    if (auto pending = pending_key();
+        pending && try_decrypting(plain.data(), ciphertext, nonce, *pending)) {
+        decrypt_success = true;
+    } else {
+        for (auto& k : keys_) {
+            if (try_decrypting(plain.data(), ciphertext, nonce, k.key)) {
+                decrypt_success = true;
+                break;
             }
-            break;
         }
-
-        default:
-            // Don't know how to handle this type (or it's garbage)
-            return std::nullopt;
     }
 
-    if (!success)  // none of the keys worked
-        return std::nullopt;
+    if (!decrypt_success)  // none of the keys worked
+        throw std::runtime_error{"unable to decrypt ciphertext with any current group keys"};
+
+    //
+    // Removing any null padding bytes from the end
+    //
+    if (auto pos = plain.find_last_not_of('\0'); pos != std::string::npos)
+        plain.resize(pos + 1);
+
+    //
+    // Now what we have less should be a bt_dict
+    //
+    if (plain.empty() || plain.front() != 'd' || plain.back() != 'e')
+        throw std::runtime_error{"decrypted data is not a bencoded dict"};
+
+    oxenc::bt_dict_consumer dict{from_unsigned_sv(plain)};
+
+    if (!dict.skip_until(""))
+        throw std::runtime_error{"group message version tag (\"\") is missing"};
+    if (auto v = dict.consume_integer<int>(); v != 1)
+        throw std::runtime_error{
+                "group message version tag (" + std::to_string(v) +
+                ") is not compatible (we support v1)"};
+
+    if (!dict.skip_until("a"))
+        throw std::runtime_error{"missing message author pubkey"};
+    auto ed_pk = to_unsigned_sv(dict.consume_string_view());
+    if (ed_pk.size() != 32)
+        throw std::runtime_error{
+                "message author pubkey size (" + std::to_string(ed_pk.size()) + ") is invalid"};
+
+    std::array<unsigned char, 32> x_pk;
+    if (0 != crypto_sign_ed25519_pk_to_curve25519(x_pk.data(), ed_pk.data()))
+        throw std::runtime_error{
+                "author ed25519 pubkey is invalid (unable to convert it to a session id)"};
+
+    std::pair<std::string, ustring> result;
+    auto& [session_id, data] = result;
+    session_id.reserve(66);
+    session_id += "05";
+    oxenc::to_hex(x_pk.begin(), x_pk.end(), std::back_inserter(session_id));
+
+    ustring_view raw_data;
+    if (dict.skip_until("d")) {
+        raw_data = to_unsigned_sv(dict.consume_string_view());
+        if (raw_data.empty())
+            throw std::runtime_error{"uncompressed message data (\"d\") cannot be empty"};
+    }
+
+    if (!dict.skip_until("s"))
+        throw std::runtime_error{"message signature is missing"};
+    auto ed_sig = to_unsigned_sv(dict.consume_string_view());
+    if (ed_sig.size() != 64)
+        throw std::runtime_error{
+                "message signature size (" + std::to_string(ed_sig.size()) + ") is invalid"};
+
+    bool compressed = false;
+    if (dict.skip_until("z")) {
+        if (!raw_data.empty())
+            throw std::runtime_error{
+                    "message signature cannot contain both compressed (z) and uncompressed (d) "
+                    "data"};
+        raw_data = to_unsigned_sv(dict.consume_string_view());
+        if (raw_data.empty())
+            throw std::runtime_error{"compressed message data (\"z\") cannot be empty"};
+
+        compressed = true;
+    } else if (raw_data.empty())
+        throw std::runtime_error{"message must contain compressed (z) or uncompressed (d) data"};
+
+    if (0 != crypto_sign_ed25519_verify_detached(
+                     ed_sig.data(), raw_data.data(), raw_data.size(), ed_pk.data()))
+        throw std::runtime_error{"message signature failed validation"};
 
     if (compressed) {
-        if (auto decomp = zstd_decompress(plain, MAX_PLAINTEXT_MESSAGE_SIZE))
-            plain = std::move(*decomp);
-        else
-            // Decompression failed
-            return std::nullopt;
-    }
+        if (auto decomp = zstd_decompress(raw_data, MAX_PLAINTEXT_MESSAGE_SIZE)) {
+            data = std::move(*decomp);
+        } else
+            throw std::runtime_error{"message decompression failed"};
+    } else
+        data = raw_data;
 
-    return std::move(plain);
+    return result;
 }
 
 }  // namespace session::config::groups
@@ -1449,21 +1529,25 @@ LIBSESSION_C_API void groups_keys_encrypt_message(
 }
 
 LIBSESSION_C_API bool groups_keys_decrypt_message(
-        const config_group_keys* conf,
+        config_group_keys* conf,
         const unsigned char* ciphertext_in,
         size_t ciphertext_len,
+        char* session_id,
         unsigned char** plaintext_out,
         size_t* plaintext_len) {
     assert(ciphertext_in && plaintext_out && plaintext_len);
 
-    auto plaintext = unbox(conf).decrypt_message(ustring_view{ciphertext_in, ciphertext_len});
-    if (!plaintext)
-        return false;
-
-    *plaintext_out = static_cast<unsigned char*>(std::malloc(plaintext->size()));
-    std::memcpy(*plaintext_out, plaintext->data(), plaintext->size());
-    *plaintext_len = plaintext->size();
-    return true;
+    try {
+        auto [session_id, plaintext] =
+                unbox(conf).decrypt_message(ustring_view{ciphertext_in, ciphertext_len});
+        *plaintext_out = static_cast<unsigned char*>(std::malloc(plaintext.size()));
+        std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());
+        *plaintext_len = plaintext.size();
+        return true;
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+    }
+    return false;
 }
 
 LIBSESSION_C_API bool groups_keys_key_supplement(
