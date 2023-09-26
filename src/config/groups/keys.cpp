@@ -1538,8 +1538,9 @@ LIBSESSION_C_API bool groups_keys_decrypt_message(
     assert(ciphertext_in && plaintext_out && plaintext_len);
 
     try {
-        auto [session_id, plaintext] =
+        auto [sid, plaintext] =
                 unbox(conf).decrypt_message(ustring_view{ciphertext_in, ciphertext_len});
+        std::memcpy(session_id, sid.c_str(), sid.size() + 1);
         *plaintext_out = static_cast<unsigned char*>(std::malloc(plaintext.size()));
         std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());
         *plaintext_len = plaintext.size();
