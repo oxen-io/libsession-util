@@ -29,7 +29,7 @@ std::string sign(std::string_view curve25519_privkey /* 32 bytes */, std::string
 /// Given a curve25519 pubkey, this returns the associated XEd25519-derived Ed25519 pubkey.  Note,
 /// however, that there are *two* possible Ed25519 pubkeys that could result in a given curve25519
 /// pubkey: this always returns the positive value.  You can get the other possibility (the
-/// negative) by flipping the sign bit, i.e. `returned_pubkey[31] |= 0x80`.
+/// negative) by setting the sign bit, i.e. `returned_pubkey[31] |= 0x80`.
 std::array<unsigned char, 32> pubkey(ustring_view curve25519_pubkey);
 
 /// "Softer" version that takes/returns strings of regular chars

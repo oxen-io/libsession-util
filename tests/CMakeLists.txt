@@ -1,6 +1,7 @@
 add_subdirectory(Catch2)
 
 add_executable(testAll
+    test_blinding.cpp
     test_bt_merge.cpp
     test_bugs.cpp
     test_compression.cpp
