@@ -1,11 +1,12 @@
 
 add_library(common INTERFACE)
+target_link_libraries(common INTERFACE
+    oxenc::oxenc)
 
 target_include_directories(common INTERFACE ../include)
 if(WARNINGS_AS_ERRORS)
     target_compile_options(common INTERFACE -Werror)
 endif()
-
 
 set(export_targets)
 macro(add_libsession_util_library name)
@@ -46,13 +47,16 @@ add_libsession_util_library(config
 
 target_link_libraries(crypto
     PUBLIC
+    common
+    PRIVATE
     libsodium::sodium-internal
     common
 )
 target_link_libraries(config
     PUBLIC
     crypto
-    oxenc::oxenc
+    common
+    PRIVATE
     libzstd::static
 )
 

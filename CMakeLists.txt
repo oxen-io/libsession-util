@@ -45,18 +45,27 @@ if(WIN32)
     set(default_static_libstd ON)
 endif()
 
-if(MINGW OR ANDROID OR IOS OR STATIC_BUNDLE)
+option(BUILD_SHARED_LIBS "Build as shared library" OFF)
+
+if(BUILD_SHARED_LIBS)
+    set(static_default OFF)
+else()
+    set(static_default ON)
+endif()
+
+option(BUILD_STATIC_DEPS "Build all dependencies statically rather than trying to link to them on the system" ${static_default})
+option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" ${static_default})
+
+if(MINGW OR ANDROID OR IOS) # OR STATIC_BUNDLE)
   set(use_lto_default OFF)
 else()
   set(use_lto_default ON)
 endif()
 
-
-
 option(WARNINGS_AS_ERRORS "Treat all compiler warnings as errors" OFF)
+
 option(STATIC_LIBSTD "Statically link libstdc++/libgcc" ${default_static_libstd})
-option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" OFF)
-option(BUILD_SHARED_LIBS "Build as shared library" OFF)
+
 option(USE_LTO "Use Link-Time Optimization" ${use_lto_default})
 
 if(USE_LTO)
@@ -95,7 +104,12 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(external)
 add_subdirectory(src)
 
+if (BUILD_STATIC_DEPS)
+    include(StaticBuild)
+endif()
+
 if(STATIC_BUNDLE)
+
     include(combine_archives)
 
     combine_archives(session-util libsession-static-bundle "${LIBSESSION_STATIC_BUNDLE_LIBS}")
