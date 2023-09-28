@@ -52,13 +52,13 @@ target_link_libraries(crypto
     common
     PRIVATE
     libsodium::sodium-internal
-    common
 )
 target_link_libraries(config
     PUBLIC
     crypto
     common
     PRIVATE
+    libsodium::sodium-internal
     libzstd::static
 )
 
