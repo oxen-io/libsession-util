@@ -94,6 +94,7 @@ local debian_build(name,
     'cd build',
     'cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=' + build_type + ' ' +
     (if werror then '-DWARNINGS_AS_ERRORS=ON ' else '') +
+    '-DBUILD_SHARED_LIBS=ON ' +
     '-DUSE_LTO=' + (if lto then 'ON ' else 'OFF ') +
     '-DWITH_TESTS=' + (if tests then 'ON ' else 'OFF ') +
     cmake_extra,
@@ -215,6 +216,7 @@ local mac_builder(name,
   'cd build',
   'cmake .. -DCMAKE_CXX_FLAGS=-fcolor-diagnostics -DCMAKE_BUILD_TYPE=' + build_type + ' ' +
   (if werror then '-DWARNINGS_AS_ERRORS=ON ' else '') +
+  '-DBUILD_SHARED_LIBS=ON ' +
   '-DUSE_LTO=' + (if lto then 'ON ' else 'OFF ') +
   '-DWITH_TESTS=' + (if tests then 'ON ' else 'OFF ') +
   cmake_extra,
