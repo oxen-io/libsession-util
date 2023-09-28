@@ -1,0 +1,3 @@
+usr/include/session
+usr/lib/*/lib*.so
+usr/lib/*/pkgconfig/libsession*

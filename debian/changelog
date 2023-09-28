@@ -1,0 +1,5 @@
+libsession-util (1.1.0~pre20230926-1) sid; urgency=medium
+
+  * Initial debian packaging.
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 26 Sep 2023 17:13:58 -0300

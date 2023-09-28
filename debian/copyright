@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: oxenmq
+Upstream-Contact: Jason Rhinelander <jason@imaginary.ca>
+Source: <https://github.com/oxen-io/libsession-util.git>
+
+Files: *
+Copyright: 2023 The Oxen Project
+License: GPL-3+
