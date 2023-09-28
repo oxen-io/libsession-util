@@ -14,7 +14,9 @@ macro(add_libsession_util_library name)
 
     set_target_properties(
         ${name}
-        PROPERTIES OUTPUT_NAME session-util-${name})
+        PROPERTIES
+        OUTPUT_NAME session-util-${name}
+        SOVERSION ${LIBSESSION_LIBVERSION})
 
     libsession_static_bundle(${name})
 
@@ -94,7 +96,7 @@ else()
         configure_file("${CMAKE_CURRENT_SOURCE_DIR}/version.c.in" "${CMAKE_CURRENT_BINARY_DIR}/version.c")
     endif()
 endif()
-add_libsession_util_library(version version.c)
+add_libsession_util_library(version STATIC version.c)
 target_include_directories(version PRIVATE ../include)
 target_link_libraries(common INTERFACE version)
 

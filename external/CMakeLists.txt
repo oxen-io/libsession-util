@@ -63,7 +63,11 @@ if(APPLE)
 endif()
 
 
-add_subdirectory(libsodium-internal)
+function(libsodium_internal_subdir)
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory(libsodium-internal)
+endfunction()
+libsodium_internal_subdir()
 libsession_static_bundle(libsodium::sodium-internal)
 
 

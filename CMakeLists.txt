@@ -22,6 +22,10 @@ project(libsession-util
     DESCRIPTION "Session client utility library"
     LANGUAGES ${LANGS})
 
+message(STATUS "${PROJECT_NAME} v${PROJECT_VERSION}")
+
+set(LIBSESSION_LIBVERSION ${PROJECT_VERSION})
+
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
