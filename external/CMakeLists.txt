@@ -77,7 +77,7 @@ set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "")
 set(ZSTD_BUILD_SHARED OFF CACHE BOOL "")
 set(ZSTD_BUILD_STATIC ON CACHE BOOL "")
 set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "")
-add_subdirectory(zstd/build/cmake)
+add_subdirectory(zstd/build/cmake EXCLUDE_FROM_ALL)
 # zstd's cmake doesn't properly set up include paths on its targets, so we have to wrap it in an
 # interface target that does:
 add_library(libzstd_static_fixed_includes INTERFACE)

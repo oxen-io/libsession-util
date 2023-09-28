@@ -15,7 +15,7 @@ macro(add_libsession_util_library name)
     set_target_properties(
         ${name}
         PROPERTIES
-        OUTPUT_NAME session-util-${name}
+        OUTPUT_NAME session-${name}
         SOVERSION ${LIBSESSION_LIBVERSION})
 
     libsession_static_bundle(${name})
@@ -96,7 +96,8 @@ else()
         configure_file("${CMAKE_CURRENT_SOURCE_DIR}/version.c.in" "${CMAKE_CURRENT_BINARY_DIR}/version.c")
     endif()
 endif()
-add_libsession_util_library(version STATIC version.c)
+add_library(version STATIC version.c)
+libsession_static_bundle(version)
 target_include_directories(version PRIVATE ../include)
 target_link_libraries(common INTERFACE version)
 
@@ -105,7 +106,9 @@ foreach(tgt ${export_targets})
     add_library("libsession::${tgt}" ALIAS "${tgt}")
 endforeach()
 export(
-    TARGETS ${export_targets} common
+    TARGETS ${export_targets} common version
     NAMESPACE libsession::
     FILE libsessionTargets.cmake
 )
+
+set(libsession_export_targets "${export_targets}" PARENT_SCOPE)
