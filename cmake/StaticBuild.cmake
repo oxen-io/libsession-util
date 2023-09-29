@@ -5,25 +5,11 @@
 
 set(LOCAL_MIRROR "" CACHE STRING "local mirror path/URL for lib downloads")
 
-set(LIBUNISTRING_VERSION 1.1 CACHE STRING "libunistring version")
-set(LIBUNISTRING_MIRROR ${LOCAL_MIRROR} https://ftp.gnu.org/gnu/libunistring
-    CACHE STRING "libunistring mirror(s)")
-set(LIBUNISTRING_SOURCE libunistring-${LIBUNISTRING_VERSION}.tar.xz)
-set(LIBUNISTRING_HASH SHA512=01a4267bbd301ea5c389b17ee918ae5b7d645da8b2c6c6f0f004ff2dead9f8e50cda2c6047358890a5fceadc8820ffc5154879193b9bb8970f3fb1fea1f411d6
-    CACHE STRING "libunistring source hash")
-
-set(LIBIDN2_VERSION 2.3.4 CACHE STRING "libidn2 version")
-set(LIBIDN2_MIRROR ${LOCAL_MIRROR} https://ftp.gnu.org/gnu/libidn
-    CACHE STRING "libidn2 mirror(s)")
-set(LIBIDN2_SOURCE libidn2-${LIBIDN2_VERSION}.tar.gz)
-set(LIBIDN2_HASH SHA512=a6e90ccef56cfd0b37e3333ab3594bb3cec7ca42a138ca8c4f4ce142da208fa792f6c78ca00c01001c2bc02831abcbaf1cf9bcc346a5290fd7b30708f5a462f3
-    CACHE STRING "libidn2 source hash")
-
-set(GMP_VERSION 6.2.1 CACHE STRING "gmp version")
+set(GMP_VERSION 6.3.0 CACHE STRING "gmp version")
 set(GMP_MIRROR ${LOCAL_MIRROR} https://gmplib.org/download/gmp
     CACHE STRING "gmp mirror(s)")
 set(GMP_SOURCE gmp-${GMP_VERSION}.tar.xz)
-set(GMP_HASH SHA512=c99be0950a1d05a0297d65641dd35b75b74466f7bf03c9e8a99895a3b2f9a0856cd17887738fa51cf7499781b65c049769271cbcb77d057d2e9f1ec52e07dd84
+set(GMP_HASH SHA512=e85a0dab5195889948a3462189f0e0598d331d3457612e2d3350799dba2e244316d256f8161df5219538eb003e4b5343f989aaa00f96321559063ed8c8f29fd2
     CACHE STRING "gmp source hash")
 
 set(NETTLE_VERSION 3.9.1 CACHE STRING "nettle version")
@@ -32,13 +18,6 @@ set(NETTLE_MIRROR ${LOCAL_MIRROR} https://ftp.gnu.org/gnu/nettle
 set(NETTLE_SOURCE nettle-${NETTLE_VERSION}.tar.gz)
 set(NETTLE_HASH SHA512=5939c4b43cf9ff6c6272245b85f123c81f8f4e37089fa4f39a00a570016d837f6e706a33226e4bbfc531b02a55b2756ff312461225ed88de338a73069e031ced
     CACHE STRING "nettle source hash")
-
-set(LIBTASN1_VERSION 4.19.0 CACHE STRING "libtasn1 version")
-set(LIBTASN1_MIRROR ${LOCAL_MIRROR} https://ftp.gnu.org/gnu/libtasn1
-    CACHE STRING "libtasn1 mirror(s)")
-set(LIBTASN1_SOURCE libtasn1-${LIBTASN1_VERSION}.tar.gz)
-set(LIBTASN1_HASH SHA512=287f5eddfb5e21762d9f14d11997e56b953b980b2b03a97ed4cd6d37909bda1ed7d2cdff9da5d270a21d863ab7e54be6b85c05f1075ac5d8f0198997cf335ef4
-    CACHE STRING "libtasn1 source hash")
 
 
 include(ExternalProject)
@@ -85,6 +64,9 @@ endfunction()
 set(cross_host "")
 set(cross_rc "")
 if(CMAKE_CROSSCOMPILING)
+  if(APPLE AND NOT ARCH_TRIPLET AND APPLE_TARGET_TRIPLE)
+    set(ARCH_TRIPLET "${APPLE_TARGET_TRIPLE}")
+  endif()
   set(cross_host "--host=${ARCH_TRIPLET}")
   if (ARCH_TRIPLET MATCHES mingw AND CMAKE_RC_COMPILER)
     set(cross_rc "WINDRES=${CMAKE_RC_COMPILER}")
@@ -139,8 +121,13 @@ if(WITH_LTO)
 endif()
 
 if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET)
-  set(deps_CFLAGS "${deps_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-  set(deps_CXXFLAGS "${deps_CXXFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+  if(SDK_NAME)
+    set(deps_CFLAGS "${deps_CFLAGS} -m${SDK_NAME}-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    set(deps_CXXFLAGS "${deps_CXXFLAGS} -m${SDK_NAME}-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+  else()
+    set(deps_CFLAGS "${deps_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    set(deps_CXXFLAGS "${deps_CXXFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+  endif()
 endif()
 
 if(_winver)
@@ -203,29 +190,61 @@ function(build_external target)
 endfunction()
 
 
-build_external(libtasn1
-    CONFIGURE_EXTRA --disable-doc
-    BUILD_BYPRODUCTS ${DEPS_DESTDIR}/lib/libtasn1.a ${DEPS_DESTDIR}/include/libtasn1.h)
-add_static_target(libtasn1 libtasn1_external libtasn1.a)
+set(apple_cflags_arch)
+set(apple_cxxflags_arch)
+set(apple_ldflags_arch)
+set(gmp_build_host "${cross_host}")
+if(APPLE AND CMAKE_CROSSCOMPILING)
+    if(gmp_build_host MATCHES "^(.*-.*-)ios([0-9]+)(-.*)?$")
+        set(gmp_build_host "${CMAKE_MATCH_1}darwin${CMAKE_MATCH_2}${CMAKE_MATCH_3}")
+    endif()
+    if(gmp_build_host MATCHES "^(.*-.*-.*)-simulator$")
+        set(gmp_build_host "${CMAKE_MATCH_1}")
+    endif()
 
-build_external(libunistring
-    BUILD_BYPRODUCTS ${DEPS_DESTDIR}/lib/libunistring.a ${DEPS_DESTDIR}/include/unistr.h)
-add_static_target(libunistring libunistring_external libunistring.a)
+    set(apple_arch)
+    if(ARCH_TRIPLET MATCHES "^(arm|aarch)64.*")
+        set(apple_arch "arm64")
+    elseif(ARCH_TRIPLET MATCHES "^x86_64.*")
+        set(apple_arch "x86_64")
+    else()
+        message(FATAL_ERROR "Don't know how to specify -arch for GMP for ${ARCH_TRIPLET} (${APPLE_TARGET_TRIPLE})")
+    endif()
 
-build_external(libidn2
-    CONFIGURE_EXTRA --disable-doc
-    DEPENDS libunistring_external
-    BUILD_BYPRODUCTS ${DEPS_DESTDIR}/lib/libidn2.a ${DEPS_DESTDIR}/include/idn2.h)
-add_static_target(libidn2 libidn2_external libidn2.a libunistring)
+    set(apple_cflags_arch " -arch ${apple_arch}")
+    set(apple_cxxflags_arch " -arch ${apple_arch}")
+    if(CMAKE_OSX_DEPLOYMENT_TARGET)
+      if (SDK_NAME)
+        set(apple_ldflags_arch " -m${SDK_NAME}-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+      elseif(CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(apple_ldflags_arch " -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+      endif()
+    endif()
+    set(apple_ldflags_arch "${apple_ldflags_arch} -arch ${apple_arch}")
+
+    if(CMAKE_OSX_SYSROOT)
+      foreach(f c cxx ld)
+        set(apple_${f}flags_arch "${apple_${f}flags_arch} -isysroot ${CMAKE_OSX_SYSROOT}")
+      endforeach()
+    endif()
+elseif(gmp_build_host STREQUAL "")
+    set(gmp_build_host "--build=${CMAKE_LIBRARY_ARCHITECTURE}")
+endif()
 
 build_external(gmp
-    CONFIGURE_EXTRA CC_FOR_BUILD=cc CPP_FOR_BUILD=cpp
-    DEPENDS libidn2_external libtasn1_external)
-add_static_target(gmp gmp_external libgmp.a libidn2 libtasn1)
+    CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --with-pic
+        "CC=${deps_cc}" "CXX=${deps_cxx}" "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
+        "LDFLAGS=${apple_ldflags_arch}" ${cross_rc} CC_FOR_BUILD=cc CPP_FOR_BUILD=cpp
+)
+add_static_target(gmp gmp_external libgmp.a)
 
 build_external(nettle
-    CONFIGURE_EXTRA --disable-openssl --libdir=${DEPS_DESTDIR}/lib
-        "CPPFLAGS=-I${DEPS_DESTDIR}/include" "LDFLAGS=-L${DEPS_DESTDIR}/lib"
+    CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib
+        --with-pic --disable-openssl
+        "CC=${deps_cc}" "CXX=${deps_cxx}"
+        "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
+        "CPPFLAGS=-I${DEPS_DESTDIR}/include"
+        "LDFLAGS=-L${DEPS_DESTDIR}/lib${apple_ldflags_arch}"
 
     DEPENDS gmp_external
     BUILD_BYPRODUCTS
