@@ -25,9 +25,10 @@ include(ExternalProject)
 set(DEPS_DESTDIR ${CMAKE_BINARY_DIR}/static-deps)
 set(DEPS_SOURCEDIR ${CMAKE_BINARY_DIR}/static-deps-sources)
 
-include_directories(BEFORE SYSTEM ${DEPS_DESTDIR}/include)
-
 file(MAKE_DIRECTORY ${DEPS_DESTDIR}/include)
+
+add_library(libsession-external-libs INTERFACE IMPORTED GLOBAL)
+target_include_directories(libsession-external-libs SYSTEM BEFORE INTERFACE ${DEPS_DESTDIR}/include)
 
 set(deps_cc "${CMAKE_C_COMPILER}")
 set(deps_cxx "${CMAKE_CXX_COMPILER}")
@@ -50,6 +51,7 @@ endfunction()
 function(add_static_target target ext_target libname)
   add_library(${target} STATIC IMPORTED GLOBAL)
   add_dependencies(${target} ${ext_target})
+  target_link_libraries(${target} INTERFACE libsession-external-libs)
   set_target_properties(${target} PROPERTIES
     IMPORTED_LOCATION ${DEPS_DESTDIR}/lib/${libname}
   )

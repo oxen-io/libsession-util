@@ -12,7 +12,7 @@ local submodules = {
 
 local apt_get_quiet = 'apt-get -o=Dpkg::Use-Pty=0 -q';
 
-local default_deps_nocxx = [];
+local default_deps_nocxx = ['nlohmann-json3-dev'];
 local default_deps = ['g++'] + default_deps_nocxx;
 
 local docker_base = 'registry.oxen.rocks/lokinet-ci-';
@@ -300,15 +300,15 @@ local static_build(name,
   // Various debian builds
   debian_build('Debian sid (amd64)', docker_base + 'debian-sid'),
   debian_build('Debian sid/Debug (amd64)', docker_base + 'debian-sid', build_type='Debug'),
-  clang(14),
-  full_llvm(14),
+  clang(16),
+  full_llvm(16),
   debian_build('Debian stable (i386)', docker_base + 'debian-stable/i386'),
   debian_build('Debian buster (amd64)', docker_base + 'debian-buster'),
   debian_build('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_build('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
   debian_build('Ubuntu bionic (amd64)',
                docker_base + 'ubuntu-bionic',
-               deps=['g++-8'] + default_deps_nocxx,
+               deps=['g++-8'],
                kitware_repo='bionic',
                cmake_extra='-DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8'),
 

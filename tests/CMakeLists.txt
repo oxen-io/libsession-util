@@ -1,6 +1,7 @@
 add_subdirectory(Catch2)
 
 add_executable(testAll
+    test_blinding.cpp
     test_bt_merge.cpp
     test_bugs.cpp
     test_compression.cpp
@@ -13,12 +14,14 @@ add_executable(testAll
     test_group_keys.cpp
     test_group_info.cpp
     test_group_members.cpp
+    test_onionreq.cpp
     test_xed25519.cpp
     )
 
 target_link_libraries(testAll PRIVATE
     libsession::config
     libsodium::sodium-internal
+    libsession::onionreq
     Catch2::Catch2WithMain)
 
 add_custom_target(check COMMAND testAll)
