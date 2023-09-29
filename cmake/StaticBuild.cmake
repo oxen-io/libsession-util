@@ -197,6 +197,7 @@ function(build_external target)
     BUILD_COMMAND ${arg_BUILD_COMMAND}
     INSTALL_COMMAND ${arg_INSTALL_COMMAND}
     BUILD_BYPRODUCTS ${arg_BUILD_BYPRODUCTS}
+    EXCLUDE_FROM_ALL ON
     ${extract_ts}
   )
 endfunction()
