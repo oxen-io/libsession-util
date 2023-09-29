@@ -308,7 +308,7 @@ local static_build(name,
   debian_build('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
   debian_build('Ubuntu bionic (amd64)',
                docker_base + 'ubuntu-bionic',
-               deps=['g++-8'] + default_deps_nocxx,
+               deps=['g++-8'],
                kitware_repo='bionic',
                cmake_extra='-DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8'),
 
