@@ -1,3 +1,64 @@
+option(SUBMODULE_CHECK "Enables checking that vendored library submodules are up to date" ON)
+if(SUBMODULE_CHECK)
+  find_package(Git)
+  if(GIT_FOUND)
+    function(check_submodule relative_path)
+      execute_process(COMMAND git rev-parse "HEAD" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path} OUTPUT_VARIABLE localHead)
+      execute_process(COMMAND git rev-parse "HEAD:external/${relative_path}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE checkedHead)
+      string(COMPARE EQUAL "${localHead}" "${checkedHead}" upToDate)
+      if (upToDate)
+        message(STATUS "Submodule 'external/${relative_path}' is up-to-date")
+      else()
+        message(FATAL_ERROR "Submodule 'external/${relative_path}' is not up-to-date. Please update with\ngit submodule update --init --recursive\nor run cmake with -DSUBMODULE_CHECK=OFF")
+      endif()
+
+      # Extra arguments check nested submodules
+      foreach(submod ${ARGN})
+        execute_process(COMMAND git rev-parse "HEAD" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path}/${submod} OUTPUT_VARIABLE localHead)
+        execute_process(COMMAND git rev-parse "HEAD:${submod}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path} OUTPUT_VARIABLE checkedHead)
+        string(COMPARE EQUAL "${localHead}" "${checkedHead}" upToDate)
+        if (NOT upToDate)
+            message(FATAL_ERROR "Nested submodule '${relative_path}/${submod}' is not up-to-date. Please update with\ngit submodule update --init --recursive\nor run cmake with -DSUBMODULE_CHECK=OFF")
+        endif()
+      endforeach()
+    endfunction ()
+
+    message(STATUS "Checking submodules")
+    check_submodule(ios-cmake)
+    check_submodule(libsodium-internal)
+    check_submodule(oxen-encoding)
+    check_submodule(zstd)
+  endif()
+endif()
+
+
+if(NOT BUILD_STATIC_DEPS AND NOT FORCE_ALL_SUBMODULES)
+  find_package(PkgConfig REQUIRED)
+endif()
+
+macro(system_or_submodule BIGNAME smallname pkgconf subdir)
+  option(FORCE_${BIGNAME}_SUBMODULE "force using ${smallname} submodule" OFF)
+  if(NOT BUILD_STATIC_DEPS AND NOT FORCE_${BIGNAME}_SUBMODULE AND NOT FORCE_ALL_SUBMODULES)
+    pkg_check_modules(${BIGNAME} ${pkgconf} IMPORTED_TARGET GLOBAL)
+  endif()
+  if(${BIGNAME}_FOUND)
+    add_library(${smallname} INTERFACE IMPORTED GLOBAL)
+    if(NOT TARGET PkgConfig::${BIGNAME} AND CMAKE_VERSION VERSION_LESS "3.21")
+      # Work around cmake bug 22180 (PkgConfig::THING not set if no flags needed)
+    else()
+      target_link_libraries(${smallname} INTERFACE PkgConfig::${BIGNAME})
+    endif()
+    message(STATUS "Found system ${smallname} ${${BIGNAME}_VERSION}")
+  else()
+    message(STATUS "using ${smallname} submodule")
+    add_subdirectory(${subdir})
+  endif()
+  if(NOT TARGET ${smallname}::${smallname})
+    add_library(${smallname}::${smallname} ALIAS ${smallname})
+  endif()
+endmacro()
+
+
 set(deps_cc "${CMAKE_C_COMPILER}")
 set(cross_host "")
 set(cross_rc "")
@@ -41,7 +102,7 @@ if(CMAKE_CROSSCOMPILING)
 endif()
 
 
-add_subdirectory(oxen-encoding)
+system_or_submodule(OXENC oxenc liboxenc>=1.0.8 oxen-encoding)
 
 
 if(CMAKE_C_COMPILER_LAUNCHER)
@@ -63,7 +124,12 @@ if(APPLE)
 endif()
 
 
-add_subdirectory(libsodium-internal)
+function(libsodium_internal_subdir)
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory(libsodium-internal)
+endfunction()
+libsodium_internal_subdir()
+libsession_static_bundle(libsodium::sodium-internal)
 
 
 set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "")
@@ -72,7 +138,7 @@ set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "")
 set(ZSTD_BUILD_SHARED OFF CACHE BOOL "")
 set(ZSTD_BUILD_STATIC ON CACHE BOOL "")
 set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "")
-add_subdirectory(zstd/build/cmake)
+add_subdirectory(zstd/build/cmake EXCLUDE_FROM_ALL)
 # zstd's cmake doesn't properly set up include paths on its targets, so we have to wrap it in an
 # interface target that does:
 add_library(libzstd_static_fixed_includes INTERFACE)
@@ -84,3 +150,4 @@ export(
     NAMESPACE libsession::
     FILE libsessionZstd.cmake
 )
+libsession_static_bundle(libzstd_static)

@@ -1,19 +1,34 @@
 
 add_library(common INTERFACE)
+target_link_libraries(common INTERFACE
+    oxenc::oxenc)
 
 target_include_directories(common INTERFACE ../include)
 if(WARNINGS_AS_ERRORS)
     target_compile_options(common INTERFACE -Werror)
 endif()
 
-add_library(crypto
+set(export_targets)
+macro(add_libsession_util_library name)
+    add_library(${name} ${ARGN})
+
+    set_target_properties(
+        ${name}
+        PROPERTIES
+        OUTPUT_NAME session-${name}
+        SOVERSION ${LIBSESSION_LIBVERSION})
+
+    libsession_static_bundle(${name})
+
+    list(APPEND export_targets ${name})
+endmacro()
+
+
+add_libsession_util_library(crypto
     xed25519.cpp
 )
-set_target_properties(
-    crypto
-    PROPERTIES OUTPUT_NAME session-util-crypto)
 
-add_library(config
+add_libsession_util_library(config
     bt_merge.cpp
     config.cpp
     config/base.cpp
@@ -31,20 +46,21 @@ add_library(config
     fields.cpp
     util.cpp
 )
-set_target_properties(
-    config
-    PROPERTIES OUTPUT_NAME session-util-config)
 
 target_link_libraries(crypto
     PUBLIC
+    common
+    PRIVATE
     libsodium::sodium-internal
-    common)
+)
 target_link_libraries(config
     PUBLIC
     crypto
-    oxenc::oxenc
+    common
+    PRIVATE
+    libsodium::sodium-internal
     libzstd::static
-    common)
+)
 
 
 if(WARNINGS_AS_ERRORS AND NOT USE_LTO AND CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION MATCHES "^11\\.")
@@ -80,17 +96,19 @@ else()
         configure_file("${CMAKE_CURRENT_SOURCE_DIR}/version.c.in" "${CMAKE_CURRENT_BINARY_DIR}/version.c")
     endif()
 endif()
-add_library(version version.c)
-set_target_properties(version PROPERTIES OUTPUT_NAME session-util-version)
+add_library(version STATIC version.c)
+libsession_static_bundle(version)
 target_include_directories(version PRIVATE ../include)
 target_link_libraries(common INTERFACE version)
 
 
-
-add_library(libsession::config ALIAS config)
-add_library(libsession::crypto ALIAS crypto)
+foreach(tgt ${export_targets})
+    add_library("libsession::${tgt}" ALIAS "${tgt}")
+endforeach()
 export(
-    TARGETS config crypto common version
+    TARGETS ${export_targets} common version
     NAMESPACE libsession::
     FILE libsessionTargets.cmake
 )
+
+set(libsession_export_targets "${export_targets}" PARENT_SCOPE)

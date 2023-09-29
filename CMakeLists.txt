@@ -22,6 +22,11 @@ project(libsession-util
     DESCRIPTION "Session client utility library"
     LANGUAGES ${LANGS})
 
+message(STATUS "${PROJECT_NAME} v${PROJECT_VERSION}")
+
+set(LIBSESSION_LIBVERSION ${PROJECT_VERSION})
+
+include(GNUInstallDirs)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
@@ -45,18 +50,35 @@ if(WIN32)
     set(default_static_libstd ON)
 endif()
 
-if(MINGW OR ANDROID OR IOS OR STATIC_BUNDLE)
+option(BUILD_SHARED_LIBS "Build as shared library" OFF)
+
+if(BUILD_SHARED_LIBS)
+    set(static_default OFF)
+else()
+    set(static_default ON)
+endif()
+
+option(BUILD_STATIC_DEPS "Build all dependencies statically rather than trying to link to them on the system" ${static_default})
+option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" ${static_default})
+
+if(BUILD_SHARED_LIBS OR libsession_IS_TOPLEVEL_PROJECT)
+    set(install_default ON)
+else()
+    set(install_default OFF)
+endif()
+
+option(LIBSESSION_INSTALL "Install libsession-util libraries and headers to cmake install target; defaults to ON if BUILD_SHARED_LIBS is enabled or when building the top-level project" ${install_default})
+
+if(MINGW OR ANDROID OR IOS) # OR STATIC_BUNDLE)
   set(use_lto_default OFF)
 else()
   set(use_lto_default ON)
 endif()
 
-
-
 option(WARNINGS_AS_ERRORS "Treat all compiler warnings as errors" OFF)
+
 option(STATIC_LIBSTD "Statically link libstdc++/libgcc" ${default_static_libstd})
-option(STATIC_BUNDLE "Build a single static .a containing everything (both code and dependencies)" OFF)
-option(BUILD_SHARED_LIBS "Build as shared library" OFF)
+
 option(USE_LTO "Use Link-Time Optimization" ${use_lto_default})
 
 if(USE_LTO)
@@ -86,6 +108,7 @@ if(STATIC_LIBSTD)
     endif()
 endif()
 
+include(AddStaticBundleLib)
 
 # Always build PIC
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -94,15 +117,15 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(external)
 add_subdirectory(src)
 
+if (BUILD_STATIC_DEPS)
+    include(StaticBuild)
+endif()
+
 if(STATIC_BUNDLE)
+
     include(combine_archives)
 
-    combine_archives(session-util
-        crypto
-        config
-        version
-        libsodium::sodium-internal
-        libzstd_static)
+    combine_archives(session-util libsession-static-bundle "${LIBSESSION_STATIC_BUNDLE_LIBS}")
     set(lib_folder lib)
     if(IOS)
         set(lib_folder "${lib_folder}-${ARCH}")
@@ -116,4 +139,27 @@ endif()
 option(WITH_TESTS "Enable unit tests" ${libsession_IS_TOPLEVEL_PROJECT})
 if(WITH_TESTS)
     add_subdirectory(tests)
+endif()
+
+
+if(LIBSESSION_INSTALL)
+
+    install(
+        TARGETS ${libsession_export_targets}
+        EXPORT libsessionConfig
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(DIRECTORY include/session DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN *.h PATTERN *.hpp)
+
+    set(libsession_target_links)
+    foreach(tgt ${libsession_export_targets})
+        set(libsession_target_links "${libsession_target_links} -lsession-${tgt}")
+    endforeach()
+    configure_file(libsession-util.pc.in libsession-util.pc @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsession-util.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+    )
+
 endif()
