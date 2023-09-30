@@ -7,7 +7,6 @@ Build-Depends:
     g++,
     pkg-config,
     liboxenc-dev (>= 1.0.7),
-    nlohmann-json3-dev,
     nettle-dev,
     libprotobuf-dev
 Standards-Version: 4.4.1
