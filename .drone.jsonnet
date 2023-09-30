@@ -1,6 +1,6 @@
-local distro = 'sid';
-local distro_name = 'Debian ' + distro;
-local distro_docker = 'registry.oxen.rocks/lokinet-ci-debian-' + distro + '-builder';
+local distro = 'bionic';
+local distro_name = 'Ubuntu ' + distro;
+local distro_docker = 'registry.oxen.rocks/lokinet-ci-ubuntu-' + distro + '-builder';
 
 local apt_get_quiet = 'apt-get -o=Dpkg::Use-Pty=0 -q';
 
@@ -44,7 +44,6 @@ local deb_pipeline(image, buildarch='amd64', debarch='amd64', jobs=6) = {
 
 [
   deb_pipeline(distro_docker),
-  deb_pipeline(distro_docker + '/i386', buildarch='amd64', debarch='i386'),
   deb_pipeline(distro_docker + '/arm64v8', buildarch='arm64', debarch='arm64', jobs=4),
   deb_pipeline(distro_docker + '/arm32v7', buildarch='arm64', debarch='armhf', jobs=4),
 ]
