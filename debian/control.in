@@ -4,7 +4,7 @@ Maintainer: Jason Rhinelander <jason@imaginary.ca>
 Build-Depends:
     debhelper-compat (= 11),
     cmake (>= 3.14),
-    g++,
+    g++-8,
     pkg-config,
     liboxenc-dev (>= 1.0.7),
     nettle-dev,
