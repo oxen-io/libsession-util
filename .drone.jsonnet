@@ -1,4 +1,4 @@
-local distro = 'sid';
+local distro = 'buster';
 local distro_name = 'Debian ' + distro;
 local distro_docker = 'registry.oxen.rocks/lokinet-ci-debian-' + distro + '-builder';
 
