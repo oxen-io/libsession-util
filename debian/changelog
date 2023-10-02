@@ -1,3 +1,9 @@
+libsession-util (1.1.0~pre20231002-2~deb11) bullseye; urgency=medium
+
+  * Overload blind25_id with byte-accepting version
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 02 Oct 2023 16:14:45 -0300
+
 libsession-util (1.1.0~pre20231002-1~deb11) bullseye; urgency=medium
 
   * Add machine name to build log
