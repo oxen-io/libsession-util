@@ -386,7 +386,11 @@ namespace {
 
             if (scalar_diff) {
                 if (*scalar_diff == "-")
-                    data.erase(k);
+                    // [DO NOT MERGE] this commit reverts a good change to demonstrate the
+                    // capability of finding bugs by property-based testing. Don't merge this patch,
+                    // it brings an old bug back. Revert "Fix segfault" This reverts commit
+                    // ca382d6fd0adc2e113098c7f0b303f0ecb259cf4.
+                    data.erase(source_it);
                 else if (*scalar_diff == "")
                     data[k] = var::get<scalar>(source_val);
                 else
