@@ -1,3 +1,10 @@
+libsession-util (1.1.0~pre20231002-1~deb11) bullseye; urgency=medium
+
+  * Add machine name to build log
+  * Allow blind25_sign to take just the seed
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 02 Oct 2023 12:23:56 -0300
+
 libsession-util (1.1.0~pre20230929-1~deb11) bullseye; urgency=medium
 
   * bullseye deb
