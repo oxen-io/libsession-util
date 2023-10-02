@@ -67,8 +67,11 @@ std::string blind25_id(std::string_view session_id, std::string_view server_pk);
 /// Computes a verifiable 25-blinded signature that validates with the blinded pubkey that would
 /// be returned from blind25_id().
 ///
-/// Takes the Ed25519 secret key (64 bytes) and the server pubkey (in hex (64 digits) or bytes
-/// (32 bytes)).  Returns the 64-byte signature.
+/// Takes the Ed25519 secret key (64 bytes, or 32-byte seed) and the server pubkey (in hex (64
+/// digits) or bytes (32 bytes)).  Returns the 64-byte signature.
+///
+/// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
+/// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
 ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk, ustring_view message);
 
 }  // namespace session
