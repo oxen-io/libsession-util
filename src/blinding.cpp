@@ -39,6 +39,36 @@ std::array<unsigned char, 32> blind25_factor(ustring_view session_id, ustring_vi
     return k;
 }
 
+namespace {
+
+    void blind25_id_impl(ustring_view session_id, ustring_view server_pk, unsigned char* out) {
+        auto k = blind25_factor(session_id, server_pk);
+        if (session_id.size() == 33)
+            session_id.remove_prefix(1);
+        auto ed_pk = xed25519::pubkey(session_id);
+        if (0 != crypto_scalarmult_ed25519_noclamp(out + 1, k.data(), ed_pk.data()))
+            throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
+        out[0] = 0x25;
+    }
+
+}  // namespace
+
+ustring blind25_id(ustring_view session_id, ustring_view server_pk) {
+    if (session_id.size() == 33) {
+        if (session_id[0] != 0x05)
+            throw std::invalid_argument{"blind25_id: session_id must start with 0x05"};
+    } else if (session_id.size() != 32) {
+        throw std::invalid_argument{"blind25_id: session_id must be 32 or 33 bytes"};
+    }
+    if (server_pk.size() != 32)
+        throw std::invalid_argument{"blind25_id: server_pk must be 32 bytes"};
+
+    ustring result;
+    result.resize(33);
+    blind25_id_impl(session_id, server_pk, result.data());
+    return result;
+}
+
 std::string blind25_id(std::string_view session_id, std::string_view server_pk) {
     if (session_id.size() != 66 || !oxenc::is_hex(session_id))
         throw std::invalid_argument{"blind25_id: session_id must be hex (66 digits)"};
@@ -49,20 +79,12 @@ std::string blind25_id(std::string_view session_id, std::string_view server_pk) 
 
     uc33 raw_sid;
     oxenc::from_hex(session_id.begin(), session_id.end(), raw_sid.begin());
-    ustring_view sid_bytes{raw_sid.data(), raw_sid.size()};
-    auto k = blind25_factor(sid_bytes, to_unsigned_sv(oxenc::from_hex(server_pk)));
+    uc32 raw_server_pk;
+    oxenc::from_hex(server_pk.begin(), server_pk.end(), raw_server_pk.begin());
 
-    auto ed_pk = xed25519::pubkey(sid_bytes.substr(1));
-    uc32 blinded_pk;
-    if (0 != crypto_scalarmult_ed25519_noclamp(blinded_pk.data(), k.data(), ed_pk.data()))
-        throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
-
-    std::string result;
-    result.resize(66);
-    result[0] = '2';
-    result[1] = '5';
-    oxenc::to_hex(blinded_pk.begin(), blinded_pk.end(), result.begin() + 2);
-    return result;
+    uc33 blinded;
+    blind25_id_impl(to_sv(raw_sid), to_sv(raw_server_pk), blinded.data());
+    return oxenc::to_hex(blinded.begin(), blinded.end());
 }
 
 static const auto hash_key_seed = to_unsigned_sv("SessCommBlind25_seed"sv);
