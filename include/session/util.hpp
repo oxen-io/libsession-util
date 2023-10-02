@@ -38,6 +38,10 @@ template <typename T, typename A>
 inline std::string_view from_unsigned_sv(const std::vector<T, A>& v) {
     return {from_unsigned(v.data()), v.size()};
 }
+template <typename Char, size_t N>
+inline std::basic_string_view<Char> to_sv(const std::array<Char, N>& v) {
+    return {v.data(), N};
+}
 
 /// Returns true if the first string is equal to the second string, compared case-insensitively.
 inline bool string_iequal(std::string_view s1, std::string_view s2) {
