@@ -24,8 +24,7 @@ ustring parse_request(const WebSocketProtos::WebSocketRequestMessage& msg) {
     const auto& data = msg.body();
     auto envelope = SessionProtos::Envelope();
 
-    if (auto b = envelope.ParseFromString(
-                {reinterpret_cast<const char*>(data.data()), data.size()})) {
+    if (auto b = envelope.ParseFromArray(data.data(), data.size())) {
         const auto& content = envelope.content();
         auto config = SessionProtos::SharedConfigMessage();
 
@@ -50,7 +49,7 @@ ustring parse_request(const WebSocketProtos::WebSocketRequestMessage& msg) {
 ustring handle_incoming(ustring_view data) {
     auto req = WebSocketProtos::WebSocketMessage();
 
-    if (auto b = req.ParseFromString({reinterpret_cast<const char*>(data.data()), data.size()})) {
+    if (auto b = req.ParseFromArray(data.data(), data.size())) {
         const auto& msg_type = req.type();
 
         switch (msg_type) {
@@ -63,11 +62,7 @@ ustring handle_incoming(ustring_view data) {
     }
 
     // if ParseFromString fails, we have a raw (not protobuf encoded) message
-    return {data.data(), data.size()};
-}
-
-ustring handle_incoming(ustring data) {
-    return handle_incoming(ustring_view{data.data(), data.size()});
+    return ustring{data};
 }
 
 ustring handle_outgoing(ustring_view data, int64_t seqno, config::Namespace t) {
@@ -77,7 +72,7 @@ ustring handle_outgoing(ustring_view data, int64_t seqno, config::Namespace t) {
     auto config = SessionProtos::SharedConfigMessage();
     config.set_kind(encode_namespace(t));
     config.set_seqno(seqno);
-    *config.mutable_data() = std::string{reinterpret_cast<const char*>(data.data()), data.size()};
+    *config.mutable_data() = from_unsigned_sv(data);
 
     auto envelope = SessionProtos::Envelope();
     *envelope.mutable_content() = config.SerializeAsString();
@@ -96,10 +91,6 @@ ustring handle_outgoing(ustring_view data, int64_t seqno, config::Namespace t) {
 
     std::string output = msg.SerializeAsString();
     return {reinterpret_cast<const unsigned char*>(output.data()), output.size()};
-}
-
-ustring handle_outgoing(ustring data, int64_t seqno, config::Namespace t) {
-    return handle_outgoing(ustring_view{data.data(), data.size()}, seqno, t);
 }
 
 }  // namespace session::protos

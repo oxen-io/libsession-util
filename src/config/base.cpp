@@ -277,13 +277,9 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     pad_message(msg);  // Prefix pad with nulls
     encrypt_inplace(msg, key(), encryption_domain());
 
-    if (accepts_protobuf()) {
-        try {
-            msg = protos::handle_outgoing(msg, s, storage_namespace());
-        } catch (...) {
-            // do nothing
-        }
-    }
+    if (accepts_protobuf())
+        msg = protos::handle_outgoing(msg, s, storage_namespace());
+
     if (msg.size() > MAX_MESSAGE_SIZE)
         throw std::length_error{"Config data is too large"};
 
