@@ -142,4 +142,15 @@ TEST_CASE("Communities 25xxx-blinded signing", "[blinding25][sign]") {
                        to_unsigned("omg!"),
                        4,
                        to_unsigned(oxenc::from_hex(b25_6).data()) + 1));
+
+    // Test that it works when given just the seed instead of the whole sk:
+    auto sig6b = blind25_sign(to_usv(seed1).substr(0, 32), server_pks[5], to_unsigned_sv("omg!"));
+    CHECK(oxenc::to_hex(sig6b) ==
+          "322e280fbc3547c6b6512dbea4d60563d32acaa2df10d665c40a336c99fc3b8e4b13a7109dfdeadab2ab58b2"
+          "cb314eb0510b947f43e5dfb6e0ce5bf1499d240f");
+    CHECK(0 == crypto_sign_verify_detached(
+                       sig6b.data(),
+                       to_unsigned("omg!"),
+                       4,
+                       to_unsigned(oxenc::from_hex(b25_6).data()) + 1));
 }
