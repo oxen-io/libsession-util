@@ -1,3 +1,10 @@
+libsession-util (1.1.0~pre20231002-1~deb13) trixie; urgency=medium
+
+  * Add machine name to build log
+  * Allow blind25_sign to take just the seed
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 02 Oct 2023 12:24:00 -0300
+
 libsession-util (1.1.0~pre20230929-1~ubuntu2310) trixie; urgency=medium
 
   * trixie deb
