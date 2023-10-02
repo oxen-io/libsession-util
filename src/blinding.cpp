@@ -69,9 +69,15 @@ static const auto hash_key_seed = to_unsigned_sv("SessCommBlind25_seed"sv);
 static const auto hash_key_sig = to_unsigned_sv("SessCommBlind25_sig"sv);
 
 ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ustring_view message) {
+    std::array<unsigned char, 64> ed_sk_tmp;
+    if (ed25519_sk.size() == 32) {
+        std::array<unsigned char, 32> pk_ignore;
+        crypto_sign_ed25519_seed_keypair(pk_ignore.data(), ed_sk_tmp.data(), ed25519_sk.data());
+        ed25519_sk = {ed_sk_tmp.data(), 64};
+    }
     if (ed25519_sk.size() != 64)
         throw std::invalid_argument{
-                "blind25_sign: Invalid ed25519_sk is not the expected 64 bytes"};
+                "blind25_sign: Invalid ed25519_sk is not the expected 32- or 64-byte value"};
     uc32 server_pk;
     if (server_pk_in.size() == 32)
         std::memcpy(server_pk.data(), server_pk_in.data(), 32);
