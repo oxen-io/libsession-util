@@ -4,9 +4,11 @@
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <iterator>
 
 #include "session/blinding.hpp"
 #include "session/util.hpp"
+#include "utils.hpp"
 
 using namespace std::literals;
 using namespace session;
@@ -62,11 +64,17 @@ TEST_CASE("Communities 25xxx-blinded pubkey derivation", "[blinding25][pubkey]")
                   session_id2,
                   "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789") ==
           "25a69cc6884530bf8498d22892e563716c4742f2845a7eb608de2aecbe7b6b5996");
-}
 
-template <size_t N>
-ustring_view to_usv(const std::array<unsigned char, N>& val) {
-    return {val.data(), N};
+    ustring session_id1_raw;
+    oxenc::from_hex(session_id1.begin(), session_id1.end(), std::back_inserter(session_id1_raw));
+    CHECK(oxenc::to_hex(blind25_id(
+                  session_id1_raw,
+                  "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"_hexbytes)) ==
+          "253b991dcbba44cfdb45d5b38880d95cff723309e3ece6fd01415ad5fa1dccc7ac");
+    CHECK(oxenc::to_hex(blind25_id(
+                  session_id1_raw.substr(1),
+                  "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"_hexbytes)) ==
+          "253b991dcbba44cfdb45d5b38880d95cff723309e3ece6fd01415ad5fa1dccc7ac");
 }
 
 TEST_CASE("Communities 25xxx-blinded signing", "[blinding25][sign]") {
