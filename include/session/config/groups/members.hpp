@@ -189,18 +189,6 @@ struct member {
     /// - `m` -- Reference to C struct to fill with group member info.
     void into(config_group_member& m) const;
 
-    /// API: groups/member::set_name
-    ///
-    /// Sets a name; this is exactly the same as assigning to .name directly, except that we throw
-    /// an exception if the given name is longer than MAX_NAME_LENGTH.
-    ///
-    /// Note that you can set a longer name directly into the `.name` member, but it will be
-    /// truncated when serializing the record.
-    ///
-    /// Inputs:
-    /// - `name` -- Name to assign to the contact
-    void set_name(std::string name);
-
   private:
     friend class Members;
     void load(const dict& info_dict);
