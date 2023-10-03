@@ -157,6 +157,12 @@ void member::into(config_group_member& m) const {
     m.promoted = promotion_status;
 }
 
+void member::set_name(std::string n) {
+    if (n.size() > MAX_NAME_LENGTH)
+        throw std::invalid_argument{"Invalid member name: exceeds maximum length"};
+    name = std::move(n);
+}
+
 }  // namespace session::config::groups
 
 using namespace session;

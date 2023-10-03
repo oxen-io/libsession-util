@@ -81,7 +81,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
     // 10 members:
     for (int i = 10; i < 20; i++) {
         auto m = gmem1.get_or_construct(sids[i]);
-        m.name = "Member " + std::to_string(i);
+        m.set_name("Member " + std::to_string(i));
         m.profile_picture.url = "http://example.com/" + std::to_string(i);
         m.profile_picture.key =
                 "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"_hexbytes;
@@ -92,6 +92,8 @@ TEST_CASE("Group Members", "[config][groups][members]") {
         auto m = gmem1.get_or_construct(sids[i]);
         gmem1.set(m);
     }
+
+    REQUIRE_THROWS(gmem1.get(sids[14])->set_name(std::string(200, 'c')));
 
     CHECK(gmem1.needs_push());
     auto [s1, p1, o1] = gmem1.push();
