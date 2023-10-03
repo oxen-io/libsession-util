@@ -24,5 +24,11 @@ function(combine_archives output_archive dep_target)
         DEPENDS ${mri_file} ${ARGN}
         COMMAND /usr/bin/libtool -static -o ${FULL_OUTPUT_PATH} ${merge_libs})
   endif()
-  add_custom_target(${output_archive} DEPENDS ${FULL_OUTPUT_PATH})
+  add_custom_target(${output_archive}-lib DEPENDS ${FULL_OUTPUT_PATH})
+  add_library(${output_archive} STATIC IMPORTED GLOBAL)
+  set_target_properties(${output_archive} PROPERTIES
+      IMPORTED_LOCATION ${FULL_OUTPUT_PATH}
+      IMPORTED_LINK_INTERFACE_LANGUAGES "C;CXX"
+  )
+  add_dependencies(${output_archive} ${output_archive}-lib)
 endfunction(combine_archives)
