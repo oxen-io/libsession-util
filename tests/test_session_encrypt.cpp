@@ -67,8 +67,7 @@ TEST_CASE("Session protocol encryption", "[session-protocol][encrypt]") {
                 "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu "
                 "fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
                 "culpa qui officia deserunt mollit anim id est laborum."sv;
-        auto enc = encrypt_for_recipient(
-                to_sv(ed_sk), sid_raw2, to_unsigned_sv(lorem_ipsum));
+        auto enc = encrypt_for_recipient(to_sv(ed_sk), sid_raw2, to_unsigned_sv(lorem_ipsum));
         CHECK(enc.find(to_unsigned("dolore magna")) == std::string::npos);
 
         CHECK_THROWS(decrypt_incoming(to_sv(ed_sk), enc));

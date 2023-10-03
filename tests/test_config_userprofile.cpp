@@ -56,32 +56,12 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // We don't need to push since we haven't changed anything, so this call is mainly just for
     // testing:
     config_push_data* to_push = config_push(conf);
-    constexpr auto PROTOBUF_OVERHEAD = 28;  // To be removed once we no longer protobuf wrap this
-    constexpr auto PROTOBUF_DATA_OFFSET = 26;
     REQUIRE(to_push);
     CHECK(to_push->seqno == 0);
-    CHECK(to_push->config_len == 256 + PROTOBUF_OVERHEAD);
+    CHECK(to_push->config_len == 256 + 176);  // 176 = protobuf overhead
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
-    size_t to_push_decr_size;
-
-    // Get the de-protobufed pointer and length:
-    ustring_view inner{
-            to_push->config + PROTOBUF_DATA_OFFSET, to_push->config_len - PROTOBUF_OVERHEAD};
-
-    unsigned char* to_push_decrypted = config_decrypt(
-            inner.data(), inner.size(), ed_sk.data(), enc_domain, &to_push_decr_size);
-    REQUIRE(to_push_decrypted);
-    CHECK(to_push_decr_size == 216);  // 256 - 40 overhead
-    CHECK(printable(to_push_decrypted, to_push_decr_size) ==
-          printable(
-                  ustring(193, '\0') +             // null prefix padding
-                  "d1:#i0e1:&de1:<le1:=dee"_bytes  // "compressed", but since this example is so
-                  )                                // small zstd doesn't actually compress anything.
-    );
-
     free(to_push);
-    free(to_push_decrypted);
 
     // These should also be unset:
     auto pic = user_profile_get_pic(conf);
@@ -152,16 +132,6 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "e7486ccde24416a7fd4a8ba5fa73899c65f4276dfaddd5b2100adcf0f793104fb235b31ce32ec656"
             "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
             "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
-
-    inner = {to_push->config + PROTOBUF_DATA_OFFSET, to_push->config_len - PROTOBUF_OVERHEAD};
-    CHECK(oxenc::to_hex(inner) == to_hex(exp_push1_encrypted));
-
-    // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
-    to_push_decrypted = config_decrypt(
-            inner.data(), inner.size(), ed_sk.data(), enc_domain, &to_push_decr_size);
-    CHECK(to_push_decr_size == 256 - 40);
-    CHECK(printable(to_push_decrypted, to_push_decr_size) ==
-          printable(ustring(256 - 40 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
 
     // Copy this out; we need to hold onto it to do the confirmation later on
     seqno_t seqno = to_push->seqno;

@@ -199,7 +199,10 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK(seqno == seqno2 + 1);
     std::tie(seqno2, to_push2, obs2) = contacts2.push();
     CHECK(seqno == seqno2);
-    CHECK(printable(to_push) == printable(to_push2));
+    // Disabled check for now: doesn't work with protobuf (because of the non-deterministic
+    // encryption in the middle of the protobuf wrapping).
+    // TODO: reenable once protobuf isn't always-on.
+    // CHECK(printable(to_push) == printable(to_push2));
     CHECK(as_set(obs) == make_set("fakehash3a"s, "fakehash3b"));
     CHECK(as_set(obs2) == make_set("fakehash3a"s, "fakehash3b"));
 
@@ -414,7 +417,7 @@ TEST_CASE("huge contacts compression", "[config][compression][contacts]") {
 
     auto [seqno, to_push, obs] = contacts.push();
     CHECK(seqno == 1);
-    CHECK(to_push.size() == 46'112);  // TODO: return to 46'080 once we remove protobuf wrapping
+    CHECK(to_push.size() == 46'080 + 181);  // 181 == protobuf overhead
     auto dump = contacts.dump();
     // With tons of duplicate info the push should have been nicely compressible:
     CHECK(dump.size() > 1'320'000);

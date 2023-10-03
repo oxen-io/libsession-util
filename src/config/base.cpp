@@ -62,14 +62,18 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& config
 }
 
 int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
-    if (accepts_protobuf()) {
+    if (accepts_protobuf() && !_keys.empty()) {
         std::list<ustring> keep_alive;
         std::vector<std::pair<std::string, ustring_view>> parsed;
         parsed.reserve(configs.size());
 
         for (auto& [h, c] : configs) {
             try {
-                parsed.emplace_back(h, keep_alive.emplace_back(protos::handle_incoming(c)));
+                auto unwrapped = protos::unwrap_config(
+                        ustring_view{_keys.front().data(), _keys.front().size()},
+                        c,
+                        storage_namespace());
+                parsed.emplace_back(h, keep_alive.emplace_back(std::move(unwrapped)));
             } catch (...) {
                 parsed.emplace_back(h, c);
             }
@@ -277,8 +281,12 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     pad_message(msg);  // Prefix pad with nulls
     encrypt_inplace(msg, key(), encryption_domain());
 
-    if (accepts_protobuf())
-        msg = protos::handle_outgoing(msg, s, storage_namespace());
+    if (accepts_protobuf() && !_keys.empty())
+        msg = protos::wrap_config(
+                ustring_view{_keys.front().data(), _keys.front().size()},
+                msg,
+                s,
+                storage_namespace());
 
     if (msg.size() > MAX_MESSAGE_SIZE)
         throw std::length_error{"Config data is too large"};
