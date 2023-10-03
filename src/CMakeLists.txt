@@ -137,7 +137,7 @@ endforeach()
 export(
     TARGETS ${export_targets} common version
     NAMESPACE libsession::
-    FILE libsessionTargets.cmake
+    FILE ../libsessionTargets.cmake
 )
 
 set(libsession_export_targets "${export_targets}" PARENT_SCOPE)

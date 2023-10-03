@@ -121,6 +121,10 @@ if (BUILD_STATIC_DEPS)
     include(StaticBuild)
 endif()
 
+# Add a "libsession::libsession" target that depends on everything; when building a general purpose
+# program that links against libsession, this is generally what you want to depend on.
+add_library(libsession INTERFACE)
+
 if(STATIC_BUNDLE)
 
     include(combine_archives)
@@ -133,7 +137,23 @@ if(STATIC_BUNDLE)
 
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsession-util.a
         ARCHIVE DESTINATION ${lib_folder})
+
+    # Add a target for the bundled library output:
+    add_library(libsession::util ALIAS session-util)
+
+    target_link_libraries(libsession INTERFACE libsession::util)
+else()
+    foreach(tgt ${libsession_export_targets})
+        target_link_libraries(libsession INTERFACE libsession::${tgt})
+    endforeach()
 endif()
+
+add_library(libsession::libsession ALIAS libsession)
+export(
+    TARGETS libsession
+    NAMESPACE libsession::
+    APPEND FILE libsessionTargets.cmake
+)
 
 
 option(WITH_TESTS "Enable unit tests" ${libsession_IS_TOPLEVEL_PROJECT})
