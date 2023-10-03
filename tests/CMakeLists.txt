@@ -16,6 +16,7 @@ add_executable(testAll
     test_group_members.cpp
     test_onionreq.cpp
     test_proto.cpp
+    test_session_encrypt.cpp
     test_xed25519.cpp
     )
 
