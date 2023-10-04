@@ -3,18 +3,18 @@
 #include <catch2/catch_all.hpp>
 #include <iostream>
 #include <session/config/namespaces.hpp>
+#include <session/config/protos.hpp>
 #include <session/config/user_profile.hpp>
-#include <session/protos.hpp>
 
 #include "utils.hpp"
 
-using namespace session;
+using namespace session::config;
 
-const std::vector<config::Namespace> groups{
-        config::Namespace::UserProfile,
-        config::Namespace::Contacts,
-        config::Namespace::ConvoInfoVolatile,
-        config::Namespace::UserGroups};
+const std::vector<Namespace> groups{
+        Namespace::UserProfile,
+        Namespace::Contacts,
+        Namespace::ConvoInfoVolatile,
+        Namespace::UserGroups};
 
 const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
 std::array<unsigned char, 32> ed_pk_raw;
@@ -44,13 +44,12 @@ TEST_CASE("Protobuf Handling - Wrap, Unwrap", "[config][proto][wrap]") {
     }
 
     SECTION("Message type payload comparison") {
-        auto user_profile_msg = protos::wrap_config(ed_sk, msg, 1, config::Namespace::UserProfile);
-        auto contacts_msg = protos::wrap_config(ed_sk, msg, 1, config::Namespace::Contacts);
+        auto user_profile_msg = protos::wrap_config(ed_sk, msg, 1, Namespace::UserProfile);
+        auto contacts_msg = protos::wrap_config(ed_sk, msg, 1, Namespace::Contacts);
 
         auto user_profile_parsed =
-                protos::unwrap_config(ed_sk, user_profile_msg, config::Namespace::UserProfile);
-        auto contacts_parsed =
-                protos::unwrap_config(ed_sk, contacts_msg, config::Namespace::Contacts);
+                protos::unwrap_config(ed_sk, user_profile_msg, Namespace::UserProfile);
+        auto contacts_parsed = protos::unwrap_config(ed_sk, contacts_msg, Namespace::Contacts);
 
         // All of these will return true, as the parsed messages will be identical to the
         // payload, and therefore identical to one another
@@ -64,8 +63,7 @@ TEST_CASE("Protobuf Handling - Error Handling", "[config][proto][error]") {
     auto msg = "Hello from the other side"_bytes;
     auto addendum = "jfeejj0ifdoesam"_bytes;
 
-    const auto user_profile_msg =
-            protos::wrap_config(ed_sk, msg, 1, config::Namespace::UserProfile);
+    const auto user_profile_msg = protos::wrap_config(ed_sk, msg, 1, Namespace::UserProfile);
     const auto size = user_profile_msg.size();
 
     // Testing three positions: front, inside the payload, and at the end
@@ -75,7 +73,7 @@ TEST_CASE("Protobuf Handling - Error Handling", "[config][proto][error]") {
         auto msg_copy = user_profile_msg;
         msg_copy.insert(p, addendum);
 
-        REQUIRE_THROWS(protos::unwrap_config(ed_sk, msg_copy, config::Namespace::UserProfile));
+        REQUIRE_THROWS(protos::unwrap_config(ed_sk, msg_copy, Namespace::UserProfile));
     }
 }
 
@@ -109,5 +107,5 @@ TEST_CASE("Protobuf old config loading test", "[config][proto][old]") {
             "db9aac0032c484062d7ba7bbe64e07bcd633eec8378d5d914732693c5e298f015ebde2ae45769ed319e267"
             "f0528f5cc6da268343b6647b20bae6e9ee8d92cca702"_hexbytes;
 
-    CHECK_NOTHROW(protos::unwrap_config(ed_sk, old_conf, config::Namespace::UserProfile));
+    CHECK_NOTHROW(protos::unwrap_config(ed_sk, old_conf, Namespace::UserProfile));
 }

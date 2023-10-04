@@ -15,8 +15,8 @@
 #include "internal.hpp"
 #include "session/config/base.h"
 #include "session/config/encrypt.hpp"
+#include "session/config/protos.hpp"
 #include "session/export.h"
-#include "session/protos.hpp"
 #include "session/util.hpp"
 
 using namespace std::literals;

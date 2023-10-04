@@ -1,4 +1,4 @@
-#include "session/protos.hpp"
+#include "session/config/protos.hpp"
 
 #include <sodium/crypto_scalarmult.h>
 #include <sodium/crypto_sign_ed25519.h>
@@ -10,7 +10,7 @@
 #include "WebSocketResources.pb.h"
 #include "session/session_encrypt.hpp"
 
-namespace session::protos {
+namespace session::config::protos {
 
 namespace {
 
@@ -176,4 +176,4 @@ ustring unwrap_config(ustring_view ed25519_sk, ustring_view data, config::Namesp
     return ustring{to_unsigned_sv(shconf.data())};
 }
 
-}  // namespace session::protos
+}  // namespace session::config::protos

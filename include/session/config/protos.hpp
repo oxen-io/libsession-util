@@ -1,9 +1,9 @@
 #pragma once
 
-#include "session/config/namespaces.hpp"
+#include "namespaces.hpp"
 #include "session/util.hpp"
 
-namespace session::protos {
+namespace session::config::protos {
 
 /// API: config/protos::wrap_config
 ///
@@ -42,4 +42,4 @@ ustring wrap_config(
 /// more serious).
 ustring unwrap_config(ustring_view ed25519_sk, ustring_view data, config::Namespace ns);
 
-}  // namespace session::protos
+}  // namespace session::config::protos

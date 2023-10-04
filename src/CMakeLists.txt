@@ -61,9 +61,10 @@ add_libsession_util_library(config
     config/encrypt.cpp
     config/error.c
     config/groups/info.cpp
-    config/groups/members.cpp
     config/groups/keys.cpp
+    config/groups/members.cpp
     config/internal.cpp
+    config/protos.cpp
     config/user_groups.cpp
     config/user_profile.cpp
     fields.cpp
@@ -77,7 +78,6 @@ add_libsession_util_library(onionreq
 )
 
 add_libsession_util_library(protos
-    protos.cpp
     ../proto/SessionProtos.pb.cc
     ../proto/WebSocketResources.pb.cc
 )
@@ -86,9 +86,6 @@ add_libsession_util_library(protos
 
 target_link_libraries(protos
     PUBLIC
-    common
-    PRIVATE
-    libsodium::sodium-internal
     protobuf::libprotobuf-lite
 )
 target_include_directories(protos PUBLIC ../proto)
@@ -97,7 +94,6 @@ target_link_libraries(crypto
     PUBLIC
     common
     PRIVATE
-    protos
     libsodium::sodium-internal
 )
 
@@ -105,6 +101,7 @@ target_link_libraries(config
     PUBLIC
     crypto
     common
+    protos
     PRIVATE
     libsodium::sodium-internal
     libzstd::static
