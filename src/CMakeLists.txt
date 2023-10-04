@@ -88,6 +88,7 @@ target_link_libraries(protos
     PUBLIC
     common
     PRIVATE
+    libsodium::sodium-internal
     protobuf::libprotobuf-lite
 )
 target_include_directories(protos PUBLIC ../proto)
