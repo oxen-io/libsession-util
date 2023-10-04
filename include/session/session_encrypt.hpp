@@ -61,6 +61,51 @@ namespace session {
 ustring encrypt_for_recipient(
         ustring_view ed25519_privkey, ustring_view recipient_pubkey, ustring_view message);
 
+/// API: crypto/encrypt_for_recipient_deterministic
+///
+/// Performs session protocol encryption, but using a deterministic version of crypto_box_seal.
+///
+/// Warning: this determinism completely undermines the point of crypto_box_seal (compared to a
+/// regular encrypted crypto_box): someone with the same sender Ed25519 keys and message could later
+/// regenerate the same ephemeral key and nonce which would allow them to decrypt the sent message,
+/// which is intentionally impossible with a crypto_box_seal.  This function is thus only
+/// recommended for backwards compatibility with decryption mechanisms using that scheme where this
+/// specific property is not needed, such as self-directed config messages.
+///
+/// Inputs:
+/// Identical to `encrypt_for_recipient`.
+///
+/// Outputs:
+/// Identical to `encrypt_for_recipient`.
+ustring encrypt_for_recipient_deterministic(
+        ustring_view ed25519_privkey, ustring_view recipient_pubkey, ustring_view message);
+
+/// API: crypto/sign_for_recipient
+///
+/// Performs the signing steps for session protocol encryption.  This is responsible for producing
+/// a packed authored, signed message of:
+///
+///     MESSAGE || SENDER_ED25519_PUBKEY || SIG
+///
+/// where SIG is the signed value of:
+///
+///     MESSAGE || SENDER_ED25519_PUBKEY || RECIPIENT_X25519_PUBKEY
+///
+/// thus allowing both sender identification, recipient verification, and authentication.
+///
+/// This function is mostly for internal use, but is exposed for debugging purposes: it is typically
+/// not called directly but rather used by `encrypt_for_recipient` or
+/// `encrypt_for_recipient_deterministic`, both of which call this function to construct the inner
+/// signed message.
+///
+/// Inputs:
+/// - `ed25519_privkey` -- the seed (32 bytes) or secret key (64 bytes) of the sender
+/// - `recipient_pubkey` -- the recipient X25519 pubkey, which may or may not be prefixed with the
+///   0x05 session id prefix (33 bytes if prefixed, 32 if not prefixed).
+/// - `message` -- the message to embed and sign.
+ustring sign_for_recipient(
+        ustring_view ed25519_privkey, ustring_view recipient_pubkey, ustring_view message);
+
 /// API: crypto/decrypt_incoming
 ///
 /// Inverse of `encrypt_for_recipient`: this decrypts the message, extracts the sender Ed25519

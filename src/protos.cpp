@@ -86,7 +86,7 @@ ustring wrap_config(
     // ourself.  This is unnecessary because the inner content is already encrypted with a value
     // derived from our private key, but old Session clients expect this.
     // NOTE: This is dumb.
-    auto enc_shared_conf = encrypt_for_recipient(
+    auto enc_shared_conf = encrypt_for_recipient_deterministic(
             ed25519_sk, {my_xpk.data(), my_xpk.size()}, to_unsigned_sv(shared_conf));
 
     // This is the point in session client code where this value got base64-encoded, passed to

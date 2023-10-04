@@ -61,6 +61,22 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     CHECK(to_push->config_len == 256 + 176);  // 176 = protobuf overhead
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
+
+    // There's nothing particularly profound about this value (it is multiple layers of nested
+    // protobuf with some encryption and padding halfway through); this test is just here to ensure
+    // that our pushed messages are deterministic:
+    CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
+          "080112ab030a0012001aa20308062800429b0326ec9746282053eb119228e6c36012966e7d2642163169ba39"
+          "98af44ca65f967768dd78ee80fffab6f809f6cef49c73a36c82a89622ff0de2ceee06b8c638e2c876fa9047f"
+          "449dbe24b1fc89281a264fe90abdeffcdd44f797bd4572a6c5ae8d88bf372c3c717943ebd570222206fabf0e"
+          "e9f3c6756f5d71a32616b1df53d12887961f5c129207a79622ccc1a4bba976886d9a6ddf0fe5d570e5075d01"
+          "ecd627f656e95f27b4c40d5661b5664cedd3e568206effa1308b0ccd663ca61a6d39c0731891804a8cf5edcf"
+          "8b98eaa5580c3d436e22156e38455e403869700956c3c1dd0b4470b663e75c98c5b859b53ccef6559215d804"
+          "9f755be9c2d6b3f4a310f97c496fc392f65b6431dd87788ac61074fd8cd409702e1b839b3f774d38cf8b28f0"
+          "226c4efa5220ac6ae060793e36e7ef278d42d042f15b21291f3bb29e3158f09d154b93f83fd8a319811a26cb"
+          "5240d90cbb360fafec0b7eff4c676ae598540813d062dc9468365c73b4cfa2ffd02d48cdcd8f0c71324c6d0a"
+          "60346a7a0e50af3be64684b37f9e6c831115bf112ddd18acde08eaec376f0872a3952000");
+
     free(to_push);
 
     // These should also be unset:
