@@ -23,7 +23,6 @@ add_executable(testAll
 target_link_libraries(testAll PRIVATE
     libsession::config
     libsession::onionreq
-    libsession::protos
     libsodium::sodium-internal
     Catch2::Catch2WithMain)
 

@@ -49,6 +49,7 @@ add_libsession_util_library(crypto
     blinding.cpp
     session_encrypt.cpp
     xed25519.cpp
+    util.cpp
 )
 
 add_libsession_util_library(config
@@ -68,7 +69,6 @@ add_libsession_util_library(config
     config/user_groups.cpp
     config/user_profile.cpp
     fields.cpp
-    util.cpp
 )
 
 add_libsession_util_library(onionreq
@@ -77,18 +77,7 @@ add_libsession_util_library(onionreq
     onionreq/parser.cpp
 )
 
-add_libsession_util_library(protos
-    ../proto/SessionProtos.pb.cc
-    ../proto/WebSocketResources.pb.cc
-)
 
-
-
-target_link_libraries(protos
-    PUBLIC
-    protobuf::libprotobuf-lite
-)
-target_include_directories(protos PUBLIC ../proto)
 
 target_link_libraries(crypto
     PUBLIC
@@ -101,7 +90,7 @@ target_link_libraries(config
     PUBLIC
     crypto
     common
-    protos
+    libsession::protos
     PRIVATE
     libsodium::sodium-internal
     libzstd::static
@@ -163,7 +152,8 @@ endforeach()
 export(
     TARGETS ${export_targets} common version
     NAMESPACE libsession::
-    FILE libsessionTargets.cmake
+    APPEND FILE libsessionTargets.cmake
 )
 
-set(libsession_export_targets "${export_targets}" PARENT_SCOPE)
+list(APPEND libsession_export_targets ${export_targets})
+set(libsession_export_targets "${libsession_export_targets}" PARENT_SCOPE)
