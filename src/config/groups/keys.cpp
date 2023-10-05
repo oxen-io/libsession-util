@@ -1437,7 +1437,7 @@ LIBSESSION_C_API size_t groups_keys_size(const config_group_keys* conf) {
     return unbox(conf).size();
 }
 
-LIBSESSION_C_API const unsigned char* group_keys_get_key(const config_group_keys* conf, size_t N) {
+LIBSESSION_C_API const unsigned char* groups_keys_get_key(const config_group_keys* conf, size_t N) {
     auto keys = unbox(conf).group_keys();
     if (N >= keys.size())
         return nullptr;
@@ -1655,10 +1655,14 @@ LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount(
         const char* group_id,
         const unsigned char* session_ed25519_secretkey,
         const unsigned char* signing_value) {
-    return groups::Keys::swarm_verify_subaccount(
-            group_id,
-            ustring_view{session_ed25519_secretkey, 64},
-            ustring_view{signing_value, 100});
+    try {
+        return groups::Keys::swarm_verify_subaccount(
+                group_id,
+                ustring_view{session_ed25519_secretkey, 64},
+                ustring_view{signing_value, 100});
+    } catch (...) {
+        return false;
+    }
 }
 
 LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign(
