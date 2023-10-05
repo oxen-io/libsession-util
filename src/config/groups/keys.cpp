@@ -1273,8 +1273,8 @@ std::pair<std::string, ustring> Keys::decrypt_message(ustring_view ciphertext) c
         pending && try_decrypting(plain.data(), ciphertext, nonce, *pending)) {
         decrypt_success = true;
     } else {
-        for (auto& k : keys_) {
-            if (try_decrypting(plain.data(), ciphertext, nonce, k.key)) {
+        for (auto it = keys_.rbegin(); it != keys_.rend(); ++it) {
+            if (try_decrypting(plain.data(), ciphertext, nonce, it->key)) {
                 decrypt_success = true;
                 break;
             }
