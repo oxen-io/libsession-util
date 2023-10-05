@@ -160,7 +160,7 @@ LIBSESSION_EXPORT void contacts_set(config_object* conf, const contacts_contact*
 // contacts_contact c;
 // if (contacts_get_or_construct(conf, &c, some_session_id)) {
 //     const char* new_nickname = "Joe";
-//     c.approved = new_nickname;
+//     c.nickname = new_nickname;
 //     contacts_set_or_create(conf, &c);
 // } else {
 //     // some_session_id was invalid!

@@ -111,7 +111,7 @@ LIBSESSION_EXPORT const unsigned char* groups_keys_get_key(const config_group_ke
 /// API: groups/groups_keys_is_admin
 ///
 /// Returns true if this object has the group private keys, i.e. the user is an all-powerful
-/// wiz^H^H^Hadmin of the group.
+/// admin of the group.
 ///
 /// Inputs:
 /// - `conf` -- the groups config object

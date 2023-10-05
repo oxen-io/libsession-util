@@ -344,7 +344,7 @@ LIBSESSION_C_API void groups_info_set_delete_before(config_object* conf, int64_t
 /// - `conf` -- [in] Pointer to the config object
 ///
 /// Outputs:
-/// - `int64_t` -- Unix timestamp before which messages should be deleted.  Returns 0 if not set.
+/// - `int64_t` -- Unix timestamp before which attachments should be deleted.  Returns 0 if not set.
 LIBSESSION_C_API int64_t groups_info_get_attach_delete_before(const config_object* conf) {
     return unbox<groups::Info>(conf)->get_delete_attach_before().value_or(0);
 }

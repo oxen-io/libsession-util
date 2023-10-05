@@ -120,7 +120,7 @@ class Keys final : public ConfigSig {
     // Inserts a key into the correct place in `keys_`.
     void insert_key(std::string_view message_hash, key_info&& key);
 
-    // Returned the blinding factor for a given session X25519 pubkey.  This depends on the group's
+    // Returns the blinding factor for a given session X25519 pubkey.  This depends on the group's
     // seed and thus is only obtainable by an admin account.
     std::array<unsigned char, 32> subaccount_blind_factor(
             const std::array<unsigned char, 32>& session_xpk) const;
@@ -134,7 +134,7 @@ class Keys final : public ConfigSig {
 
     // 75 because:
     // 2              // for the 'de' delimiters of the outer dict
-    // + 3 + 2 + 12   // for the `1:g` and `iNNNNNNNNNNe` generation keypair
+    // + 3 + 2 + 12   // for the `1:G` and `iNNNNNNNNNNe` generation keypair
     // + 3 + 3 + 24   // for the `1:n`, `24:`, and 24 byte nonce
     // + 3 + 3 + 48   // for the `1:K`, `48:`, and 48 byte ciphertexted key
     // + 3 + 6        // for the `1:k` and `NNNNN:` key and prefix of the keys pair
@@ -158,10 +158,10 @@ class Keys final : public ConfigSig {
 
     /// API: groups/Keys::Keys
     ///
-    /// Constructs a group members config object from existing data (stored from `dump()`) and a
+    /// Constructs a group keys config object from existing data (stored from `dump()`) and a
     /// list of encryption keys for encrypting new and decrypting existing messages.
     ///
-    /// To construct a blank info object (i.e. with no pre-existing dumped data to load) pass
+    /// To construct a blank keys object (i.e. with no pre-existing dumped data to load) pass
     /// `std::nullopt` as the last argument.
     ///
     /// Inputs:
@@ -169,8 +169,9 @@ class Keys final : public ConfigSig {
     ///   and is used to decrypt incoming keys.  It is required.
     /// - `group_ed25519_pubkey` is the public key of the group, used to verify message signatures
     ///   on key updates.  Required.  Should not include the `03` prefix.
-    /// - `group_ed25519_secretkey` is the secret key of the group, used to encrypt, decrypt, and
-    ///   sign config messages.  This is only possessed by the group admin(s), and must be provided
+    /// - `group_ed25519_secretkey` is the secret key of the group, used to sign config messages and
+    ///   swarm authentication tokens and to encrypt and decrypt encryption keys for regular messages.
+    ///    This is only possessed by the group admin(s), and must be provided
     ///   in order to make and push config changes.
     /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     ///   that was previously dumped from an instance of this class by calling `dump()`.
@@ -322,7 +323,7 @@ class Keys final : public ConfigSig {
     ///
     /// Generates a supplemental key message for one or more session IDs.  This is used to
     /// distribute existing active keys to a new member so that that member can access existing
-    /// keys, configs, and messages.  Only admins can call this.
+    /// configs and messages.  Only admins can call this.
     ///
     /// The recommended order of operations for adding such a member is:
     /// - add the member to Members
@@ -374,7 +375,7 @@ class Keys final : public ConfigSig {
     ///   (Internally this packs the flags, blinding factor, and group admin signature together and
     ///   will be 4 + 32 + 64 = 100 bytes long).
     ///
-    ///   This value must be provided to the user so that they can authentication.  The user should
+    ///   This value must be provided to the user so that they can authenticate.  The user should
     ///   call `swarm_verify_subaccount` to verify that the signing value was indeed signed by a
     ///   group admin before using/storing it.
     ///
@@ -579,7 +580,7 @@ class Keys final : public ConfigSig {
     /// call rekey()).  Note that this value will also remain true until the pushed data is fetched
     /// and loaded via `load_key_message`.
     ///
-    /// Note that this not only tracks when an automatic `rekey()` is needed because of a key
+    /// Note that this only tracks when an automatic `rekey()` is needed because of a key
     /// collision (such as two admins removing different members at the same time); there are other
     /// situations in which rekey() should also be called (such as when kicking a member) that are
     /// not reflected by this flag.

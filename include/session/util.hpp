@@ -214,7 +214,7 @@ struct sodium_array {
     }
 
     // Loads the array from a pointer and size; this first resets a value (if present), allocates a
-    // new array of the given size, the copies the given value(s) into the new buffer.  T must be
+    // new array of the given size, then copies the given value(s) into the new buffer.  T must be
     // copyable.  This is *not* safe to use if `buf` points into the currently allocated data.
     template <typename = std::enable_if_t<std::is_copy_constructible_v<T>>>
     void load(const T* data, size_t length) {

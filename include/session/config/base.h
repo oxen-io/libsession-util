@@ -105,7 +105,7 @@ typedef struct config_string_list {
 /// API: base/config_merge
 ///
 /// Merges the config object with one or more remotely obtained config strings.  After this call the
-/// config object may be unchanged, complete replaced, or updated and needing a push, depending on
+/// config object may be unchanged, completely replaced, or updated and needing a push, depending on
 /// the messages that are merged; the caller should check config_needs_push().
 ///
 /// Declaration:
@@ -309,7 +309,7 @@ LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object*
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config_object object
 /// - `len` -- [out] Pointer where the number of keys will be written (that is: the returned pointer
-///   will be to a buffer which has a size of of this value times 32).
+///   will be to a buffer which has a size of this value times 32).
 ///
 /// Outputs:
 /// - `unsigned char*` -- pointer to newly malloced key data (a multiple of 32 bytes); the pointer

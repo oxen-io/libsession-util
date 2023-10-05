@@ -14,8 +14,9 @@ enum groups_members_remove_status { REMOVED_MEMBER = 1, REMOVED_MEMBER_AND_MESSA
 typedef struct config_group_member {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
 
-    // These two will be 0-length strings when unset:
+    // This will be a 0-length string when unset:
     char name[101];
+
     user_profile_pic profile_pic;
 
     bool admin;
@@ -131,7 +132,7 @@ LIBSESSION_EXPORT bool groups_members_erase(config_object* conf, const char* ses
 /// - `conf` -- input - Pointer to the config object
 ///
 /// Outputs:
-/// - `size_t` -- number of contacts
+/// - `size_t` -- number of members
 LIBSESSION_EXPORT size_t groups_members_size(const config_object* conf);
 
 typedef struct groups_members_iterator {
@@ -146,8 +147,8 @@ typedef struct groups_members_iterator {
 ///
 ///     group_member m;
 ///     groups_members_iterator *it = groups_members_iterator_new(group);
-///     for (; !groups_members_iterator_done(it, &c); groups_members_iterator_advance(it)) {
-///         // c.session_id, c.name, etc. are loaded
+///     for (; !groups_members_iterator_done(it, &m); groups_members_iterator_advance(it)) {
+///         // m.session_id, m.name, etc. are loaded
 ///     }
 ///     groups_members_iterator_free(it);
 ///

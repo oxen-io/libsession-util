@@ -548,7 +548,7 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
     d.append("G", keys_.back().generation);
 
-    // Finally we sign the message at put it as the ~ key (which is 0x7e, and thus comes later than
+    // Finally we sign the message and put the signature as the ~ key (which is 0x7e, and thus comes later than
     // any other printable ascii key).
     d.append_signature("~", [this](ustring_view to_sign) { return sign(to_sign); });
 
@@ -581,7 +581,7 @@ std::array<unsigned char, 32> Keys::subaccount_blind_factor(
 
 namespace {
 
-    // These constants are defined and explains in more detail in oxen-storage-server
+    // These constants are defined and explained in more detail in oxen-storage-server
     constexpr unsigned char SUBACC_FLAG_READ = 0b0001;
     constexpr unsigned char SUBACC_FLAG_WRITE = 0b0010;
     constexpr unsigned char SUBACC_FLAG_DEL = 0b0100;
@@ -708,7 +708,7 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     // token is now set: flags || kT
     ustring_view kT{to_unsigned(token.data() + 4), 32};
 
-    // sub_sig is just the admin's signature, sitting at the end of sign_val (after 4f || k):
+    // sub_sig is just the admin's signature, sitting at the end of sign_val (after p || f || 0 || 0 || k):
     sub_sig = from_unsigned_sv(sign_val.substr(36));
 
     // Our signing private scalar is kt, where t = ±s according to whether we had to negate S to
@@ -723,7 +723,7 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     std::array<unsigned char, 32> kt;
     crypto_core_ed25519_scalar_mul(kt.data(), k.data(), t.data());
 
-    // We now have kt, kT, our privkey/public.  (Note that kt is a scalar, not a seed).
+    // We now have kt, kT, our private/public keypair.  (Note that kt is a scalar, not a seed).
 
     // We're going to get *close* to standard Ed25519 here, except:
     //
@@ -986,7 +986,7 @@ bool Keys::load_key_message(
                 // and t are 0 for some reason) of:
                 // d            --   1
                 //   1:k 32:... -- +38
-                //   1:g i1e    -- + 6
+                //   1:g iXe    -- + 6
                 //   1:t iXe    -- + 6
                 // e               + 1
                 //                 ---
@@ -1173,7 +1173,7 @@ void Keys::remove_expired() {
         active_msgs_.erase(
                 active_msgs_.begin(), active_msgs_.lower_bound(keys_.front().generation));
     else
-        // Keys is empty, which means we aren't keep *any* keys around (or they are all invalid or
+        // Keys is empty, which means we aren't keeping *any* keys around (or they are all invalid or
         // something) and so it isn't really up to us to keep them alive, since that's a history of
         // the group we apparently don't have access to.
         active_msgs_.clear();

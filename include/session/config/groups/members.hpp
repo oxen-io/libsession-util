@@ -112,7 +112,7 @@ struct member {
     /// that the invitation should be reissued).
     ///
     /// Inputs:
-    /// - `failed` can be specified and set to `true` to the invite status to "failed-to-send";
+    /// - `failed` can be specified and set to `true` to set the invite status to "failed-to-send";
     ///   otherwise omitting it or giving as `false` sets the invite status to "sent."
     void set_invited(bool failed = false) { invite_status = failed ? INVITE_FAILED : INVITE_SENT; }
 
@@ -276,11 +276,11 @@ class Members final : public ConfigBase {
     /// Constructs a group members config object from existing data (stored from `dump()`) and a
     /// list of encryption keys for encrypting new and decrypting existing messages.
     ///
-    /// To construct a blank info object (i.e. with no pre-existing dumped data to load) pass
+    /// To construct a blank members object (i.e. with no pre-existing dumped data to load) pass
     /// `std::nullopt` as the third argument.
     ///
-    /// Encryption keys must be loaded before the Info object can be modified or parse other Info
-    /// messages, and are typically loaded by providing the `Info` object to the `Keys` class.
+    /// Encryption keys must be loaded before the Members object can be modified or parse other Members
+    /// messages, and are typically loaded by providing the `Members` object to the `Keys` class.
     ///
     /// Inputs:
     /// - `ed25519_pubkey` is the public key of this group, used to validate config messages.
@@ -371,13 +371,14 @@ class Members final : public ConfigBase {
     ///     removed |= members.erase("050000111122223333...");
     ///
     ///     if (removed) {
-    ///         auto new_keys_conf = keys.rekey(members);
-    ///         members.add_key(*keys.pending_key(), true);
-    ///         auto [seqno, new_memb_conf, obs] = members.push();
+    ///         auto new_keys_conf = keys.rekey(info, members);
+    ///         auto [members_seqno, new_memb_conf, members_obs] = members.push();
+    ///         auto [info_seqno, new_info_conf, info_obs] = info.push();
     ///
-    ///         // Send the two new configs to the swarm (via a seqence of two `store`s):
+    ///         // Send the three new configs to the swarm (via a sequence of three `store`s):
     ///         // - new_keys_conf goes into the keys namespace
     ///         // - new_memb_conf goes into the members namespace
+    ///         // - new_info_conf goes into the info namespace
     ///     }
     ///
     /// Inputs:

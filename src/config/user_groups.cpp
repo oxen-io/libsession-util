@@ -560,7 +560,7 @@ bool UserGroups::iterator::check_it() {
 
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until
 /// we find one that is valid (or hit the end).  We also span across three different iterators:
-/// first we exhaust communities, then legacy groups.
+/// first we exhaust groups, then communities, then legacy groups.
 ///
 /// We *always* call this after incrementing the iterators (and after iterator initialization),
 /// and this is responsible for making sure that the the _it variables are set up as required.
