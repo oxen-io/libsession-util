@@ -425,6 +425,9 @@ ustring Keys::sign(ustring_view data) const {
     return sig;
 }
 
+static constexpr auto nonce_seed_hash_key = "SessionGroupNonceSeed"sv;
+static const ustring_view nonce_hash_key = to_unsigned_sv("SessionGroupNonceGen"sv);
+
 ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     if (!admin())
         throw std::logic_error{
@@ -451,12 +454,12 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     // H1(member0 || member1 || ... || memberN || keysdata || H2(group_secret_key))
     //
     // where:
-    // - H1(.) = 24-byte BLAKE2b keyed hash with key "SessionGroupKeyGen"
+    // - H1(.) = 24-byte BLAKE2b keyed hash with key "SessionGroupNonceGen"
     // - memberI is the full session ID of each member included in this key update, expressed in hex
     //   (66 chars), in sorted order.
     // - keysdata is the unencrypted inner value that we are encrypting for each supplemental member
     // - H2(.) = 32-byte BLAKE2b keyed hash of the sodium group secret key seed (just the 32 byte,
-    //           not the full 64 byte with the pubkey in the second half), key "SessionGroupKeySeed"
+    //           not the full 64 byte with the pubkey in the second half), key "SessionGroupNonceSeed"
 
     std::string supp_keys;
     {
@@ -479,14 +482,14 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     crypto_generichash_blake2b_state st;
 
     crypto_generichash_blake2b_init(
-            &st, enc_key_hash_key.data(), enc_key_hash_key.size(), h1.size());
+            &st, nonce_hash_key.data(), nonce_hash_key.size(), h1.size());
 
     for (const auto& sid : sids)
         crypto_generichash_blake2b_update(&st, to_unsigned(sid.data()), sid.size());
 
     crypto_generichash_blake2b_update(&st, to_unsigned(supp_keys.data()), supp_keys.size());
 
-    std::array<unsigned char, 32> h2 = seed_hash(seed_hash_key);
+    std::array<unsigned char, 32> h2 = seed_hash(nonce_seed_hash_key);
     crypto_generichash_blake2b_update(&st, h2.data(), h2.size());
 
     crypto_generichash_blake2b_final(&st, h1.data(), h1.size());
@@ -552,12 +555,14 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     return ustring{to_unsigned_sv(d.view())};
 }
 
+static constexpr auto subaccount_mask_hash_key = "SessionGroupSubaccountMask"sv;
+
 // Blinding factor for subaccounts: H(sessionid || groupid) mod L, where H is 64-byte blake2b, using
 // a hash key derived from the group's seed.
 std::array<unsigned char, 32> Keys::subaccount_blind_factor(
         const std::array<unsigned char, 32>& session_xpk) const {
 
-    auto mask = seed_hash("SessionGroupSubaccountMask");
+    auto mask = seed_hash(subaccount_mask_hash_key);
     static_assert(mask.size() == crypto_generichash_blake2b_KEYBYTES);
 
     std::array<unsigned char, 64> h;
@@ -669,6 +674,9 @@ ustring Keys::swarm_subaccount_token(std::string_view session_id, bool write, bo
     return out;
 }
 
+static constexpr auto subaccount_seed_hash_key = "SubaccountSeed"sv;
+static constexpr auto r_hash_key = "SubaccountSig"sv;
+
 Keys::swarm_auth Keys::swarm_subaccount_sign(
         ustring_view msg, ustring_view sign_val, bool binary) const {
     if (sign_val.size() != 100)
@@ -737,16 +745,14 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     //
     // (using the standard Ed25519 SHA-512 here for H)
 
-    constexpr auto seed_hash_key = "SubaccountSeed"sv;
-    constexpr auto r_hash_key = "SubaccountSig"sv;
     std::array<unsigned char, 32> hseed;
     crypto_generichash_blake2b(
             hseed.data(),
             hseed.size(),
             user_ed25519_sk.data(),
             32,
-            to_unsigned(seed_hash_key.data()),
-            seed_hash_key.size());
+            to_unsigned(subaccount_seed_hash_key.data()),
+            subaccount_seed_hash_key.size());
 
     std::array<unsigned char, 64> tmp;
     crypto_generichash_blake2b_state st;
