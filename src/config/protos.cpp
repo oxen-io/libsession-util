@@ -98,7 +98,7 @@ ustring wrap_config(
     // Now we just keep on trucking with more protobuf:
     auto envelope = SessionProtos::Envelope();
     *envelope.mutable_content() = from_unsigned_sv(enc_shared_conf);
-    envelope.set_timestamp(0);
+    envelope.set_timestamp(1);  // Old session clients with their own unwrapping require this > 0
     envelope.set_type(SessionProtos::Envelope_Type::Envelope_Type_SESSION_MESSAGE);
 
     // And more protobuf (even though this no one cares about anything other than the body in this

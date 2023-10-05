@@ -66,7 +66,7 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     // protobuf with some encryption and padding halfway through); this test is just here to ensure
     // that our pushed messages are deterministic:
     CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
-          "080112ab030a0012001aa20308062800429b0326ec9746282053eb119228e6c36012966e7d2642163169ba39"
+          "080112ab030a0012001aa20308062801429b0326ec9746282053eb119228e6c36012966e7d2642163169ba39"
           "98af44ca65f967768dd78ee80fffab6f809f6cef49c73a36c82a89622ff0de2ceee06b8c638e2c876fa9047f"
           "449dbe24b1fc89281a264fe90abdeffcdd44f797bd4572a6c5ae8d88bf372c3c717943ebd570222206fabf0e"
           "e9f3c6756f5d71a32616b1df53d12887961f5c129207a79622ccc1a4bba976886d9a6ddf0fe5d570e5075d01"
