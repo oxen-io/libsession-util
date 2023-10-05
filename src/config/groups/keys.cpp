@@ -459,7 +459,8 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     //   (66 chars), in sorted order.
     // - keysdata is the unencrypted inner value that we are encrypting for each supplemental member
     // - H2(.) = 32-byte BLAKE2b keyed hash of the sodium group secret key seed (just the 32 byte,
-    //           not the full 64 byte with the pubkey in the second half), key "SessionGroupNonceSeed"
+    //           not the full 64 byte with the pubkey in the second half), key
+    //           "SessionGroupNonceSeed"
 
     std::string supp_keys;
     {
@@ -481,8 +482,7 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
     crypto_generichash_blake2b_state st;
 
-    crypto_generichash_blake2b_init(
-            &st, nonce_hash_key.data(), nonce_hash_key.size(), h1.size());
+    crypto_generichash_blake2b_init(&st, nonce_hash_key.data(), nonce_hash_key.size(), h1.size());
 
     for (const auto& sid : sids)
         crypto_generichash_blake2b_update(&st, to_unsigned(sid.data()), sid.size());
@@ -548,8 +548,8 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
     d.append("G", keys_.back().generation);
 
-    // Finally we sign the message and put the signature as the ~ key (which is 0x7e, and thus comes later than
-    // any other printable ascii key).
+    // Finally we sign the message and put the signature as the ~ key (which is 0x7e, and thus comes
+    // later than any other printable ascii key).
     d.append_signature("~", [this](ustring_view to_sign) { return sign(to_sign); });
 
     return ustring{to_unsigned_sv(d.view())};
@@ -708,7 +708,8 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     // token is now set: flags || kT
     ustring_view kT{to_unsigned(token.data() + 4), 32};
 
-    // sub_sig is just the admin's signature, sitting at the end of sign_val (after p || f || 0 || 0 || k):
+    // sub_sig is just the admin's signature, sitting at the end of sign_val (after p || f || 0 || 0
+    // || k):
     sub_sig = from_unsigned_sv(sign_val.substr(36));
 
     // Our signing private scalar is kt, where t = ±s according to whether we had to negate S to
@@ -1173,9 +1174,9 @@ void Keys::remove_expired() {
         active_msgs_.erase(
                 active_msgs_.begin(), active_msgs_.lower_bound(keys_.front().generation));
     else
-        // Keys is empty, which means we aren't keeping *any* keys around (or they are all invalid or
-        // something) and so it isn't really up to us to keep them alive, since that's a history of
-        // the group we apparently don't have access to.
+        // Keys is empty, which means we aren't keeping *any* keys around (or they are all invalid
+        // or something) and so it isn't really up to us to keep them alive, since that's a history
+        // of the group we apparently don't have access to.
         active_msgs_.clear();
 }
 

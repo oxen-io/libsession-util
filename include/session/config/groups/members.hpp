@@ -279,8 +279,9 @@ class Members final : public ConfigBase {
     /// To construct a blank members object (i.e. with no pre-existing dumped data to load) pass
     /// `std::nullopt` as the third argument.
     ///
-    /// Encryption keys must be loaded before the Members object can be modified or parse other Members
-    /// messages, and are typically loaded by providing the `Members` object to the `Keys` class.
+    /// Encryption keys must be loaded before the Members object can be modified or parse other
+    /// Members messages, and are typically loaded by providing the `Members` object to the `Keys`
+    /// class.
     ///
     /// Inputs:
     /// - `ed25519_pubkey` is the public key of this group, used to validate config messages.

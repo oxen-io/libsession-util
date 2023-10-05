@@ -169,7 +169,8 @@ class Keys final : public ConfigSig {
     /// - `group_ed25519_pubkey` is the public key of the group, used to verify message signatures
     ///   on key updates.  Required.  Should not include the `03` prefix.
     /// - `group_ed25519_secretkey` is the secret key of the group, used to sign config messages and
-    ///   swarm authentication tokens and to encrypt and decrypt encryption keys for regular messages.
+    ///   swarm authentication tokens and to encrypt and decrypt encryption keys for regular
+    ///   messages.
     ///    This is only possessed by the group admin(s), and must be provided
     ///   in order to make and push config changes.
     /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
