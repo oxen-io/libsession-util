@@ -71,12 +71,6 @@ add_libsession_util_library(config
     fields.cpp
 )
 
-add_libsession_util_library(onionreq
-    onionreq/channel_encryption.cpp
-    onionreq/key_types.cpp
-    onionreq/parser.cpp
-)
-
 
 
 target_link_libraries(crypto
@@ -96,15 +90,23 @@ target_link_libraries(config
     libzstd::static
 )
 
-target_link_libraries(onionreq
-    PUBLIC
-    crypto
-    common
-    PRIVATE
-    nlohmann_json::nlohmann_json
-    libsodium::sodium-internal
-    nettle
-)
+if(ENABLE_ONIONREQ)
+    add_libsession_util_library(onionreq
+        onionreq/channel_encryption.cpp
+        onionreq/key_types.cpp
+        onionreq/parser.cpp
+    )
+
+    target_link_libraries(onionreq
+        PUBLIC
+        crypto
+        common
+        PRIVATE
+        nlohmann_json::nlohmann_json
+        libsodium::sodium-internal
+        nettle
+    )
+endif()
 
 
 if(WARNINGS_AS_ERRORS AND NOT USE_LTO AND CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION MATCHES "^11\\.")
