@@ -188,7 +188,7 @@ size_t Keys::size() const {
 
 std::vector<ustring_view> Keys::group_keys() const {
     std::vector<ustring_view> ret;
-    ret.reserve(size());
+    ret.reserve(size() + !pending_key_config_.empty());
 
     if (!pending_key_config_.empty())
         ret.emplace_back(pending_key_.data(), 32);
