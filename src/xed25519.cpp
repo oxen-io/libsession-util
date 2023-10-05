@@ -151,7 +151,7 @@ std::string pubkey(std::string_view curve25519_pubkey) {
 
 }  // namespace session::xed25519
 
-using session::xed25519::ustring_view;
+using session::ustring_view;
 
 extern "C" {
 

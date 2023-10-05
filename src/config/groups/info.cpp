@@ -10,7 +10,6 @@
 #include "session/config/groups/info.h"
 #include "session/export.h"
 #include "session/types.hpp"
-#include "session/util.hpp"
 
 using namespace std::literals;
 

@@ -7,7 +7,7 @@
 #include "session/xed25519.h"
 #include "session/xed25519.hpp"
 
-using session::xed25519::ustring_view;
+using session::ustring_view;
 
 constexpr std::array<unsigned char, 64> seed1{
         0xfe, 0xcd, 0x9a, 0x60, 0x34, 0xbc, 0x9a, 0xba, 0x27, 0x39, 0x25, 0xde, 0xe7,

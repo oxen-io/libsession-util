@@ -7,7 +7,6 @@
 #include "../../config.hpp"
 #include "../base.hpp"
 #include "../namespaces.hpp"
-#include "../profile_pic.hpp"
 #include "members.hpp"
 
 namespace session::config::groups {
