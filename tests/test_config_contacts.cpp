@@ -291,8 +291,10 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     merge_hash[0] = "fakehash1";
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
-    int accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash1"sv);
+    free(accepted);
 
     config_confirm_pushed(conf, to_push->seqno, "fakehash1");
     free(to_push);
@@ -325,7 +327,9 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
     accepted = config_merge(conf, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    free(accepted);
 
     config_confirm_pushed(conf2, to_push->seqno, "fakehash2");
 
