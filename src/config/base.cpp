@@ -53,7 +53,8 @@ std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... ar
     return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& configs) {
+std::vector<std::string> ConfigBase::merge(
+        const std::vector<std::pair<std::string, ustring>>& configs) {
     std::vector<std::pair<std::string, ustring_view>> config_views;
     config_views.reserve(configs.size());
     for (auto& [hash, data] : configs)
@@ -61,7 +62,7 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& config
     return merge(config_views);
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+std::vector<std::string> ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
     if (accepts_protobuf() && !_keys.empty()) {
         std::list<ustring> keep_alive;
         std::vector<std::pair<std::string, ustring_view>> parsed;
@@ -85,7 +86,7 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
     return _merge(configs);
 }
 
-int ConfigBase::_merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+std::vector<std::string> ConfigBase::_merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
 
     if (_keys.empty())
         throw std::logic_error{"Cannot merge configs without any decryption keys"};
@@ -239,8 +240,13 @@ int ConfigBase::_merge(const std::vector<std::pair<std::string, ustring_view>>& 
         assert(new_conf->unmerged_index() == 0);
     }
 
-    return all_confs.size() - bad_confs.size() -
-           (mine.empty() ? 0 : 1);  // -1 because we don't count the first one (reparsing ourself).
+    std::vector<std::string> good_hashes;
+    good_hashes.reserve(all_hashes.size() - (mine.empty() ? 0 : 1) - bad_confs.size());
+    for (size_t i = mine.empty() ? 0 : 1; i < all_hashes.size(); i++)
+        if (!bad_confs.count(i))
+            good_hashes.emplace_back(all_hashes[i]);
+
+    return good_hashes;
 }
 
 std::vector<std::string> ConfigBase::current_hashes() const {
@@ -610,7 +616,7 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
     return static_cast<int16_t>(unbox(conf)->storage_namespace());
 }
 
-LIBSESSION_EXPORT int config_merge(
+LIBSESSION_EXPORT config_string_list* config_merge(
         config_object* conf,
         const char** msg_hashes,
         const unsigned char** configs,
@@ -621,7 +627,8 @@ LIBSESSION_EXPORT int config_merge(
     confs.reserve(count);
     for (size_t i = 0; i < count; i++)
         confs.emplace_back(msg_hashes[i], ustring_view{configs[i], lengths[i]});
-    return config.merge(confs);
+
+    return make_string_list(config.merge(confs));
 }
 
 LIBSESSION_EXPORT bool config_needs_push(const config_object* conf) {

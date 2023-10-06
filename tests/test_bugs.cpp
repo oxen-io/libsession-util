@@ -52,7 +52,7 @@ TEST_CASE("Dirty/Mutable test case", "[config][dirty]") {
 
     auto r = c1.merge(std::vector<std::pair<std::string, ustring_view>>{
             {{"fakehash2", data2}, {"fakehash3", data3}}});
-    CHECK(r == 2);
+    CHECK(r == std::vector{{"fakehash2"s, "fakehash3"s}});
     CHECK(c1.needs_dump());
     CHECK(c1.needs_push());  // because we have the merge conflict to push
     CHECK(c1.is_dirty());

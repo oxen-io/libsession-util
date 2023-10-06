@@ -105,7 +105,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
 
     std::vector<std::pair<std::string, ustring_view>> merge_configs;
     merge_configs.emplace_back("fakehash1", p1);
-    CHECK(gmem2.merge(merge_configs) == 1);
+    CHECK(gmem2.merge(merge_configs) == std::vector<std::string>{{"fakehash1"}});
     CHECK_FALSE(gmem2.needs_push());
 
     for (int i = 0; i < 25; i++)
@@ -166,9 +166,9 @@ TEST_CASE("Group Members", "[config][groups][members]") {
     auto [s2, p2, o2] = gmem2.push();
     gmem2.confirm_pushed(s2, "fakehash2");
     merge_configs.emplace_back("fakehash2", p2);  // not clearing it first!
-    CHECK(gmem1.merge(merge_configs) == 1);
+    CHECK(gmem1.merge(merge_configs) == std::vector{{"fakehash1"s}});
     gmem1.add_key("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
-    CHECK(gmem1.merge(merge_configs) == 2);
+    CHECK(gmem1.merge(merge_configs) == std::vector{{"fakehash1"s, "fakehash2"s}});
 
     CHECK(gmem1.get(sids[23]).value().name == "Member 23");
 
@@ -220,7 +220,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
     gmem1.confirm_pushed(s3, "fakehash3");
     merge_configs.clear();
     merge_configs.emplace_back("fakehash3", p3);
-    CHECK(gmem2.merge(merge_configs) == 1);
+    CHECK(gmem2.merge(merge_configs) == std::vector{{"fakehash3"s}});
 
     {
         int i = 0;

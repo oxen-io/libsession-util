@@ -216,8 +216,10 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     merge_hash[0] = "fakehash1";
     merge_data[0] = exp_push1_encrypted.data();
     merge_size[0] = exp_push1_encrypted.size();
-    int accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash1"sv);
+    free(accepted);
 
     // Our state has changed, so we need to dump:
     CHECK(config_needs_dump(conf2));
@@ -284,12 +286,18 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     merge_hash[0] = "fakehash2";
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
-    config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
     free(to_push);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    free(accepted);
     merge_hash[0] = "fakehash3";
     merge_data[0] = to_push2->config;
     merge_size[0] = to_push2->config_len;
-    config_merge(conf, merge_hash, merge_data, merge_size, 1);
+    accepted = config_merge(conf, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash3"sv);
+    free(accepted);
     free(to_push2);
 
     // Now after the merge we *will* want to push from both client, since both will have generated a

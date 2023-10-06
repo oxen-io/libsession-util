@@ -362,8 +362,10 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     hash_data[0] = "hash123";
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
-    int accepted = config_merge(conf, hash_data, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    config_string_list* accepted = config_merge(conf, hash_data, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "hash123"sv);
+    free(accepted);
     config_confirm_pushed(conf2, seqno, "hash123");
     free(to_push);
 
@@ -630,7 +632,10 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
 
-    config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "hash5235"sv);
+    free(accepted);
     free(to_push);
 
     CHECK(config_needs_push(conf2));

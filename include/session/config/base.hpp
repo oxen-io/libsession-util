@@ -768,18 +768,15 @@ class ConfigBase : public ConfigSig {
     /// parseable).  This should not happen (the current config, at least, should always be
     /// re-parseable).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// int _merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
-    /// int _merge(const std::vector<std::pair<std::string, ustring>>& configs);
-    /// ```
-    ///
     /// Inputs:
     /// - `configs` -- vector of pairs containing the message hash and the raw message body
     ///
     /// Outputs:
-    /// - `int` -- Returns how many config messages that were successfully parsed
-    int _merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    std::vector<std::string> _merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     /// API: base/ConfigBase::extra_data
     ///
@@ -895,12 +892,15 @@ class ConfigBase : public ConfigSig {
     /// - `configs` -- vector of pairs containing the message hash and the raw message body
     ///
     /// Outputs:
-    /// - `int` -- Returns how many config messages that were successfully parsed
-    int merge(const std::vector<std::pair<std::string, ustring>>& configs);
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    std::vector<std::string> merge(const std::vector<std::pair<std::string, ustring>>& configs);
 
     // Same as above, but passes the ustring_views to the overload of protos::handle_incoming that
     // takes ustring_views
-    int merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+    std::vector<std::string> merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     /// API: base/ConfigBase::is_dirty
     ///
