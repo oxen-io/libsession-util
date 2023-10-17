@@ -91,6 +91,17 @@ LIBSESSION_EXPORT void config_set_logger(
 /// - `int16_t` -- integer of the namespace
 LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf);
 
+/// Struct containing a list of C strings.  Typically where this is returned by this API it must be
+/// freed (via `free()`) when done with it.
+///
+/// When returned as a pointer by a libsession-util function this is allocated in such a way that
+/// just the outer config_string_list can be free()d to free both the list *and* the inner `value`
+/// and pointed-at values.
+typedef struct config_string_list {
+    char** value;  // array of null-terminated C strings
+    size_t len;    // length of `value`
+} config_string_list;
+
 /// API: base/config_merge
 ///
 /// Merges the config object with one or more remotely obtained config strings.  After this call the
@@ -117,13 +128,19 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf);
 /// - `count` -- [in] is the length of all three arrays.
 ///
 /// Outputs:
-/// - `int` --
-LIBSESSION_EXPORT int config_merge(
+/// - `config_string_list*` -- pointer to the list of successfully parsed hashes; the pointer
+///   belongs to the caller and must be freed when done with it.
+
+LIBSESSION_EXPORT config_string_list* config_merge(
         config_object* conf,
         const char** msg_hashes,
         const unsigned char** configs,
         const size_t* lengths,
-        size_t count);
+        size_t count)
+#ifdef __GNUC__
+        __attribute__((warn_unused_result))
+#endif
+        ;
 
 /// API: base/config_needs_push
 ///
@@ -251,13 +268,6 @@ LIBSESSION_EXPORT void config_dump(config_object* conf, unsigned char** out, siz
 /// - `bool` -- True if config has changed since last call to `dump()`
 LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf);
 
-/// Struct containing a list of C strings.  Typically where this is returned by this API it must be
-/// freed (via `free()`) when done with it.
-typedef struct config_string_list {
-    char** value;  // array of null-terminated C strings
-    size_t len;    // length of `value`
-} config_string_list;
-
 /// API: base/config_current_hashes
 ///
 /// Obtains the current active hashes.  Note that this will be empty if the current hash is unknown
@@ -278,8 +288,12 @@ typedef struct config_string_list {
 /// - `conf` -- [in] Pointer to config_object object
 ///
 /// Outputs:
-/// - `config_string_list*` -- point to the list of hashes, pointer belongs to the caller
-LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf);
+/// - `config_string_list*` -- pointer to the list of hashes; the pointer belongs to the caller
+LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf)
+#ifdef __GNUC__
+        __attribute__((warn_unused_result))
+#endif
+        ;
 
 /// Config key management; see the corresponding method docs in base.hpp.  All `key` arguments here
 /// are 32-byte binary buffers (and since fixed-length, there is no keylen argument).

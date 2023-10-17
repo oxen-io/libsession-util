@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "internal.hpp"
 #include "session/config/base.h"
 #include "session/config/encrypt.hpp"
 #include "session/export.h"
@@ -38,7 +39,8 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& configs) {
+std::vector<std::string> ConfigBase::merge(
+        const std::vector<std::pair<std::string, ustring>>& configs) {
     std::vector<std::pair<std::string, ustring_view>> config_views;
     config_views.reserve(configs.size());
     for (auto& [hash, data] : configs)
@@ -53,7 +55,8 @@ std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... ar
     return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+std::vector<std::string> ConfigBase::merge(
+        const std::vector<std::pair<std::string, ustring_view>>& configs) {
 
     if (_keys_size == 0)
         throw std::logic_error{"Cannot merge configs without any decryption keys"};
@@ -218,8 +221,13 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
         assert(new_conf->unmerged_index() == 0);
     }
 
-    return all_confs.size() - bad_confs.size() -
-           1;  // -1 because we don't count the first one (reparsing ourself).
+    std::vector<std::string> good_hashes;
+    good_hashes.reserve(all_hashes.size() - (mine.empty() ? 0 : 1) - bad_confs.size());
+    for (size_t i = mine.empty() ? 0 : 1; i < all_hashes.size(); i++)
+        if (!bad_confs.count(i))
+            good_hashes.emplace_back(all_hashes[i]);
+
+    return good_hashes;
 }
 
 std::vector<std::string> ConfigBase::current_hashes() const {
@@ -476,7 +484,7 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
     return static_cast<int16_t>(unbox(conf)->storage_namespace());
 }
 
-LIBSESSION_EXPORT int config_merge(
+LIBSESSION_EXPORT config_string_list* config_merge(
         config_object* conf,
         const char** msg_hashes,
         const unsigned char** configs,
@@ -487,7 +495,8 @@ LIBSESSION_EXPORT int config_merge(
     confs.reserve(count);
     for (size_t i = 0; i < count; i++)
         confs.emplace_back(msg_hashes[i], ustring_view{configs[i], lengths[i]});
-    return config.merge(confs);
+
+    return make_string_list(config.merge(confs));
 }
 
 LIBSESSION_EXPORT bool config_needs_push(const config_object* conf) {
@@ -548,26 +557,7 @@ LIBSESSION_EXPORT bool config_needs_dump(const config_object* conf) {
 }
 
 LIBSESSION_EXPORT config_string_list* config_current_hashes(const config_object* conf) {
-    auto hashes = unbox(conf)->current_hashes();
-    size_t sz = sizeof(config_string_list) + hashes.size() * sizeof(char*);
-    for (auto& h : hashes)
-        sz += h.size() + 1;
-    void* buf = std::malloc(sz);
-    auto* ret = static_cast<config_string_list*>(buf);
-    ret->len = hashes.size();
-
-    static_assert(alignof(config_string_list) >= alignof(char*));
-    ret->value = reinterpret_cast<char**>(ret + 1);
-    char** next_ptr = ret->value;
-    char* next_str = reinterpret_cast<char*>(next_ptr + ret->len);
-
-    for (size_t i = 0; i < ret->len; i++) {
-        *(next_ptr++) = next_str;
-        std::memcpy(next_str, hashes[i].c_str(), hashes[i].size() + 1);
-        next_str += hashes[i].size() + 1;
-    }
-
-    return ret;
+    return make_string_list(unbox(conf)->current_hashes());
 }
 
 LIBSESSION_EXPORT void config_add_key(config_object* conf, const unsigned char* key) {

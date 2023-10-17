@@ -758,19 +758,25 @@ class ConfigBase {
     ///
     /// Declaration:
     /// ```cpp
-    /// int merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
-    /// int merge(const std::vector<std::pair<std::string, ustring>>& configs);
+    /// std::vector<std::string> merge(
+    ///     const std::vector<std::pair<std::string, ustring_view>>& configs);
+    /// std::vector<std::string> merge(
+    ///     const std::vector<std::pair<std::string, ustring>>& configs);
     /// ```
     ///
     /// Inputs:
     /// - `configs` -- vector of pairs containing the message hash and the raw message body
     ///
     /// Outputs:
-    /// - `int` -- Returns how many config messages that were successfully parsed
-    virtual int merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    virtual std::vector<std::string> merge(
+            const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     // Same as merge (above )but takes the values as ustring's as sometimes that is more convenient.
-    int merge(const std::vector<std::pair<std::string, ustring>>& configs);
+    std::vector<std::string> merge(const std::vector<std::pair<std::string, ustring>>& configs);
 
     /// API: base/ConfigBase::is_dirty
     ///
