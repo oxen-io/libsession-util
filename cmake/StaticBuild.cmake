@@ -197,7 +197,7 @@ set(apple_cxxflags_arch)
 set(apple_ldflags_arch)
 set(gmp_build_host "${cross_host}")
 if(APPLE AND CMAKE_CROSSCOMPILING)
-    if(gmp_build_host MATCHES "^(.*-.*-)ios([0-9]+)(-.*)?$")
+    if(gmp_build_host MATCHES "^(.*-.*-)ios([0-9.]+)(-.*)?$")
         set(gmp_build_host "${CMAKE_MATCH_1}darwin${CMAKE_MATCH_2}${CMAKE_MATCH_3}")
     endif()
     if(gmp_build_host MATCHES "^(.*-.*-.*)-simulator$")
@@ -233,29 +233,31 @@ elseif(gmp_build_host STREQUAL "")
     set(gmp_build_host "--build=${CMAKE_LIBRARY_ARCHITECTURE}")
 endif()
 
-build_external(gmp
-    CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --with-pic
-        "CC=${deps_cc}" "CXX=${deps_cxx}" "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
-        "LDFLAGS=${apple_ldflags_arch}" ${cross_rc} CC_FOR_BUILD=cc CPP_FOR_BUILD=cpp
-)
-add_static_target(gmp gmp_external libgmp.a)
+if(ENABLE_ONIONREQ)
+    build_external(gmp
+        CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --with-pic
+            "CC=${deps_cc}" "CXX=${deps_cxx}" "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
+            "LDFLAGS=${apple_ldflags_arch}" ${cross_rc} CC_FOR_BUILD=cc CPP_FOR_BUILD=cpp
+    )
+    add_static_target(gmp gmp_external libgmp.a)
 
-build_external(nettle
-    CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib
-        --with-pic --disable-openssl
-        "CC=${deps_cc}" "CXX=${deps_cxx}"
-        "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
-        "CPPFLAGS=-I${DEPS_DESTDIR}/include"
-        "LDFLAGS=-L${DEPS_DESTDIR}/lib${apple_ldflags_arch}"
+    build_external(nettle
+        CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib
+            --with-pic --disable-openssl
+            "CC=${deps_cc}" "CXX=${deps_cxx}"
+            "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
+            "CPPFLAGS=-I${DEPS_DESTDIR}/include"
+            "LDFLAGS=-L${DEPS_DESTDIR}/lib${apple_ldflags_arch}"
 
-    DEPENDS gmp_external
-    BUILD_BYPRODUCTS
-    ${DEPS_DESTDIR}/lib/libnettle.a
-    ${DEPS_DESTDIR}/lib/libhogweed.a
-    ${DEPS_DESTDIR}/include/nettle/version.h
-)
-add_static_target(nettle nettle_external libnettle.a gmp)
-add_static_target(hogweed nettle_external libhogweed.a nettle)
+        DEPENDS gmp_external
+        BUILD_BYPRODUCTS
+        ${DEPS_DESTDIR}/lib/libnettle.a
+        ${DEPS_DESTDIR}/lib/libhogweed.a
+        ${DEPS_DESTDIR}/include/nettle/version.h
+    )
+    add_static_target(nettle nettle_external libnettle.a gmp)
+    add_static_target(hogweed nettle_external libhogweed.a nettle)
+endif()
 
 link_libraries(-static-libstdc++)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

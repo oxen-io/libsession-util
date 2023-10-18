@@ -200,6 +200,12 @@ class ConfigBase : public ConfigSig {
     void set_verifier(ConfigMessage::verify_callable v) override;
     void set_signer(ConfigMessage::sign_callable s) override;
 
+    // Virtual method to be overloaded by derived classes. Protobuf wrapped messages are used
+    // for legacy types, so we need different logic depending on the class in question. All new
+    // types will reject the protobuf and directly handle the binary data. Old types will try
+    // protobuf parsing on incoming messages and handle all outgoing messages directly in binary
+    virtual bool accepts_protobuf() const { return false; }
+
   public:
     // class for proxying subfield access; this class should never be stored but only used
     // ephemerally (most of its methods are rvalue-qualified).  This lets constructs such as
@@ -745,6 +751,33 @@ class ConfigBase : public ConfigSig {
     };
 
   protected:
+    /// API: base/ConfigBase::_merge
+    ///
+    /// Internal implementation of merge. This takes all of the messages pulled down from the server
+    /// and does whatever is necessary to merge (or replace) the current values.
+    ///
+    /// Values are pairs of the message hash (as provided by the server) and the raw message body.
+    ///
+    /// After this call the caller should check `needs_push()` to see if the data on hand was
+    /// updated and needs to be pushed to the server again (for example, because the data contained
+    /// conflicts that required another update to resolve).
+    ///
+    /// Returns the number of the given config messages that were successfully parsed.
+    ///
+    /// Will throw on serious error (i.e. if neither the current nor any of the given configs are
+    /// parseable).  This should not happen (the current config, at least, should always be
+    /// re-parseable).
+    ///
+    /// Inputs:
+    /// - `configs` -- vector of pairs containing the message hash and the raw message body
+    ///
+    /// Outputs:
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    std::vector<std::string> _merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+
     /// API: base/ConfigBase::extra_data
     ///
     /// Called when dumping to obtain any extra data that a subclass needs to store to reconstitute
@@ -849,36 +882,25 @@ class ConfigBase : public ConfigSig {
 
     /// API: base/ConfigBase::merge
     ///
-    /// This takes all of the messages pulled down from the server and does whatever is necessary to
-    /// merge (or replace) the current values.
-    ///
-    /// Values are pairs of the message hash (as provided by the server) and the raw message body.
-    ///
-    /// After this call the caller should check `needs_push()` to see if the data on hand was
-    /// updated and needs to be pushed to the server again (for example, because the data contained
-    /// conflicts that required another update to resolve).
-    ///
-    /// Returns the number of the given config messages that were successfully parsed.
-    ///
-    /// Will throw on serious error (i.e. if neither the current nor any of the given configs are
-    /// parseable).  This should not happen (the current config, at least, should always be
-    /// re-parseable).
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// int merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
-    /// int merge(const std::vector<std::pair<std::string, ustring>>& configs);
-    /// ```
+    /// Wrapper around ConfigBase::_merge to handle protobuf parsing. Currently, in the transition
+    /// from legacy to new config groups, legacy groups using protobuf must be compatible with
+    /// new config groups handling raw binary I/O. As a result, this method checks the
+    /// accepts_protobuf() override for the given class, and either passes the parsed protobuf or
+    /// the original binary data to _merge
     ///
     /// Inputs:
     /// - `configs` -- vector of pairs containing the message hash and the raw message body
     ///
     /// Outputs:
-    /// - `int` -- Returns how many config messages that were successfully parsed
-    virtual int merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    std::vector<std::string> merge(const std::vector<std::pair<std::string, ustring>>& configs);
 
-    // Same as merge (above )but takes the values as ustring's as sometimes that is more convenient.
-    int merge(const std::vector<std::pair<std::string, ustring>>& configs);
+    // Same as above, but passes the ustring_views to the overload of protos::handle_incoming that
+    // takes ustring_views
+    std::vector<std::string> merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     /// API: base/ConfigBase::is_dirty
     ///

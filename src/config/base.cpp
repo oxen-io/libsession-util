@@ -15,6 +15,7 @@
 #include "internal.hpp"
 #include "session/config/base.h"
 #include "session/config/encrypt.hpp"
+#include "session/config/protos.hpp"
 #include "session/export.h"
 #include "session/util.hpp"
 
@@ -45,14 +46,6 @@ MutableConfigMessage& ConfigBase::dirty() {
     throw std::runtime_error{"Internal error: unexpected dirty but non-mutable ConfigMessage"};
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring>>& configs) {
-    std::vector<std::pair<std::string, ustring_view>> config_views;
-    config_views.reserve(configs.size());
-    for (auto& [hash, data] : configs)
-        config_views.emplace_back(hash, data);
-    return merge(config_views);
-}
-
 template <typename... Args>
 std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... args) {
     if (from_dirty)
@@ -60,7 +53,40 @@ std::unique_ptr<ConfigMessage> make_config_message(bool from_dirty, Args&&... ar
     return std::make_unique<ConfigMessage>(std::forward<Args>(args)...);
 }
 
-int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+std::vector<std::string> ConfigBase::merge(
+        const std::vector<std::pair<std::string, ustring>>& configs) {
+    std::vector<std::pair<std::string, ustring_view>> config_views;
+    config_views.reserve(configs.size());
+    for (auto& [hash, data] : configs)
+        config_views.emplace_back(hash, data);
+    return merge(config_views);
+}
+
+std::vector<std::string> ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+    if (accepts_protobuf() && !_keys.empty()) {
+        std::list<ustring> keep_alive;
+        std::vector<std::pair<std::string, ustring_view>> parsed;
+        parsed.reserve(configs.size());
+
+        for (auto& [h, c] : configs) {
+            try {
+                auto unwrapped = protos::unwrap_config(
+                        ustring_view{_keys.front().data(), _keys.front().size()},
+                        c,
+                        storage_namespace());
+                parsed.emplace_back(h, keep_alive.emplace_back(std::move(unwrapped)));
+            } catch (...) {
+                parsed.emplace_back(h, c);
+            }
+        }
+
+        return _merge(parsed);
+    }
+
+    return _merge(configs);
+}
+
+std::vector<std::string> ConfigBase::_merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
 
     if (_keys.empty())
         throw std::logic_error{"Cannot merge configs without any decryption keys"};
@@ -214,8 +240,13 @@ int ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& c
         assert(new_conf->unmerged_index() == 0);
     }
 
-    return all_confs.size() - bad_confs.size() -
-           (mine.empty() ? 0 : 1);  // -1 because we don't count the first one (reparsing ourself).
+    std::vector<std::string> good_hashes;
+    good_hashes.reserve(all_hashes.size() - (mine.empty() ? 0 : 1) - bad_confs.size());
+    for (size_t i = mine.empty() ? 0 : 1; i < all_hashes.size(); i++)
+        if (!bad_confs.count(i))
+            good_hashes.emplace_back(all_hashes[i]);
+
+    return good_hashes;
 }
 
 std::vector<std::string> ConfigBase::current_hashes() const {
@@ -245,8 +276,9 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
     if (_keys.empty())
         throw std::logic_error{"Cannot push data without an encryption key!"};
 
-    std::tuple<seqno_t, ustring, std::vector<std::string>> ret{
-            _config->seqno(), _config->serialize(), {}};
+    auto s = _config->seqno();
+
+    std::tuple<seqno_t, ustring, std::vector<std::string>> ret{s, _config->serialize(), {}};
 
     auto& [seqno, msg, obs] = ret;
     if (auto lvl = compression_level())
@@ -254,6 +286,13 @@ std::tuple<seqno_t, ustring, std::vector<std::string>> ConfigBase::push() {
 
     pad_message(msg);  // Prefix pad with nulls
     encrypt_inplace(msg, key(), encryption_domain());
+
+    if (accepts_protobuf() && !_keys.empty())
+        msg = protos::wrap_config(
+                ustring_view{_keys.front().data(), _keys.front().size()},
+                msg,
+                s,
+                storage_namespace());
 
     if (msg.size() > MAX_MESSAGE_SIZE)
         throw std::length_error{"Config data is too large"};
@@ -577,7 +616,7 @@ LIBSESSION_EXPORT int16_t config_storage_namespace(const config_object* conf) {
     return static_cast<int16_t>(unbox(conf)->storage_namespace());
 }
 
-LIBSESSION_EXPORT int config_merge(
+LIBSESSION_EXPORT config_string_list* config_merge(
         config_object* conf,
         const char** msg_hashes,
         const unsigned char** configs,
@@ -588,7 +627,8 @@ LIBSESSION_EXPORT int config_merge(
     confs.reserve(count);
     for (size_t i = 0; i < count; i++)
         confs.emplace_back(msg_hashes[i], ustring_view{configs[i], lengths[i]});
-    return config.merge(confs);
+
+    return make_string_list(config.merge(confs));
 }
 
 LIBSESSION_EXPORT bool config_needs_push(const config_object* conf) {

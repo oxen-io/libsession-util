@@ -39,7 +39,7 @@ local debian_pipeline(name,
       image: image,
       pull: 'always',
       [if allow_fail then 'failure']: 'ignore',
-      environment: { SSH_KEY: { from_secret: 'SSH_KEY' } },
+      environment: { SSH_KEY: { from_secret: 'SSH_KEY' }, WINEDEBUG: '-all' },
       commands: [
         'echo "Building on ${DRONE_STAGE_MACHINE}"',
         'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
@@ -61,7 +61,7 @@ local debian_pipeline(name,
         ] else []
       ) + [
         'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
-        'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y cmake make git ccache ' + std.join(' ', deps),
+        'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y cmake make git ccache ca-certificates ' + std.join(' ', deps),
       ] + build,
     },
   ] + extra_steps,
@@ -108,7 +108,7 @@ local debian_build(name,
                    [if allow_fail then 'failure']: 'ignore',
                    commands: [
                      'cd build',
-                     './tests/testAll --colour-mode ansi',
+                     './tests/testAll --colour-mode ansi -d yes',
                    ],
                  }] else [])
 );
@@ -131,6 +131,7 @@ local windows_cross_pipeline(name,
   allow_fail=allow_fail,
   deps=[
     'g++-mingw-w64-' + winarch + '-posix',
+    'wine',
   ],
   build=[
     'mkdir build',
@@ -153,7 +154,7 @@ local windows_cross_pipeline(name,
                    commands: [
                      apt_get_quiet + ' install -y --no-install-recommends wine64',
                      'cd build',
-                     'wine-stable ./tests/testAll.exe --colour-mode ansi',
+                     'wine-stable ./tests/testAll.exe --colour-mode ansi -d yes',
                    ],
                  }] else [])
 );
@@ -228,7 +229,7 @@ local mac_builder(name,
                           [if allow_fail then 'failure']: 'ignore',
                           commands: [
                             'cd build',
-                            './tests/testAll --colour-mode ansi',
+                            './tests/testAll --colour-mode ansi -d yes',
                           ],
                         }] else []));
 
@@ -303,7 +304,6 @@ local static_build(name,
   clang(16),
   full_llvm(16),
   debian_build('Debian stable (i386)', docker_base + 'debian-stable/i386'),
-  debian_build('Debian buster (amd64)', docker_base + 'debian-buster'),
   debian_build('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_build('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
   debian_build('Ubuntu bionic (amd64)',
