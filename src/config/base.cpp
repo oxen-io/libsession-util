@@ -62,7 +62,8 @@ std::vector<std::string> ConfigBase::merge(
     return merge(config_views);
 }
 
-std::vector<std::string> ConfigBase::merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+std::vector<std::string> ConfigBase::merge(
+        const std::vector<std::pair<std::string, ustring_view>>& configs) {
     if (accepts_protobuf() && !_keys.empty()) {
         std::list<ustring> keep_alive;
         std::vector<std::pair<std::string, ustring_view>> parsed;
@@ -86,7 +87,8 @@ std::vector<std::string> ConfigBase::merge(const std::vector<std::pair<std::stri
     return _merge(configs);
 }
 
-std::vector<std::string> ConfigBase::_merge(const std::vector<std::pair<std::string, ustring_view>>& configs) {
+std::vector<std::string> ConfigBase::_merge(
+        const std::vector<std::pair<std::string, ustring_view>>& configs) {
 
     if (_keys.empty())
         throw std::logic_error{"Cannot merge configs without any decryption keys"};

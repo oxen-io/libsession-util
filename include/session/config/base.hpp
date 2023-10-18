@@ -776,7 +776,8 @@ class ConfigBase : public ConfigSig {
     ///   that it changed the config, merely that the returned hash was properly parsed and
     ///   processed as a config message, even if it was too old to be useful (or was already known
     ///   to be included).  The hashes will be in the same order as in the input vector.
-    std::vector<std::string> _merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+    std::vector<std::string> _merge(
+            const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     /// API: base/ConfigBase::extra_data
     ///
@@ -900,7 +901,8 @@ class ConfigBase : public ConfigSig {
 
     // Same as above, but passes the ustring_views to the overload of protos::handle_incoming that
     // takes ustring_views
-    std::vector<std::string> merge(const std::vector<std::pair<std::string, ustring_view>>& configs);
+    std::vector<std::string> merge(
+            const std::vector<std::pair<std::string, ustring_view>>& configs);
 
     /// API: base/ConfigBase::is_dirty
     ///
