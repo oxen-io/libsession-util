@@ -679,10 +679,15 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 get_timestamp_ms(),
                 a.info,
                 a.members));
-        REQUIRE(config_merge(a.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
+        config_string_list* hashes;
+        hashes = config_merge(a.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.info, new_info_config1->seqno, "fakehash1");
 
-        REQUIRE(config_merge(a.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
+        hashes = config_merge(a.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.members, new_mem_config1->seqno, "fakehash1");
 
         REQUIRE(groups_members_size(a.members) == 1);
@@ -702,8 +707,11 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 get_timestamp_ms(),
                 m.info,
                 m.members));
-        REQUIRE_THROWS(config_merge(m.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
-        REQUIRE_THROWS(config_merge(m.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
+        config_string_list* hashes;
+        REQUIRE_THROWS(
+                hashes = config_merge(m.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
+        REQUIRE_THROWS(
+                hashes = config_merge(m.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
 
         REQUIRE(groups_members_size(m.members) == 0);
     }
@@ -754,10 +762,14 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 get_timestamp_ms(),
                 a.info,
                 a.members));
-        REQUIRE(config_merge(a.info, merge_hash2, &merge_data2[0], &merge_size2[0], 1));
+        config_string_list* hashes;
+        hashes = config_merge(a.info, merge_hash2, &merge_data2[0], &merge_size2[0], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.info, new_info_config2->seqno, "fakehash2");
-
-        REQUIRE(config_merge(a.members, merge_hash2, &merge_data2[1], &merge_size2[1], 1));
+        hashes = config_merge(a.members, merge_hash2, &merge_data2[1], &merge_size2[1], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.members, new_mem_config2->seqno, "fakehash2");
 
         REQUIRE(groups_members_size(a.members) == 5);
