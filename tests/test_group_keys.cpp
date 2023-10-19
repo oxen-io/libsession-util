@@ -238,6 +238,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
 
     // change group info, re-key, distribute
     admin1.info.set_name("tomatosauce"s);
+    admin1.info.set_description("this is where you go to play in the tomato sauce, I guess");
 
     CHECK(admin1.info.needs_push());
 
@@ -258,6 +259,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
         CHECK(a.info.merge(info_configs) == std::vector{{"fakehash3"s}});
         CHECK(a.members.merge(mem_configs) == std::vector{{"fakehash3"s}});
         CHECK(a.info.get_name() == "tomatosauce"s);
+        CHECK(a.info.get_description() ==
+              "this is where you go to play in the tomato sauce, I guess"s);
         CHECK(a.keys.current_hashes() ==
               std::unordered_set{{"keyhash1"s, "keyhash2"s, "keyhash3"s}});
     }
@@ -268,6 +271,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
         CHECK(m.info.merge(info_configs) == std::vector{{"fakehash3"s}});
         CHECK(m.members.merge(mem_configs) == std::vector{{"fakehash3"s}});
         CHECK(m.info.get_name() == "tomatosauce"s);
+        CHECK(m.info.get_description() ==
+              "this is where you go to play in the tomato sauce, I guess"s);
         CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash2"s, "keyhash3"s}});
     }
 
@@ -532,12 +537,21 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             admin1.info.dump(),
             admin1.members.dump(),
             admin1.keys.dump()};
-    admin1b.info.set_name("Test New Name");
+    admin1b.info.set_name(
+            "Test New Name Really long "
+            "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");
+    admin1b.info.set_description(std::string(2050, 'z'));
     CHECK_NOTHROW(admin1b.info.push());
     admin1b.members.set(
             admin1b.members.get_or_construct("05124076571076017981235497801235098712093870981273590"
                                              "8746387172343"));
     CHECK_NOTHROW(admin1b.members.push());
+
+    // Test truncation
+    CHECK(admin1b.info.get_name() ==
+          "Test New Name Really long "
+          "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv");
+    CHECK(admin1b.info.get_description() == std::string(2000, 'z'));
 }
 
 TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
