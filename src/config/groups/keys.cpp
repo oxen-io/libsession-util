@@ -1668,8 +1668,8 @@ LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign_binary(
         assert(auth.subaccount_sig.size() == 64);
         assert(auth.signature.size() == 64);
         std::memcpy(subaccount, auth.subaccount.data(), 36);
-        std::memcpy(subaccount_sig, auth.subaccount_sig.data(), 36);
-        std::memcpy(signature, auth.signature.data(), 36);
+        std::memcpy(subaccount_sig, auth.subaccount_sig.data(), 64);
+        std::memcpy(signature, auth.signature.data(), 64);
         return true;
     } catch (const std::exception& e) {
         set_error(conf, e.what());
