@@ -69,7 +69,7 @@ void member::load(const dict& info_dict) {
     admin = maybe_int(info_dict, "A").value_or(0);
     invite_status = admin ? 0 : maybe_int(info_dict, "I").value_or(0);
     promotion_status = admin ? 0 : maybe_int(info_dict, "P").value_or(0);
-    supplement = maybe_int(info_dict, "s").value_or(0);
+    supplement = invite_pending() && !promoted() ? maybe_int(info_dict, "s").value_or(0) : 0;
 }
 
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until we
