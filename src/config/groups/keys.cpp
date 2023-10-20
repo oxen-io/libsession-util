@@ -371,17 +371,9 @@ ustring_view Keys::rekey(Info& info, Members& members) {
         }
     }
 
-    // Finally we sign the message at put it as the ~ key (which is 0x7f, and thus comes later than
-    // any other ascii key).
-    auto to_sign = to_unsigned_sv(d.view());
-    // The view contains the trailing "e", but we don't sign it (we are going to append the
-    // signature there instead):
-    to_sign.remove_suffix(1);
-    auto sig = signer_(to_sign);
-    if (sig.size() != 64)
-        throw std::logic_error{"Invalid signature: signing function did not return 64 bytes"};
-
-    d.append("~", from_unsigned_sv(sig));
+    // Finally we sign the message at put it as the ~ key (which is 0x7e, and thus comes later than
+    // any other printable ascii key).
+    d.append_signature("~", [this](ustring_view to_sign) { return sign(to_sign); });
 
     // Load this key/config/gen into our pending variables
     pending_gen_ = gen;
@@ -400,6 +392,13 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     needs_dump_ = true;
 
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
+}
+
+ustring Keys::sign(ustring_view data) const {
+    auto sig = signer_(data);
+    if (sig.size() != 64)
+        throw std::logic_error{"Invalid signature: signing function did not return 64 bytes"};
+    return sig;
 }
 
 ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
@@ -522,17 +521,9 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
     d.append("G", keys_.back().generation);
 
-    // Finally we sign the message at put it as the ~ key (which is 0x7f, and thus comes later than
-    // any other ascii key).
-    auto to_sign = to_unsigned_sv(d.view());
-    // The view contains the trailing "e", but we don't sign it (we are going to append the
-    // signature there instead):
-    to_sign.remove_suffix(1);
-    auto sig = signer_(to_sign);
-    if (sig.size() != 64)
-        throw std::logic_error{"Invalid signature: signing function did not return 64 bytes"};
-
-    d.append("~", from_unsigned_sv(sig));
+    // Finally we sign the message at put it as the ~ key (which is 0x7e, and thus comes later than
+    // any other printable ascii key).
+    d.append_signature("~", [this](ustring_view to_sign) { return sign(to_sign); });
 
     return ustring{to_unsigned_sv(d.view())};
 }

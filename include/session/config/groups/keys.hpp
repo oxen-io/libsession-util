@@ -109,6 +109,8 @@ class Keys final : public ConfigSig {
     void set_verifier(ConfigMessage::verify_callable v) override { verifier_ = std::move(v); }
     void set_signer(ConfigMessage::sign_callable s) override { signer_ = std::move(s); }
 
+    ustring sign(ustring_view data) const;
+
     // Checks for and drops expired keys.
     void remove_expired();
 
