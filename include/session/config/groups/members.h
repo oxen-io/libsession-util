@@ -18,8 +18,8 @@ typedef struct config_group_member {
     user_profile_pic profile_pic;
 
     bool admin;
-    int invited;    // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
-    int promoted;   // same value as `invited`, but for promotion-to-admin
+    int invited;   // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
+    int promoted;  // same value as `invited`, but for promotion-to-admin
     bool supplement;
 
 } config_group_member;

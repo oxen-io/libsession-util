@@ -27,6 +27,11 @@ using namespace std::literals;
 ///       - 2 if an invite was created but failed to send for some reason (and thus can be resent)
 ///       - omitted once an invite is accepted.  (This also gets omitted if the `A` admin flag gets
 ///         set).
+///   s - invite supplemental keys flag (only set when `I` is set): if set (to 1) then this invite
+///       was issued with the intention of sending the user the existing active decryption keys
+///       (allowing them to access current messages); if omitted (with `I` set) then the invitation
+///       was not meant to give access to past configs/messages (and was presumably issued with a
+///       group rekey).
 ///   A - flag set to 1 if the member is an admin, omitted otherwise.
 ///   P - promotion (to admin) status; this will be one of:
 ///       - 1 if a promotion has been sent.
@@ -81,7 +86,7 @@ struct member {
     ///
     /// See also `promoted()` if you want to check for either an admin or someone being promoted to
     /// admin.
-    bool admin = 0;
+    bool admin = false;
 
     /// API: groups/member::supplement
     ///
@@ -92,7 +97,7 @@ struct member {
     /// invitation to the same member.
     ///
     /// Note that this should be cleared when a member accepts an invitation.
-    bool supplement = 0;
+    bool supplement = false;
 
     // Flags to track an invited user.  This value is typically not used directly, but rather via
     // the `set_invited()`, `invite_pending()` and similar methods.
@@ -112,13 +117,13 @@ struct member {
 
     /// API: groups/members::set_accepted
     ///
-    /// This clears the "invited" and "supplement" flags for this user, thus indicating that the user
-    /// has accepted an invitation and is now a regular member of the group.
+    /// This clears the "invited" and "supplement" flags for this user, thus indicating that the
+    /// user has accepted an invitation and is now a regular member of the group.
     ///
     /// Inputs: none
     void set_accepted() {
         invite_status = 0;
-        supplement = 0;
+        supplement = false;
     }
 
     /// API: groups/member::invite_pending
