@@ -83,6 +83,17 @@ struct member {
     /// admin.
     bool admin = 0;
 
+    /// API: groups/member::supplement
+    ///
+    /// Member variable
+    ///
+    /// Flag that is set to indicate to the group that this member was added with a supplemental key
+    /// rotation so that other admins can trigger the same key rotation method if they send a new
+    /// invitation to the same member.
+    ///
+    /// Note that this should be cleared when a member accepts an invitation.
+    bool supplement = 0;
+
     // Flags to track an invited user.  This value is typically not used directly, but rather via
     // the `set_invited()`, `invite_pending()` and similar methods.
     int invite_status = 0;
@@ -101,11 +112,14 @@ struct member {
 
     /// API: groups/members::set_accepted
     ///
-    /// This clears the "invited" flag for this user, thus indicating that the user has accepted an
-    /// invitation and is now a regular member of the group.
+    /// This clears the "invited" and "supplement" flags for this user, thus indicating that the user
+    /// has accepted an invitation and is now a regular member of the group.
     ///
     /// Inputs: none
-    void set_accepted() { invite_status = 0; }
+    void set_accepted() {
+        invite_status = 0;
+        supplement = 0;
+    }
 
     /// API: groups/member::invite_pending
     ///
