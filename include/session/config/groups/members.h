@@ -20,6 +20,7 @@ typedef struct config_group_member {
     bool admin;
     int invited;   // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
     int promoted;  // same value as `invited`, but for promotion-to-admin
+    bool supplement;
 
 } config_group_member;
 

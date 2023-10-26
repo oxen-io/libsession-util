@@ -119,6 +119,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
             CHECK_FALSE(m.invite_failed());
             CHECK_FALSE(m.promotion_pending());
             CHECK_FALSE(m.promotion_failed());
+            CHECK_FALSE(m.supplement);
             if (i < 10) {
                 CHECK(m.admin);
                 CHECK(m.name == "Admin " + std::to_string(i));
@@ -147,12 +148,16 @@ TEST_CASE("Group Members", "[config][groups][members]") {
     }
     for (int i = 50; i < 55; i++) {
         auto m = gmem2.get_or_construct(sids[i]);
-        m.set_invited();
+        m.set_invited();  // failed invite
+        if (i % 2)
+            m.supplement = true;
         gmem2.set(m);
     }
     for (int i = 55; i < 58; i++) {
         auto m = gmem2.get_or_construct(sids[i]);
         m.set_invited(true);
+        if (i % 2)
+            m.supplement = true;
         gmem2.set(m);
     }
     for (int i = 58; i < 62; i++) {
@@ -187,6 +192,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
                   (i < 20 ? "http://example.com/" + std::to_string(i) : ""));
             CHECK(m.invite_pending() == (50 <= i && i < 58));
             CHECK(m.invite_failed() == (55 <= i && i < 58));
+            CHECK(m.supplement == (i % 2 && 50 < i && i < 58));
             CHECK(m.promoted() == (i < 10 || (i >= 58 && i < 62)));
             CHECK(m.promotion_pending() == (i >= 58 && i < 62));
             CHECK(m.promotion_failed() == (i >= 60 && i < 62));
@@ -237,6 +243,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
                   (i < 20 ? "http://example.com/" + std::to_string(i) : ""));
             CHECK(m.invite_pending() == (55 <= i && i < 58));
             CHECK(m.invite_failed() == (i == 57));
+            CHECK(m.supplement == (i == 55 || i == 57));
             CHECK(m.promoted() == (i < 10 || (i >= 58 && i < 62)));
             CHECK(m.promotion_pending() == (i >= 59 && i <= 61));
             CHECK(m.promotion_failed() == (i >= 60 && i <= 61));
