@@ -52,6 +52,7 @@ void Members::set(const member& mem) {
     set_positive_int(info["P"], mem.admin ? 0 : mem.promotion_status);
     set_positive_int(info["I"], mem.admin ? 0 : mem.invite_status);
     set_flag(info["s"], mem.supplement);
+    set_flag(info["R"], mem.removed_status);
 }
 
 void member::load(const dict& info_dict) {
@@ -69,6 +70,7 @@ void member::load(const dict& info_dict) {
     admin = maybe_int(info_dict, "A").value_or(0);
     invite_status = admin ? 0 : maybe_int(info_dict, "I").value_or(0);
     promotion_status = admin ? 0 : maybe_int(info_dict, "P").value_or(0);
+    removed_status = maybe_int(info_dict, "R").value_or(0);
     supplement = invite_pending() && !promoted() ? maybe_int(info_dict, "s").value_or(0) : 0;
 }
 
@@ -141,6 +143,7 @@ member::member(const config_group_member& m) : session_id{m.session_id, 66} {
     admin = m.admin;
     invite_status = (m.invited == INVITE_SENT || m.invited == INVITE_FAILED) ? m.invited : 0;
     promotion_status = (m.promoted == INVITE_SENT || m.promoted == INVITE_FAILED) ? m.promoted : 0;
+    removed_status = (m.removed == REMOVED_MEMBER || m.removed == REMOVED_MEMBER_AND_MESSAGES) ? m.removed : 0;
     supplement = m.supplement;
 }
 
@@ -158,6 +161,7 @@ void member::into(config_group_member& m) const {
     static_assert(groups::INVITE_FAILED == ::INVITE_FAILED);
     m.invited = invite_status;
     m.promoted = promotion_status;
+    m.removed = removed_status;
     m.supplement = supplement;
 }
 

@@ -9,6 +9,7 @@ extern "C" {
 #include "../util.h"
 
 enum groups_members_invite_status { INVITE_SENT = 1, INVITE_FAILED = 2 };
+enum groups_members_remove_status { REMOVED_MEMBER = 1, REMOVED_MEMBER_AND_MESSAGES = 2 };
 
 typedef struct config_group_member {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
@@ -20,6 +21,7 @@ typedef struct config_group_member {
     bool admin;
     int invited;   // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
     int promoted;  // same value as `invited`, but for promotion-to-admin
+    int removed;   // 0 == unset, REMOVED_MEMBER = removed, REMOVED_MEMBER_AND_MESSAGES = remove member and their messages
     bool supplement;
 
 } config_group_member;
