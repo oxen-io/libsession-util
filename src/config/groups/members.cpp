@@ -52,7 +52,7 @@ void Members::set(const member& mem) {
     set_positive_int(info["P"], mem.admin ? 0 : mem.promotion_status);
     set_positive_int(info["I"], mem.admin ? 0 : mem.invite_status);
     set_flag(info["s"], mem.supplement);
-    set_flag(info["R"], mem.removed_status);
+    set_positive_int(info["R"], mem.removed_status);
 }
 
 void member::load(const dict& info_dict) {
