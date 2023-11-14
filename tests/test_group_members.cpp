@@ -207,7 +207,7 @@ TEST_CASE("Group Members", "[config][groups][members]") {
             CHECK(m.should_remove_messages() == (i >= 64 && i < 66));
             i++;
         }
-        CHECK(i == 62);
+        CHECK(i == 66);
     }
 
     for (int i = 0; i < 100; i++) {
