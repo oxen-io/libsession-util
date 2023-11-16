@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <iterator>
 #include <memory>
@@ -19,15 +20,34 @@ inline const unsigned char* to_unsigned(const char* x) {
 inline unsigned char* to_unsigned(char* x) {
     return reinterpret_cast<unsigned char*>(x);
 }
+inline const unsigned char* to_unsigned(const std::byte* x) {
+    return reinterpret_cast<const unsigned char*>(x);
+}
+inline unsigned char* to_unsigned(std::byte* x) {
+    return reinterpret_cast<unsigned char*>(x);
+}
+// These do nothing, but having them makes template metaprogramming easier:
+inline const unsigned char* to_unsigned(const unsigned char* x) {
+    return x;
+}
+inline unsigned char* to_unsigned(unsigned char* x) {
+    return x;
+}
 inline const char* from_unsigned(const unsigned char* x) {
     return reinterpret_cast<const char*>(x);
 }
 inline char* from_unsigned(unsigned char* x) {
     return reinterpret_cast<char*>(x);
 }
-// Helper function to switch between string_view and ustring_view
+// Helper function to switch between basic_string_view<C> and ustring_view
 inline ustring_view to_unsigned_sv(std::string_view v) {
     return {to_unsigned(v.data()), v.size()};
+}
+inline ustring_view to_unsigned_sv(std::basic_string_view<std::byte> v) {
+    return {to_unsigned(v.data()), v.size()};
+}
+inline ustring_view to_unsigned_sv(ustring_view v) {
+    return v;  // no-op, but helps with template metaprogamming
 }
 inline std::string_view from_unsigned_sv(ustring_view v) {
     return {from_unsigned(v.data()), v.size()};
@@ -283,5 +303,56 @@ struct sodium_allocator {
 /// Vector that uses sodium's secure (but heavy) memory allocations
 template <typename T>
 using sodium_vector = std::vector<T, sodium_allocator<T>>;
+
+template <typename T>
+using string_view_char_type = std::conditional_t<
+        std::is_convertible_v<T, std::string_view>,
+        char,
+        std::conditional_t<
+                std::is_convertible_v<T, std::basic_string_view<unsigned char>>,
+                unsigned char,
+                std::conditional_t<
+                        std::is_convertible_v<T, std::basic_string_view<std::byte>>,
+                        std::byte,
+                        void>>>;
+
+template <typename T>
+constexpr bool is_char_array = false;
+template <typename Char, size_t N>
+inline constexpr bool is_char_array<std::array<Char, N>> = std::is_same_v<Char, char> || std::is_same_v<Char, unsigned char> || std::is_same_v<Char, std::byte>;
+
+
+/// Takes a container of string-like binary values and returns a vector of ustring_views viewing
+/// those values.  This can be used on a container of any type with a `.data()` and a `.size()`
+/// where `.data()` is a one-byte value pointer; std::string, std::string_view, ustring,
+/// ustring_view, etc. apply, as does std::array of 1-byte char types.
+///
+/// This is useful in various libsession functions that require such a vector.  Note that the
+/// returned vector's views are valid only as the original container remains alive; this is
+/// typically used inline rather than stored, such as:
+///
+///     session::function_taking_a_view_vector(session::to_view_vector(mydata));
+///
+/// There are two versions of this: the first takes a generic iterator pair; the second takes a
+/// single container.
+template <typename It>
+std::vector<ustring_view> to_view_vector(It begin, It end) {
+    std::vector<ustring_view> vec;
+    vec.reserve(std::distance(begin, end));
+    for (; begin != end; ++begin) {
+        if constexpr (std::is_same_v<std::remove_cv_t<decltype(*begin)>, char*>) // C strings
+            vec.emplace_back(*begin);
+        else {
+            static_assert(sizeof(*begin->data()) == 1, "to_view_vector can only be used with containers of string-like types of 1-byte characters");
+            vec.emplace_back(reinterpret_cast<const unsigned char*>(begin->data()), begin->size());
+        }
+    }
+    return vec;
+}
+
+template <typename Container>
+std::vector<ustring_view> to_view_vector(const Container& c) {
+    return to_view_vector(c.begin(), c.end());
+}
 
 }  // namespace session

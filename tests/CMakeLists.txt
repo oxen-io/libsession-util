@@ -14,6 +14,7 @@ add_executable(testAll
     test_group_keys.cpp
     test_group_info.cpp
     test_group_members.cpp
+    test_multi_encrypt.cpp
     test_onionreq.cpp
     test_proto.cpp
     test_session_encrypt.cpp
