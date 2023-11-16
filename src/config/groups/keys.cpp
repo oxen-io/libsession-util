@@ -21,6 +21,7 @@
 #include "session/config/groups/info.hpp"
 #include "session/config/groups/keys.h"
 #include "session/config/groups/members.hpp"
+#include "session/multi_encrypt.hpp"
 #include "session/xed25519.hpp"
 
 using namespace std::literals;
@@ -233,20 +234,24 @@ void Keys::load_admin_key(ustring_view seed, Info& info, Members& members) {
     members.set_sig_keys(seckey);
 }
 
-static std::array<unsigned char, 32> compute_xpk(const unsigned char* ed25519_pk) {
-    std::array<unsigned char, 32> xpk;
-    if (0 != crypto_sign_ed25519_pk_to_curve25519(xpk.data(), ed25519_pk))
-        throw std::runtime_error{
-                "An error occured while attempting to convert Ed25519 pubkey to X25519; "
-                "is the pubkey valid?"};
-    return xpk;
-}
+namespace {
 
-static constexpr auto seed_hash_key = "SessionGroupKeySeed"sv;
-static const ustring_view enc_key_hash_key = to_unsigned_sv("SessionGroupKeyGen"sv);
-static constexpr auto enc_key_admin_hash_key = "SessionGroupKeyAdminKey"sv;
-static const ustring_view enc_key_member_hash_key = to_unsigned_sv("SessionGroupKeyMemberKey"sv);
-static const ustring_view junk_seed_hash_key = to_unsigned_sv("SessionGroupJunkMembers"sv);
+    std::array<unsigned char, 32> compute_xpk(const unsigned char* ed25519_pk) {
+        std::array<unsigned char, 32> xpk;
+        if (0 != crypto_sign_ed25519_pk_to_curve25519(xpk.data(), ed25519_pk))
+            throw std::runtime_error{
+                    "An error occured while attempting to convert Ed25519 pubkey to X25519; "
+                    "is the pubkey valid?"};
+        return xpk;
+    }
+
+    constexpr auto seed_hash_key = "SessionGroupKeySeed"sv;
+    const ustring_view enc_key_hash_key = to_unsigned_sv("SessionGroupKeyGen"sv);
+    constexpr auto enc_key_admin_hash_key = "SessionGroupKeyAdminKey"sv;
+    constexpr auto enc_key_member_hash_key = "SessionGroupKeyMemberKey"sv;
+    const ustring_view junk_seed_hash_key = to_unsigned_sv("SessionGroupJunkMembers"sv);
+
+}  // namespace
 
 ustring_view Keys::rekey(Info& info, Members& members) {
     if (!admin())
@@ -342,36 +347,28 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     {
         auto member_keys = d.append_list("k");
         int member_count = 0;
+        std::vector<std::array<unsigned char, 32>> member_xpk_raw;
+        std::vector<ustring_view> member_xpks;
+        member_xpk_raw.reserve(members.size());
+        member_xpks.reserve(members.size());
         for (const auto& m : members) {
-            auto m_xpk = session_id_pk(m.session_id);
-            // Calculate the encryption key: H(aB || A || B)
-            if (0 != crypto_scalarmult_curve25519(member_k.data(), group_xsk.data(), m_xpk.data()))
-                continue;  // The scalarmult failed; maybe a bad session id?
-
-            crypto_generichash_blake2b_init(
-                    &st,
-                    enc_key_member_hash_key.data(),
-                    enc_key_member_hash_key.size(),
-                    member_k.size());
-            crypto_generichash_blake2b_update(&st, member_k.data(), member_k.size());
-            crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
-            crypto_generichash_blake2b_update(&st, m_xpk.data(), m_xpk.size());
-            crypto_generichash_blake2b_final(&st, member_k.data(), member_k.size());
-
-            crypto_aead_xchacha20poly1305_ietf_encrypt(
-                    encrypted.data(),
-                    nullptr,
-                    enc_key.data(),
-                    enc_key.size(),
-                    nullptr,
-                    0,
-                    nullptr,
-                    nonce.data(),
-                    member_k.data());
-
-            member_keys.append(enc_sv);
-            member_count++;
+            member_xpk_raw.push_back(session_id_pk(m.session_id));
+            member_xpks.emplace_back(member_xpk_raw.back().data(), member_xpk_raw.back().size());
         }
+
+        encrypt_for_multiple(
+                enc_key,
+                member_xpks,
+                nonce,
+                to_sv(group_xsk),
+                to_sv(group_xpk),
+                enc_key_member_hash_key,
+                [&](ustring_view enc_sv) {
+                    member_keys.append(enc_sv);
+                    member_count++;
+                },
+                true  // ignore invalid
+        );
 
         // Pad it out with junk entries to the next MESSAGE_KEY_MULTIPLE
         if (member_count % MESSAGE_KEY_MULTIPLE) {
@@ -504,39 +501,28 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
         size_t member_count = 0;
 
-        for (auto& sid : sids) {
-            auto m_xpk = session_id_pk(sid);
-
-            // Calculate the encryption key: H(aB || A || B)
-            std::array<unsigned char, 32> member_k;
-            if (0 != crypto_scalarmult_curve25519(member_k.data(), group_xsk.data(), m_xpk.data()))
-                continue;  // The scalarmult failed; maybe a bad session id?
-
-            crypto_generichash_blake2b_init(
-                    &st,
-                    enc_key_member_hash_key.data(),
-                    enc_key_member_hash_key.size(),
-                    member_k.size());
-            crypto_generichash_blake2b_update(&st, member_k.data(), member_k.size());
-            crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
-            crypto_generichash_blake2b_update(&st, m_xpk.data(), m_xpk.size());
-            crypto_generichash_blake2b_final(&st, member_k.data(), member_k.size());
-
-            crypto_aead_xchacha20poly1305_ietf_encrypt(
-                    encrypted.data(),
-                    nullptr,
-                    to_unsigned(supp_keys.data()),
-                    supp_keys.size(),
-                    nullptr,
-                    0,
-                    nullptr,
-                    nonce.data(),
-                    member_k.data());
-
-            list.append(from_unsigned_sv(encrypted));
-
-            member_count++;
+        std::vector<std::array<unsigned char, 32>> member_xpk_raw;
+        std::vector<ustring_view> member_xpks;
+        member_xpk_raw.reserve(sids.size());
+        member_xpks.reserve(sids.size());
+        for (const auto& sid : sids) {
+            member_xpk_raw.push_back(session_id_pk(sid));
+            member_xpks.emplace_back(member_xpk_raw.back().data(), member_xpk_raw.back().size());
         }
+
+        encrypt_for_multiple(
+                supp_keys,
+                member_xpks,
+                nonce,
+                to_sv(group_xsk),
+                to_sv(group_xpk),
+                enc_key_member_hash_key,
+                [&](ustring_view encrypted) {
+                    list.append(encrypted);
+                    member_count++;
+                },
+                true  // ignore invalid
+        );
 
         if (member_count == 0)
             throw std::runtime_error{
@@ -944,37 +930,22 @@ bool Keys::load_key_message(
                                      // value, even if we didn't find a key for us.
 
     sodium_cleared<std::array<unsigned char, 32>> member_dec_key;
+    sodium_cleared<std::array<unsigned char, 32>> member_xsk;
+    std::array<unsigned char, 32> member_xpk;
     if (!admin()) {
-        sodium_cleared<std::array<unsigned char, 32>> member_xsk;
         crypto_sign_ed25519_sk_to_curve25519(member_xsk.data(), user_ed25519_sk.data());
-        auto member_xpk = compute_xpk(user_ed25519_sk.data() + 32);
-
-        // Calculate the encryption key: H(bA || A || B) [A = group, B = member]
-        if (0 != crypto_scalarmult_curve25519(
-                         member_dec_key.data(), member_xsk.data(), group_xpk.data()))
-            throw std::runtime_error{
-                    "Unable to compute member decryption key; invalid group or member keys?"};
-
-        crypto_generichash_blake2b_state st;
-        crypto_generichash_blake2b_init(
-                &st,
-                enc_key_member_hash_key.data(),
-                enc_key_member_hash_key.size(),
-                member_dec_key.size());
-        crypto_generichash_blake2b_update(&st, member_dec_key.data(), member_dec_key.size());
-        crypto_generichash_blake2b_update(&st, group_xpk.data(), group_xpk.size());
-        crypto_generichash_blake2b_update(&st, member_xpk.data(), member_xpk.size());
-        crypto_generichash_blake2b_final(&st, member_dec_key.data(), member_dec_key.size());
+        member_xpk = compute_xpk(user_ed25519_sk.data() + 32);
     }
 
     if (d.skip_until("+")) {
         // This is a supplemental keys message, not a full one
         auto supp = d.consume_list_consumer();
 
-        while (!supp.is_finished()) {
+        int member_key_pos = -1;
 
-            int member_key_count = 0;
-            for (; !supp.is_finished(); member_key_count++) {
+        auto next_ciphertext = [&]() -> std::optional<ustring_view> {
+            while (!supp.is_finished()) {
+                member_key_pos++;
                 auto encrypted = to_unsigned_sv(supp.consume_string_view());
                 // Expect an encrypted message like this, which has a minimum valid size (if both g
                 // and t are 0 for some reason) of:
@@ -987,42 +958,51 @@ bool Keys::load_key_message(
                 //                  52
                 if (encrypted.size() < 52 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
                     throw config_value_error{
-                            "Supplemental key message has invalid key info size at index " +
-                            std::to_string(member_key_count)};
+                            "Supplemental key message has invalid key info size at "
+                            "index " +
+                            std::to_string(member_key_pos)};
 
                 if (!new_keys.empty() || admin())
-                    continue;  // Keep parsing, just to ensure validity of the whole message
+                    continue;  // Keep parsing, to ensure validity of the whole message
 
-                ustring plaintext;
-                plaintext.resize(encrypted.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
+                return encrypted;
+            }
+            return std::nullopt;
+        };
 
-                if (try_decrypting(plaintext.data(), encrypted, nonce, member_dec_key)) {
-                    // Decryption success, we found our key list!
+        if (auto plaintext = decrypt_for_multiple(
+                    next_ciphertext,
+                    nonce,
+                    to_sv(member_xsk),
+                    to_sv(member_xpk),
+                    to_sv(group_xpk),
+                    enc_key_member_hash_key)) {
 
-                    oxenc::bt_list_consumer key_infos{from_unsigned_sv(plaintext)};
-                    while (!key_infos.is_finished()) {
-                        auto& new_key = new_keys.emplace_back();
-                        auto keyinf = key_infos.consume_dict_consumer();
-                        if (!keyinf.skip_until("g"))
-                            throw config_value_error{
-                                    "Invalid supplemental key message: no `g` generation"};
-                        new_key.generation = keyinf.consume_integer<int64_t>();
-                        if (!keyinf.skip_until("k"))
-                            throw config_value_error{
-                                    "Invalid supplemental key message: no `k` key data"};
-                        auto key_val = keyinf.consume_string_view();
-                        if (key_val.size() != 32)
-                            throw config_value_error{
-                                    "Invalid supplemental key message: `k` key has wrong size"};
-                        std::memcpy(new_key.key.data(), key_val.data(), 32);
-                        if (!keyinf.skip_until("t"))
-                            throw config_value_error{
-                                    "Invalid supplemental key message: no `t` timestamp"};
-                        new_key.timestamp = sys_time_from_ms(keyinf.consume_integer<int64_t>());
-                    }
-                }
+            // Decryption success, we found our key list!
+
+            oxenc::bt_list_consumer key_infos{from_unsigned_sv(*plaintext)};
+            while (!key_infos.is_finished()) {
+                auto& new_key = new_keys.emplace_back();
+                auto keyinf = key_infos.consume_dict_consumer();
+                if (!keyinf.skip_until("g"))
+                    throw config_value_error{"Invalid supplemental key message: no `g` generation"};
+                new_key.generation = keyinf.consume_integer<int64_t>();
+                if (!keyinf.skip_until("k"))
+                    throw config_value_error{"Invalid supplemental key message: no `k` key data"};
+                auto key_val = keyinf.consume_string_view();
+                if (key_val.size() != 32)
+                    throw config_value_error{
+                            "Invalid supplemental key message: `k` key has wrong size"};
+                std::memcpy(new_key.key.data(), key_val.data(), 32);
+                if (!keyinf.skip_until("t"))
+                    throw config_value_error{"Invalid supplemental key message: no `t` timestamp"};
+                new_key.timestamp = sys_time_from_ms(keyinf.consume_integer<int64_t>());
             }
         }
+
+        // Ensure we consume all the ciphertexts (to ensure some message validity, even if we found
+        // one halfway through).
+        while (next_ciphertext()) {}
 
         if (!d.skip_until("G"))
             throw config_value_error{
@@ -1063,26 +1043,45 @@ bool Keys::load_key_message(
         // the same error conditions for rejecting an invalid config message.
         if (!d.skip_until("k"))
             throw config_value_error{"Config is missing member keys list (k)"};
+
         auto key_list = d.consume_list_consumer();
 
-        int member_key_count = 0;
-        for (; !key_list.is_finished(); member_key_count++) {
-            auto member_key = to_unsigned_sv(key_list.consume_string_view());
-            if (member_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
-                throw config_value_error{
-                        "Key message has invalid member key length at index " +
-                        std::to_string(member_key_count)};
+        int member_key_pos = -1;
+        auto next_ciphertext = [&]() -> std::optional<ustring_view> {
+            while (!key_list.is_finished()) {
+                member_key_pos++;
+                auto member_key = to_unsigned_sv(key_list.consume_string_view());
+                if (member_key.size() != 32 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+                    throw config_value_error{
+                            "Key message has invalid member key length at index " +
+                            std::to_string(member_key_pos)};
 
-            if (found_key)
-                continue;
+                if (found_key)
+                    continue;
 
-            if (try_decrypting(new_key.key.data(), member_key, nonce, member_dec_key)) {
-                // Decryption success, we found our key!
-                found_key = true;
+                return member_key;
             }
+            return std::nullopt;
+        };
+
+        if (auto plaintext = decrypt_for_multiple(
+                    next_ciphertext,
+                    nonce,
+                    to_sv(member_xsk),
+                    to_sv(member_xpk),
+                    to_sv(group_xpk),
+                    enc_key_member_hash_key)) {
+            // Decryption success, we found our key!
+            assert(plaintext->size() == 32);
+            std::memcpy(new_key.key.data(), plaintext->data(), 32);
+            found_key = true;
         }
 
-        if (member_key_count % MESSAGE_KEY_MULTIPLE != 0)
+        // Parse them all, even once we had a successful decryption, to properly count and fail on
+        // invalid input:
+        while (next_ciphertext()) {}
+
+        if (++member_key_pos % MESSAGE_KEY_MULTIPLE != 0)
             throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};
 
         if (!found_key) {
