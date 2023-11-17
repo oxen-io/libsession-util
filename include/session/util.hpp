@@ -319,8 +319,9 @@ using string_view_char_type = std::conditional_t<
 template <typename T>
 constexpr bool is_char_array = false;
 template <typename Char, size_t N>
-inline constexpr bool is_char_array<std::array<Char, N>> = std::is_same_v<Char, char> || std::is_same_v<Char, unsigned char> || std::is_same_v<Char, std::byte>;
-
+inline constexpr bool is_char_array<std::array<Char, N>> =
+        std::is_same_v<Char, char> || std::is_same_v<Char, unsigned char> ||
+        std::is_same_v<Char, std::byte>;
 
 /// Takes a container of string-like binary values and returns a vector of ustring_views viewing
 /// those values.  This can be used on a container of any type with a `.data()` and a `.size()`
@@ -340,10 +341,13 @@ std::vector<ustring_view> to_view_vector(It begin, It end) {
     std::vector<ustring_view> vec;
     vec.reserve(std::distance(begin, end));
     for (; begin != end; ++begin) {
-        if constexpr (std::is_same_v<std::remove_cv_t<decltype(*begin)>, char*>) // C strings
+        if constexpr (std::is_same_v<std::remove_cv_t<decltype(*begin)>, char*>)  // C strings
             vec.emplace_back(*begin);
         else {
-            static_assert(sizeof(*begin->data()) == 1, "to_view_vector can only be used with containers of string-like types of 1-byte characters");
+            static_assert(
+                    sizeof(*begin->data()) == 1,
+                    "to_view_vector can only be used with containers of string-like types of "
+                    "1-byte characters");
             vec.emplace_back(reinterpret_cast<const unsigned char*>(begin->data()), begin->size());
         }
     }

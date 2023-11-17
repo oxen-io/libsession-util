@@ -1002,7 +1002,8 @@ bool Keys::load_key_message(
 
         // Ensure we consume all the ciphertexts (to ensure some message validity, even if we found
         // one halfway through).
-        while (next_ciphertext()) {}
+        while (next_ciphertext()) {
+        }
 
         if (!d.skip_until("G"))
             throw config_value_error{
@@ -1079,7 +1080,8 @@ bool Keys::load_key_message(
 
         // Parse them all, even once we had a successful decryption, to properly count and fail on
         // invalid input:
-        while (next_ciphertext()) {}
+        while (next_ciphertext()) {
+        }
 
         if (++member_key_pos % MESSAGE_KEY_MULTIPLE != 0)
             throw config_value_error{"Member key list has wrong size (missing junk key padding?)"};

@@ -236,11 +236,12 @@ TEST_CASE("Multi-recipient encryption, simpler interface", "[encrypt][multi][sim
 
     // If we encrypt again the value should be different (because of the default randomized nonce):
     CHECK(encrypted != session::encrypt_for_multiple_simple(
-            msgs[0],
-            session::to_view_vector(std::next(recipients.begin()), std::prev(recipients.end())),
-            to_usv(x_keys[0].first),
-            to_usv(x_keys[0].second),
-            "test suite"));
+                               msgs[0],
+                               session::to_view_vector(
+                                       std::next(recipients.begin()), std::prev(recipients.end())),
+                               to_usv(x_keys[0].first),
+                               to_usv(x_keys[0].second),
+                               "test suite"));
 
     auto m1 = session::decrypt_for_multiple_simple(
             encrypted,
