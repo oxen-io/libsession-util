@@ -209,6 +209,30 @@ ustring_view Keys::group_enc_key() const {
     return {key.data(), key.size()};
 }
 
+void Keys::load_admin_key(ustring_view seed, Info& info, Members& members) {
+    if (admin())
+        return;
+
+    if (seed.size() == 64)
+        seed.remove_suffix(32);
+    else if (seed.size() != 32)
+        throw std::invalid_argument{
+                "Failed to load admin key: invalid secret key (expected 32 or 64 bytes)"};
+
+    std::array<unsigned char, 32> pk;
+    sodium_cleared<std::array<unsigned char, 64>> sk;
+    crypto_sign_ed25519_seed_keypair(pk.data(), sk.data(), seed.data());
+
+    if (_sign_pk.has_value() && *_sign_pk != pk)
+        throw std::runtime_error{
+                "Failed to load admin key: given secret key does not match group pubkey"};
+
+    auto seckey = to_sv(sk);
+    set_sig_keys(seckey);
+    info.set_sig_keys(seckey);
+    members.set_sig_keys(seckey);
+}
+
 static std::array<unsigned char, 32> compute_xpk(const unsigned char* ed25519_pk) {
     std::array<unsigned char, 32> xpk;
     if (0 != crypto_sign_ed25519_pk_to_curve25519(xpk.data(), ed25519_pk))
@@ -1422,6 +1446,23 @@ LIBSESSION_C_API const unsigned char* group_keys_get_key(const config_group_keys
 
 LIBSESSION_C_API bool groups_keys_is_admin(const config_group_keys* conf) {
     return unbox(conf).admin();
+}
+
+LIBSESSION_C_API bool groups_keys_load_admin_key(
+        config_group_keys* conf,
+        const unsigned char* secret,
+        config_object* info,
+        config_object* members) {
+    try {
+        unbox(conf).load_admin_key(
+                ustring_view{secret, 32},
+                *unbox<groups::Info>(info),
+                *unbox<groups::Members>(members));
+    } catch (const std::exception& e) {
+        set_error(conf, e.what());
+        return false;
+    }
+    return true;
 }
 
 LIBSESSION_C_API bool groups_keys_rekey(

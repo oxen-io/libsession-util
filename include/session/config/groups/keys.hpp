@@ -258,6 +258,29 @@ class Keys final : public ConfigSig {
     /// - `true` if this object knows the group's master key
     bool admin() const { return _sign_sk && _sign_pk; }
 
+    /// API: groups/Keys::load_admin_key
+    ///
+    /// Loads the group secret key into the Keys object (as well as passing it along to the Info and
+    /// Members objects).
+    ///
+    /// The primary use of this is when accepting a promotion-to-admin: the Keys object would be
+    /// constructed as a regular member (without the admin key) then this method "upgrades" the
+    /// object with the group signing key.
+    ///
+    /// This will do nothing if the secret key is already known; it will throw if
+    /// the given secret key does not yield the group's public key.  The given key can be either the
+    /// 32 byte seed, or the libsodium 64 byte "secret key" (which is just the seed and cached
+    /// public key stuck together).
+    ///
+    /// Inputs:
+    /// - `secret` -- the group's 64-byte secret key or 32-byte seed
+    /// - `info` and `members` -- will be loaded with the group keys if the key is loaded
+    ///   successfully.
+    ///
+    /// Outputs: nothing.  After a successful call, `admin()` will return true.  Throws if the given
+    /// secret key does not match the group's pubkey.
+    void load_admin_key(ustring_view secret, Info& info, Members& members);
+
     /// API: groups/Keys::rekey
     ///
     /// Generate a new encryption key for the group and returns an encrypted key message to be

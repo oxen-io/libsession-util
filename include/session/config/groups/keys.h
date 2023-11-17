@@ -120,6 +120,29 @@ LIBSESSION_EXPORT const unsigned char* groups_keys_get_key(const config_group_ke
 /// - `true` if we have admin keys, `false` otherwise.
 LIBSESSION_EXPORT bool groups_keys_is_admin(const config_group_keys* conf);
 
+/// API: groups/groups_keys_load_admin_key
+///
+/// Loads the admin keys, effectively upgrading this keys object from a member to an admin.
+///
+/// This does nothing if the keys object already has admin keys.
+///
+/// Inputs:
+/// - `conf` -- the groups keys config object
+/// - `secret` -- pointer to the 32-byte group seed.  (This a 64-byte libsodium "secret key" begins
+///   with the seed, this can also be a given a pointer to such a value).
+/// - `group_info_conf` -- the group info config instance (the key will be added)
+/// - `group_members_conf` -- the group members config instance (the key will be added)
+///
+/// Outputs:
+/// - `true` if the object has been upgraded to admin status, or was already admin status; `false`
+///   if the given seed value does not match the group's public key.  If this returns `true` then
+///   after the call a call to `groups_keys_is_admin` would also return `true`.
+LIBSESSION_EXPORT bool groups_keys_load_admin_key(
+        config_group_keys* conf,
+        const unsigned char* secret,
+        config_object* group_info_conf,
+        config_object* group_members_conf);
+
 /// API: groups/groups_keys_rekey
 ///
 /// Generates a new encryption key for the group and returns an encrypted key message to be pushed

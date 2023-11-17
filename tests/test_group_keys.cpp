@@ -887,3 +887,93 @@ TEST_CASE("Group Keys - swarm authentication", "[config][groups][keys][swarm]") 
         }
     }
 }
+
+TEST_CASE("Group Keys promotion", "[config][groups][keys][promotion]") {
+
+    const ustring group_seed =
+            "0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210"_hexbytes;
+    const ustring admin1_seed =
+            "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
+    const ustring member1_seed =
+            "000111222333444555666777888999aaabbbcccdddeeefff0123456789abcdef"_hexbytes;
+
+    std::array<unsigned char, 32> group_pk;
+    std::array<unsigned char, 64> group_sk;
+
+    crypto_sign_ed25519_seed_keypair(group_pk.data(), group_sk.data(), group_seed.data());
+    REQUIRE(oxenc::to_hex(group_seed.begin(), group_seed.end()) ==
+            oxenc::to_hex(group_sk.begin(), group_sk.begin() + 32));
+
+    pseudo_client admin{admin1_seed, true, group_pk.data(), group_sk.data()};
+    pseudo_client member{member1_seed, false, group_pk.data(), std::nullopt};
+
+    std::vector<std::pair<std::string, ustring_view>> configs;
+    {
+        auto m = admin.members.get_or_construct(admin.session_id);
+        m.admin = true;
+        m.name = "Lrrr";
+        admin.members.set(m);
+    }
+    {
+        auto m = admin.members.get_or_construct(member.session_id);
+        m.admin = false;
+        m.name = "Nibbler";
+        admin.members.set(m);
+    }
+    admin.info.set_name("Omicron Persei 8");
+    auto [mseq, mdata, mobs] = admin.members.push();
+    admin.members.confirm_pushed(mseq, "mpush1");
+    auto [iseq, idata, iobs] = admin.info.push();
+    admin.info.confirm_pushed(mseq, "ipush1");
+
+    REQUIRE(admin.keys.pending_config());
+    member.keys.load_key_message(
+            "keyhash1",
+            *admin.keys.pending_config(),
+            get_timestamp_ms(),
+            member.info,
+            member.members);
+    admin.keys.load_key_message(
+            "keyhash1",
+            *admin.keys.pending_config(),
+            get_timestamp_ms(),
+            member.info,
+            member.members);
+
+    member.keys.load_key_message(
+            "keyhash2",
+            admin.keys.key_supplement(member.session_id),
+            get_timestamp_ms(),
+            member.info,
+            member.members);
+
+    configs.emplace_back("mpush1", mdata);
+    CHECK(member.members.merge(configs) == std::vector{{"mpush1"s}});
+
+    configs.clear();
+    configs.emplace_back("ipush1", idata);
+    CHECK(member.info.merge(configs) == std::vector{{"ipush1"s}});
+
+    REQUIRE(admin.keys.admin());
+    REQUIRE_FALSE(member.keys.admin());
+    REQUIRE(member.info.is_readonly());
+    REQUIRE(member.members.is_readonly());
+
+    member.keys.load_admin_key(to_usv(group_sk), member.info, member.members);
+
+    CHECK(member.keys.admin());
+    CHECK_FALSE(member.members.is_readonly());
+    CHECK_FALSE(member.info.is_readonly());
+
+    member.info.set_name("new name"s);
+
+    CHECK(member.info.needs_push());
+    auto [iseq2, idata2, iobs2] = member.info.push();
+
+    configs.clear();
+    configs.emplace_back("ihash2", idata2);
+
+    CHECK(admin.info.merge(configs) == std::vector{{"ihash2"s}});
+
+    CHECK(admin.info.get_name() == "new name");
+}
