@@ -119,6 +119,8 @@ TEST_CASE("Group Members", "[config][groups][members]") {
             CHECK_FALSE(m.invite_failed());
             CHECK_FALSE(m.promotion_pending());
             CHECK_FALSE(m.promotion_failed());
+            CHECK_FALSE(m.is_removed());
+            CHECK_FALSE(m.should_remove_messages());
             CHECK_FALSE(m.supplement);
             if (i < 10) {
                 CHECK(m.admin);
@@ -165,6 +167,11 @@ TEST_CASE("Group Members", "[config][groups][members]") {
         m.set_promoted(i >= 60);
         gmem2.set(m);
     }
+    for (int i = 62; i < 66; i++) {
+        auto m = gmem2.get_or_construct(sids[i]);
+        m.set_removed(i >= 64);
+        gmem2.set(m);
+    }
 
     CHECK(gmem2.get(sids[23]).value().name == "Member 23");
 
@@ -196,9 +203,11 @@ TEST_CASE("Group Members", "[config][groups][members]") {
             CHECK(m.promoted() == (i < 10 || (i >= 58 && i < 62)));
             CHECK(m.promotion_pending() == (i >= 58 && i < 62));
             CHECK(m.promotion_failed() == (i >= 60 && i < 62));
+            CHECK(m.is_removed() == (i >= 62 && i < 66));
+            CHECK(m.should_remove_messages() == (i >= 64 && i < 66));
             i++;
         }
-        CHECK(i == 62);
+        CHECK(i == 66);
     }
 
     for (int i = 0; i < 100; i++) {
@@ -247,10 +256,12 @@ TEST_CASE("Group Members", "[config][groups][members]") {
             CHECK(m.promoted() == (i < 10 || (i >= 58 && i < 62)));
             CHECK(m.promotion_pending() == (i >= 59 && i <= 61));
             CHECK(m.promotion_failed() == (i >= 60 && i <= 61));
+            CHECK(m.is_removed() == (i >= 62 && i < 66));
+            CHECK(m.should_remove_messages() == (i >= 64 && i < 66));
             do
                 i++;
             while (is_prime100(i));
         }
-        CHECK(i == 62);
+        CHECK(i == 66);
     }
 }

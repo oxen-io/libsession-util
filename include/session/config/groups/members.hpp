@@ -40,6 +40,7 @@ using namespace std::literals;
 ///       - omitted once the promotion is accepted (i.e. once `A` gets set).
 
 constexpr int INVITE_SENT = 1, INVITE_FAILED = 2;
+constexpr int REMOVED_MEMBER = 1, REMOVED_MEMBER_AND_MESSAGES = 2;
 
 /// Struct containing member details
 struct member {
@@ -199,6 +200,45 @@ struct member {
     /// Outputs:
     /// - `bool` -- true if the member is promoted (or promotion-in-progress)
     bool promoted() const { return admin || promotion_pending(); }
+
+    // Flags to track a removed user.  This value is typically not used directly, but
+    // rather via the `set_removed()`, `is_removed()` and similar methods.
+    int removed_status = 0;
+
+    /// API: groups/member::set_removed
+    ///
+    /// Sets the "removed" flag for this user.  This marks the user as pending removal from the
+    /// group.  The optional `messages` parameter can be specified as true if we want to remove
+    /// any messages sent by the member upon a successful removal.
+    ///
+    /// Inputs:
+    /// - `messages`: can be specified as true to indicate any messages sent by the member
+    ///   should also be removed upon a successful member removal.
+    void set_removed(bool messages = false) {
+        removed_status = messages ? REMOVED_MEMBER_AND_MESSAGES : REMOVED_MEMBER;
+    }
+
+    /// API: groups/member::is_removed
+    ///
+    /// Returns true if the user should be removed from the group.
+    ///
+    /// Inputs: none.
+    ///
+    /// Outputs:
+    /// - `bool` -- true if the member should be removed from the group
+    bool is_removed() const { return removed_status > 0; }
+
+    /// API: groups/member::should_remove_messages
+    ///
+    /// Returns true if the users messages should be removed after they are
+    /// successfully removed.
+    ///
+    /// Inputs: none.
+    ///
+    /// Outputs:
+    /// - `bool` -- true if the members messages should be removed after they are
+    /// successfully removed from the group
+    bool should_remove_messages() const { return removed_status == REMOVED_MEMBER_AND_MESSAGES; }
 
     /// API: groups/member::into
     ///

@@ -292,6 +292,17 @@ LIBSESSION_EXPORT bool groups_keys_key_supplement(
         unsigned char** message,
         size_t* message_len);
 
+/// API: groups/groups_keys_current_generation
+///
+/// Returns the current generation number for the latest keys message.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Oututs:
+/// - `int` -- latest keys generation number
+LIBSESSION_EXPORT int groups_keys_current_generation(config_group_keys* conf);
+
 /// API: groups/groups_keys_swarm_make_subaccount
 ///
 /// Constructs a swarm subaccount signing value that a member can use to access messages in the

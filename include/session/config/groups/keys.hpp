@@ -322,6 +322,14 @@ class Keys final : public ConfigSig {
         return key_supplement(std::vector{{std::move(sid)}});
     }
 
+    /// API: groups/current_generation
+    ///
+    /// Returns the current generation number for the latest keys message.
+    ///
+    /// Oututs:
+    /// - `int` -- latest keys generation number.
+    int current_generation() const { return keys_.empty() ? 0 : keys_.back().generation; }
+
     /// API: groups/Keys::swarm_make_subaccount
     ///
     /// Constructs a swarm subaccount signing value that a member can use to access messages in the
