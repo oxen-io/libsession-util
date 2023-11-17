@@ -1575,12 +1575,7 @@ LIBSESSION_C_API bool groups_keys_key_supplement(
 }
 
 LIBSESSION_EXPORT int groups_keys_current_generation(config_group_keys* conf) {
-    try {
-        return unbox(conf).current_generation();
-    } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return -1;
-    }
+    return unbox(conf).current_generation();
 }
 
 LIBSESSION_C_API bool groups_keys_swarm_make_subaccount_flags(
