@@ -21,7 +21,8 @@ typedef struct config_group_member {
     bool admin;
     int invited;   // 0 == unset, INVITE_SENT = invited, INVITED_FAILED = invite failed to send
     int promoted;  // same value as `invited`, but for promotion-to-admin
-    int removed;   // 0 == unset, REMOVED_MEMBER = removed, REMOVED_MEMBER_AND_MESSAGES = remove member and their messages
+    int removed;   // 0 == unset, REMOVED_MEMBER = removed, REMOVED_MEMBER_AND_MESSAGES = remove
+                   // member and their messages
     bool supplement;
 
 } config_group_member;

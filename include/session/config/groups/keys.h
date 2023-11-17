@@ -301,8 +301,7 @@ LIBSESSION_EXPORT bool groups_keys_key_supplement(
 ///
 /// Oututs:
 /// - `int` -- latest keys generation number on success; returns `-1` on failure.
-LIBSESSION_EXPORT int groups_keys_current_generation(
-        config_group_keys* conf);
+LIBSESSION_EXPORT int groups_keys_current_generation(config_group_keys* conf);
 
 /// API: groups/groups_keys_swarm_make_subaccount
 ///
