@@ -84,6 +84,21 @@ namespace detail {
                             key);
     }
 
+    std::pair<sodium_cleared<std::array<unsigned char, 32>>, std::array<unsigned char, 32>> x_keys(
+            ustring_view ed25519_secret_key) {
+        if (ed25519_secret_key.size() != 64)
+            throw std::invalid_argument{"Ed25519 secret key is not the expected 64 bytes"};
+
+        std::pair<sodium_cleared<std::array<unsigned char, 32>>, std::array<unsigned char, 32>> ret;
+        auto& [x_priv, x_pub] = ret;
+
+        crypto_sign_ed25519_sk_to_curve25519(x_priv.data(), ed25519_secret_key.data());
+        if (0 != crypto_sign_ed25519_pk_to_curve25519(x_pub.data(), ed25519_secret_key.data() + 32))
+            throw std::runtime_error{"Failed to convert Ed25519 key to X25519: invalid secret key"};
+
+        return ret;
+    }
+
 }  // namespace detail
 
 std::optional<ustring> decrypt_for_multiple(
@@ -107,4 +122,118 @@ std::optional<ustring> decrypt_for_multiple(
             sender_pubkey,
             domain);
 }
+
+ustring encrypt_for_multiple_simple(
+        const std::vector<ustring_view>& messages,
+        const std::vector<ustring_view>& recipients,
+        ustring_view privkey,
+        ustring_view pubkey,
+        std::string_view domain,
+        std::optional<ustring_view> nonce,
+        int pad) {
+
+    oxenc::bt_dict_producer d;
+
+    std::array<unsigned char, 24> random_nonce;
+    if (!nonce) {
+        randombytes_buf(random_nonce.data(), random_nonce.size());
+        nonce.emplace(random_nonce.data(), random_nonce.size());
+    } else if (nonce->size() != 24) {
+        throw std::invalid_argument{"Invalid nonce: nonce must be 24 bytes"};
+    }
+
+    d.append("#", *nonce);
+    {
+        auto enc_list = d.append_list("e");
+
+        int msg_count = 0;
+        encrypt_for_multiple(
+                messages, recipients, *nonce, privkey, pubkey, domain, [&](ustring_view encrypted) {
+                    enc_list.append(encrypted);
+                    msg_count++;
+                });
+
+        if (int pad_size = pad > 1 && !messages.empty() ? messages.front().size() : 0) {
+            ustring junk;
+            junk.resize(pad_size);
+            for (; msg_count % pad != 0; msg_count++) {
+                randombytes_buf(junk.data(), pad_size);
+                enc_list.append(junk);
+            }
+        }
+    }
+
+    return ustring{d.view<unsigned char>()};
+}
+
+ustring encrypt_for_multiple_simple(
+        const std::vector<ustring_view>& messages,
+        const std::vector<ustring_view>& recipients,
+        ustring_view ed25519_secret_key,
+        std::string_view domain,
+        ustring_view nonce,
+        int pad) {
+
+    auto [x_privkey, x_pubkey] = detail::x_keys(ed25519_secret_key);
+
+    return encrypt_for_multiple_simple(
+            messages, recipients, to_sv(x_privkey), to_sv(x_pubkey), domain, nonce, pad);
+}
+
+std::optional<ustring> decrypt_for_multiple_simple(
+        ustring_view encoded,
+        ustring_view privkey,
+        ustring_view pubkey,
+        ustring_view sender_pubkey,
+        std::string_view domain) {
+    try {
+        oxenc::bt_dict_consumer d{encoded};
+        auto nonce = d.require<ustring_view>("#");
+        if (nonce.size() != 24)
+            return std::nullopt;
+        auto enc_list = d.require<oxenc::bt_list_consumer>("e");
+
+        return decrypt_for_multiple(
+                [&]() -> std::optional<ustring_view> {
+                    if (enc_list.is_finished())
+                        return std::nullopt;
+                    return enc_list.consume<ustring_view>();
+                },
+                nonce,
+                privkey,
+                pubkey,
+                sender_pubkey,
+                domain);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::optional<ustring> decrypt_for_multiple_simple(
+        ustring_view encoded,
+        ustring_view ed25519_secret_key,
+        ustring_view sender_pubkey,
+        std::string_view domain) {
+
+    auto [x_privkey, x_pubkey] = detail::x_keys(ed25519_secret_key);
+
+    return decrypt_for_multiple_simple(
+            encoded, to_sv(x_privkey), to_sv(x_pubkey), sender_pubkey, domain);
+}
+
+std::optional<ustring> decrypt_for_multiple_simple_ed25519(
+        ustring_view encoded,
+        ustring_view ed25519_secret_key,
+        ustring_view sender_ed25519_pubkey,
+        std::string_view domain) {
+
+    std::array<unsigned char, 32> sender_pub;
+    if (sender_ed25519_pubkey.size() != 32)
+        throw std::invalid_argument{"Invalid sender Ed25519 pubkey: expected 32 bytes"};
+    if (0 != crypto_sign_ed25519_pk_to_curve25519(sender_pub.data(), sender_ed25519_pubkey.data()))
+        throw std::runtime_error{"Failed to convert Ed25519 key to X25519: invalid secret key"};
+
+    return decrypt_for_multiple_simple(encoded, ed25519_secret_key, to_sv(sender_pub), domain);
+}
+
 }  // namespace session

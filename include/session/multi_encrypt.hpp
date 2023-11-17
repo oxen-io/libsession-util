@@ -247,6 +247,139 @@ std::optional<ustring> decrypt_for_multiple(
         ustring_view sender_pubkey,
         std::string_view domain);
 
+/// API: crypto/encrypt_for_multiple_simple
+///
+/// This function performs 1-to-N or N-to-N encryptions (i.e. N encrypted payloads of either the
+/// same value, or N separate values) using a random nonce and encodes the resulting encrypted data
+/// in a self-contained bt-encoded value suitable for decrypting by a recipient via
+/// `decrypt_for_multiple_simple`.
+///
+/// In contrast to `encrypt_for_multiple`, this function is less flexible, but easier to use when
+/// additional flexibility is not required.
+///
+/// Inputs:
+/// - `messages` -- vector of messages to encrypt.  This vector can either be a single message to
+///   separately encrypt the same message for each member, or a vector of the same length as
+///   recipients to encrypt a different message for each member.  If you have these in some other
+///   type of container, session/util.hpp's `session::to_view_vector` is a convenient way to convert
+///   compatible containers to this view vector.
+/// - `recipients` -- vector of X25519 pubkeys of the recipients.  (If sending to Session IDs, these
+///   are the 32-byte binary keys after removing the 0x05 prefix byte).
+/// - `privkey` -- the X25519 private key of the sender (32 bytes).  Note that this is *NOT* the
+///   Ed25519 secret key; see the alternative version of the function below if you only have an
+///   Ed25519 key.
+/// - `pubkey` -- the X25519 public key of the sender (32 bytes).  This needs to be known by the
+///   recipient in order to decrypt the message; unlike session-protocol encryption, the sender
+///   identity is not included in the message.
+/// - `domain` -- the encryption domain; this is a short string that uniquely identifies the
+///   "domain" of encryption, such as "SessionGroupKickedMessage".  The value is arbitrary: what
+///   matters is that it is unique for different encryption types, and that both the sender and
+///   recipient use the same value.  Max length is 64 bytes.  Using a domain is encouraged so that
+///   the resulting encryption key between a sender and recipient will be different if the same keys
+///   are used for encryption of unrelated data types.
+/// - `nonce` -- optional; if omitted or empty a random nonce will be generated.  If non-empty this
+///   should be a 24-byte value; this can be used with a cryptographically secure hash function to
+///   construct a deterministic encrypted value.  If you don't need that, omit it to use a random
+///   one.
+/// - `pad` -- if given and greater than 1 then junk encrypted values will be added until there are
+///   a multiple of this many encrypted values in total.  The size of each junk entry will be the
+///   same as the (encrypted) size of the first message; this padding is most useful when all
+///   messages are the same size (or the same message) as with variable-sized messages the junk
+///   entries will be somewhat identifiable.
+///
+/// Outputs:
+/// ustring containing bytes that contains the nonce and encoded encrypted messages, suitable for
+/// decryption by the recipients with `decrypt_for_multiple_simple`.
+ustring encrypt_for_multiple_simple(
+        const std::vector<ustring_view>& messages,
+        const std::vector<ustring_view>& recipients,
+        ustring_view privkey,
+        ustring_view pubkey,
+        std::string_view domain,
+        std::optional<ustring_view> nonce = std::nullopt,
+        int pad = 0);
 
+/// API: crypto/encrypt_for_multiple_simple
+///
+/// This function is the same as the above, except that instead of taking the sender private and
+/// public X25519 keys, it takes the single, 64-byte libsodium Ed25519 secret key (which is then
+/// converted into the required X25519 keys).
+ustring encrypt_for_multiple_simple(
+        const std::vector<ustring_view>& messages,
+        const std::vector<ustring_view>& recipients,
+        ustring_view ed25519_secret_key,
+        std::string_view domain,
+        ustring_view nonce = {},
+        int pad = 0);
+
+/// API: crypto/encrypt_for_multiple_simple
+///
+/// Wrapper that takes a *single* message to send to all recipients.  This is simply a shortcut for
+/// passing a one-element vector into the above versions of the function; all arguments other than
+/// the first are identical.
+///
+template <typename... Args>
+ustring encrypt_for_multiple_simple(ustring_view message, Args&&... args) {
+    return encrypt_for_multiple_simple(
+            to_view_vector(&message, &message + 1), std::forward<Args>(args)...);
+}
+template <typename... Args>
+ustring encrypt_for_multiple_simple(std::string_view message, Args&&... args) {
+    return encrypt_for_multiple_simple(to_unsigned_sv(message), std::forward<Args>(args)...);
+}
+template <typename... Args>
+ustring encrypt_for_multiple_simple(std::basic_string_view<std::byte> message, Args&&... args) {
+    return encrypt_for_multiple_simple(to_unsigned_sv(message), std::forward<Args>(args)...);
+}
+
+/// API: crypto/decrypt_for_multiple_simple
+///
+/// This function attempts to decrypt a message produced by `encrypt_for_multiple_simple`; if
+/// encryption (of any of the contained messages) succeeds you get back the message, otherwise if
+/// the message failed to parse or decryption of all parts fails, you get back std::nullopt.
+///
+/// Inputs:
+/// - `encoded` -- the incoming message, produced by encrypt_for_multiple_simple
+/// - `privkey` -- the X25519 private key of the receiver (32 bytes).  Note that this is *NOT* the
+///   Ed25519 secret key; see the alternative version of the function below if you only have an
+///   Ed25519 key.
+/// - `pubkey` -- the X25519 public key of the receiver (32 bytes).
+/// - `sender_pubkey` -- the X25519 public key of the sender (32 bytes).  Note that unlike session
+///   encryption, the sender's identify is not available in the encrypted message itself.
+/// - `domain` -- the encryption domain, which must be the same as the value used in
+///   `encrypt_for_multiple_simple`.
+///
+/// Outputs:
+/// If decryption succeeds, returns a ustring containing the decrypted message, in bytes.  If
+/// parsing or decryption fails, returns std::nullopt.
+std::optional<ustring> decrypt_for_multiple_simple(
+        ustring_view encoded,
+        ustring_view privkey,
+        ustring_view pubkey,
+        ustring_view sender_pubkey,
+        std::string_view domain);
+
+/// API: crypto/decrypt_for_multiple_simple
+///
+/// This is the same as the above, except that instead of taking an X25519 private and public key
+/// arguments, it takes a single, 64-byte Ed25519 secret key and converts it to X25519 to perform
+/// the decryption.
+///
+/// Note that `sender_pubkey` is still an X25519 pubkey for this version of the function.
+std::optional<ustring> decrypt_for_multiple_simple(
+        ustring_view encoded,
+        ustring_view ed25519_secret_key,
+        ustring_view sender_pubkey,
+        std::string_view domain);
+
+/// API: crypto/decrypt_for_multiple_simple_ed25519
+///
+/// This is the same as the above, except that it takes both the sender and recipient as Ed25519
+/// keys, converting them on the fly to attempt the decryption.
+std::optional<ustring> decrypt_for_multiple_simple_ed25519(
+        ustring_view encoded,
+        ustring_view ed25519_secret_key,
+        ustring_view sender_ed25519_pubkey,
+        std::string_view domain);
 
 }  // namespace session
