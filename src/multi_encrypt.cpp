@@ -1,6 +1,7 @@
 
 #include <oxenc/bt_producer.h>
 #include <oxenc/bt_serialize.h>
+#include <session/multi_encrypt.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/crypto_scalarmult_curve25519.h>
@@ -237,3 +238,150 @@ std::optional<ustring> decrypt_for_multiple_simple_ed25519(
 }
 
 }  // namespace session
+
+using namespace session;
+
+static unsigned char* to_c_buffer(ustring_view x, size_t* out_len) {
+    auto* ret = static_cast<unsigned char*>(malloc(x.size()));
+    *out_len = x.size();
+    std::memcpy(ret, x.data(), x.size());
+    return ret;
+}
+
+LIBSESSION_C_API unsigned char* session_encrypt_for_multiple_simple(
+        size_t* out_len,
+        const unsigned char** messages,
+        const size_t* message_lengths,
+        size_t n_messages,
+        const unsigned char** recipients,
+        size_t n_recipients,
+        const unsigned char* x25519_privkey,
+        const unsigned char* x25519_pubkey,
+        const char* domain,
+        const unsigned char* nonce,
+        int pad) {
+
+    std::vector<ustring_view> msgs, recips;
+    msgs.reserve(n_messages);
+    recips.reserve(n_recipients);
+    for (size_t i = 0; i < n_messages; i++)
+        msgs.emplace_back(messages[i], message_lengths[i]);
+    for (size_t i = 0; i < n_recipients; i++)
+        recips.emplace_back(recipients[i], 32);
+    std::optional<ustring_view> maybe_nonce;
+    if (nonce)
+        maybe_nonce.emplace(nonce, 24);
+
+    try {
+        auto encoded = session::encrypt_for_multiple_simple(
+                msgs,
+                recips,
+                ustring_view{x25519_privkey, 32},
+                ustring_view{x25519_pubkey, 32},
+                domain,
+                std::move(maybe_nonce),
+                pad);
+        return to_c_buffer(encoded, out_len);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+LIBSESSION_C_API unsigned char* session_encrypt_for_multiple_simple_ed25519(
+        size_t* out_len,
+        const unsigned char** messages,
+        const size_t* message_lengths,
+        size_t n_messages,
+        const unsigned char** recipients,
+        size_t n_recipients,
+        const unsigned char* ed25519_secret_key,
+        const char* domain,
+        const unsigned char* nonce,
+        int pad) {
+
+    try {
+        auto [priv, pub] = session::detail::x_keys(ustring_view{ed25519_secret_key, 64});
+        return session_encrypt_for_multiple_simple(
+                out_len,
+                messages,
+                message_lengths,
+                n_messages,
+                recipients,
+                n_recipients,
+                priv.data(),
+                pub.data(),
+                domain,
+                nonce,
+                pad);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+LIBSESSION_C_API unsigned char* session_decrypt_for_multiple_simple(
+        size_t* out_len,
+        const unsigned char* encoded,
+        size_t encoded_len,
+        const unsigned char* x25519_privkey,
+        const unsigned char* x25519_pubkey,
+        const unsigned char* sender_x25519_pubkey,
+        const char* domain) {
+
+    try {
+        if (auto decrypted = session::decrypt_for_multiple_simple(
+                    ustring_view{encoded, encoded_len},
+                    ustring_view{x25519_privkey, 32},
+                    ustring_view{x25519_pubkey, 32},
+                    ustring_view{sender_x25519_pubkey, 32},
+                    domain)) {
+            return to_c_buffer(*decrypted, out_len);
+        }
+    } catch (...) {
+    }
+
+    return nullptr;
+}
+
+LIBSESSION_C_API unsigned char* session_decrypt_for_multiple_simple_ed25519_from_x25519(
+        size_t* out_len,
+        const unsigned char* encoded,
+        size_t encoded_len,
+        const unsigned char* ed25519_secret,
+        const unsigned char* sender_x25519_pubkey,
+        const char* domain) {
+
+    try {
+        if (auto decrypted = session::decrypt_for_multiple_simple(
+                    ustring_view{encoded, encoded_len},
+                    ustring_view{ed25519_secret, 64},
+                    ustring_view{sender_x25519_pubkey, 32},
+                    domain)) {
+            return to_c_buffer(*decrypted, out_len);
+        }
+    } catch (...) {
+    }
+
+    return nullptr;
+}
+
+LIBSESSION_C_API unsigned char* session_decrypt_for_multiple_simple_ed25519(
+        size_t* out_len,
+        const unsigned char* encoded,
+        size_t encoded_len,
+        const unsigned char* ed25519_secret,
+        const unsigned char* sender_ed25519_pubkey,
+        const char* domain) {
+
+    try {
+        if (auto decrypted = session::decrypt_for_multiple_simple_ed25519(
+                    ustring_view{encoded, encoded_len},
+                    ustring_view{ed25519_secret, 64},
+                    ustring_view{sender_ed25519_pubkey, 32},
+                    domain)) {
+            return to_c_buffer(*decrypted, out_len);
+        }
+    } catch (...) {
+    }
+
+    return nullptr;
+}
