@@ -3,9 +3,14 @@
 #include <string>
 #include <string_view>
 
+#include "util.hpp"
+
 namespace session::xed25519 {
 
 using ustring_view = std::basic_string_view<unsigned char>;
+
+/// Generates a random XEd25519 key pair.
+std::pair<sodium_cleared<std::array<unsigned char, 32>>, std::array<unsigned char, 32>> random();
 
 /// XEd25519-signs a message given the curve25519 privkey and message.
 std::array<unsigned char, 64> sign(

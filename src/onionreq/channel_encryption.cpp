@@ -13,6 +13,12 @@
 #include <iostream>
 #include <memory>
 
+#include "session/xed25519.hpp"
+#include "session/onionreq/channel_encryption.h"
+#include "session/onionreq/key_types.hpp"
+#include "session/export.h"
+#include "session/util.hpp"
+
 namespace session::onionreq {
 
 namespace {
@@ -225,3 +231,42 @@ ustring ChannelEncryption::decrypt_xchacha20(
 }
 
 }  // namespace session::onionreq
+
+extern "C" {
+
+using session::ustring;
+
+LIBSESSION_C_API unsigned char* onion_request_encrypt(
+        ENCRYPT_TYPE type,
+        const unsigned char* message,
+        size_t mlen,
+        const unsigned char* pubkey,
+        size_t* ciphertext_size) {
+
+    ustring ciphertext;
+    try {
+        session::onionreq::x25519_pubkey targetPubkey = session::onionreq::x25519_pubkey::from_bytes({pubkey, 32});
+        std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 32>> keys = session::xed25519::random();
+        auto& [x_priv, x_pub] = keys;
+
+        session::onionreq::ChannelEncryption c{
+            session::onionreq::x25519_seckey::from_bytes(x_priv.data()),
+            session::onionreq::x25519_pubkey::from_bytes(x_pub.data()),
+            true
+        };
+        
+        switch (type) {
+            case ENCRYPT_TYPE::ENCRYPT_TYPE_X_CHA_CHA_20: ciphertext = c.encrypt_xchacha20({message, mlen}, targetPubkey);
+            case ENCRYPT_TYPE::ENCRYPT_TYPE_AES_GCM: ciphertext = c.encrypt_aesgcm({message, mlen}, targetPubkey);
+        }
+    } catch (...) {
+        return nullptr;
+    }
+
+    auto* data = static_cast<unsigned char*>(std::malloc(ciphertext.size()));
+    std::memcpy(data, ciphertext.data(), ciphertext.size());
+    *ciphertext_size = ciphertext.size();
+    return data;
+}
+
+}
