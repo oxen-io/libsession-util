@@ -2,6 +2,7 @@
 
 #include <nettle/gcm.h>
 #include <oxenc/hex.h>
+#include <sodium/crypto_box.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_auth_hmacsha256.h>
 #include <sodium/crypto_generichash.h>
@@ -9,6 +10,7 @@
 #include <sodium/randombytes.h>
 #include <sodium/utils.h>
 
+#include <nlohmann/json.hpp>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -75,6 +77,19 @@ namespace {
         return key;
     }
 
+    ustring encode_size(uint32_t s) {
+        ustring str{reinterpret_cast<const unsigned char*>(&s), 4};
+        return str;
+    }
+
+    std::basic_string_view<unsigned char> to_uchar(std::string_view sv) {
+        return {reinterpret_cast<const unsigned char*>(sv.data()), sv.size()};
+    }
+
+    std::string from_ustring(ustring us) {
+        return {reinterpret_cast<const char*>(us.data()), us.size()};
+    }
+
 }  // namespace
 
 EncryptType parse_enc_type(std::string_view enc_type) {
@@ -86,7 +101,7 @@ EncryptType parse_enc_type(std::string_view enc_type) {
 }
 
 ustring ChannelEncryption::encrypt(
-        EncryptType type, ustring_view plaintext, const x25519_pubkey& pubkey) const {
+        EncryptType type, ustring plaintext, const x25519_pubkey& pubkey) const {
     switch (type) {
         case EncryptType::xchacha20: return encrypt_xchacha20(plaintext, pubkey);
         case EncryptType::aes_gcm: return encrypt_aesgcm(plaintext, pubkey);
@@ -95,7 +110,7 @@ ustring ChannelEncryption::encrypt(
 }
 
 ustring ChannelEncryption::decrypt(
-        EncryptType type, ustring_view ciphertext, const x25519_pubkey& pubkey) const {
+        EncryptType type, ustring ciphertext, const x25519_pubkey& pubkey) const {
     switch (type) {
         case EncryptType::xchacha20: return decrypt_xchacha20(ciphertext, pubkey);
         case EncryptType::aes_gcm: return decrypt_aesgcm(ciphertext, pubkey);
@@ -104,8 +119,7 @@ ustring ChannelEncryption::decrypt(
 }
 
 ustring ChannelEncryption::encrypt_aesgcm(
-        ustring_view plaintext, const x25519_pubkey& pubKey) const {
-
+        ustring plaintext, const x25519_pubkey& pubKey) const {
     auto key = derive_symmetric_key(private_key_, pubKey);
 
     // Initialise cipher context with the key
@@ -136,7 +150,8 @@ ustring ChannelEncryption::encrypt_aesgcm(
 }
 
 ustring ChannelEncryption::decrypt_aesgcm(
-        ustring_view ciphertext, const x25519_pubkey& pubKey) const {
+        ustring ciphertext_, const x25519_pubkey& pubKey) const {
+    ustring_view ciphertext = {ciphertext_.data(), ciphertext_.size()};
 
     if (ciphertext.size() < GCM_IV_SIZE + GCM_DIGEST_SIZE)
         throw std::runtime_error{"ciphertext data is too short"};
@@ -169,7 +184,7 @@ ustring ChannelEncryption::decrypt_aesgcm(
 }
 
 ustring ChannelEncryption::encrypt_xchacha20(
-        ustring_view plaintext, const x25519_pubkey& pubKey) const {
+        ustring plaintext, const x25519_pubkey& pubKey) const {
 
     ustring ciphertext;
     ciphertext.resize(
@@ -181,7 +196,8 @@ ustring ChannelEncryption::encrypt_xchacha20(
     // Generate random nonce, and stash it at the beginning of ciphertext:
     randombytes_buf(ciphertext.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
 
-    auto* c = ciphertext.data() + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
+    auto* c = reinterpret_cast<unsigned char*>(ciphertext.data()) +
+        crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
     unsigned long long clen;
 
     crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -192,7 +208,7 @@ ustring ChannelEncryption::encrypt_xchacha20(
             nullptr,
             0,        // additional data
             nullptr,  // nsec (always unused)
-            ciphertext.data(),
+            reinterpret_cast<const unsigned char*>(ciphertext.data()),
             key.data());
     assert(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + clen <= ciphertext.size());
     ciphertext.resize(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + clen);
@@ -200,7 +216,8 @@ ustring ChannelEncryption::encrypt_xchacha20(
 }
 
 ustring ChannelEncryption::decrypt_xchacha20(
-        ustring_view ciphertext, const x25519_pubkey& pubKey) const {
+        ustring ciphertext_, const x25519_pubkey& pubKey) const {
+    ustring_view ciphertext = {ciphertext_.data(), ciphertext_.size()};
 
     // Extract nonce from the beginning of the ciphertext:
     auto nonce = ciphertext.substr(0, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
@@ -212,7 +229,7 @@ ustring ChannelEncryption::decrypt_xchacha20(
 
     ustring plaintext;
     plaintext.resize(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
-    auto* m = plaintext.data();
+    auto* m = reinterpret_cast<unsigned char*>(plaintext.data());
     unsigned long long mlen;
     if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
                      m,
@@ -230,43 +247,275 @@ ustring ChannelEncryption::decrypt_xchacha20(
     return plaintext;
 }
 
+std::pair<ustring, x25519_keypair> prepare(
+    std::string_view payload,
+    destination& destination,
+    std::vector<std::pair<ed25519_pubkey, x25519_pubkey>> keys,
+    std::optional<EncryptType> enc_type) {
+
+    ustring blob;
+
+    // First hop:
+    //
+    // [N][ENCRYPTED]{json}
+    //
+    // where json has the ephemeral_key indicating how we encrypted ENCRYPTED for this first hop.
+    // The first hop decrypts ENCRYPTED into:
+    //
+    // [N][BLOB]{json}
+    //
+    // where [N] is the length of the blob and {json} now contains either:
+    // - a "headers" key with an empty value.  This is how we indicate that the request is for this
+    //   node as the final hop, and means that the BLOB is actually JSON it should parse to get the
+    //   request info (which has "method", "params", etc. in it).
+    // - "host"/"target"/"port"/"protocol" asking for an HTTP or HTTPS proxy request to be made
+    //   (though "target" must start with /loki/ or /oxen/ and end with /lsrpc).  (There is still a
+    //   blob here, but it is not used and typically empty).
+    // - "destination" and "ephemeral_key" to forward the request to the next hop.
+    //
+    // This later case continues onion routing by giving us something like:
+    //
+    //      {"destination":"ed25519pubkey","ephemeral_key":"x25519-eph-pubkey-for-decryption","enc_type":"xchacha20"}
+    //
+    // (enc_type can also be aes-gcm, and defaults to that if not specified).  We forward this via
+    // oxenmq to the given ed25519pubkey (but since oxenmq uses x25519 pubkeys we first have to go
+    // look it up), sending an oxenmq request to sn.onion_req_v2 of the following (but bencoded, not
+    // json):
+    //
+    //  { "d": "BLOB", "ek": "ephemeral-key-in-binary", "et": "xchacha20", "nh": N }
+    //
+    // where BLOB is the opaque data received from the previous hop and N is the hop number which
+    // gets incremented at each hop (and terminates if it exceeds 15).  That next hop decrypts BLOB,
+    // giving it a value interpreted as the same [N][BLOB]{json} as above, and we recurse.
+    //
+    // On the *return* trip, the message gets encrypted (once!) at the final destination using the
+    // derived key from the pubkey given to the final hop, base64-encoded, then passed back without
+    // any onion encryption at all all the way back to the client.
+
+    // Ephemeral keypair:
+    x25519_pubkey A;
+    x25519_seckey a;
+    x25519_pubkey final_pubkey;
+    x25519_seckey final_seckey;
+    nlohmann::json final_route;
+    EncryptType etype = enc_type.value_or(EncryptType::xchacha20);
+    
+    {
+        crypto_box_keypair(A.data(), a.data());
+        ChannelEncryption e{a, A, false};
+
+        // The data we send to the destination differs depending on whether the destination is a server
+        // or a service node
+        if (auto server = dynamic_cast<const server_destination*>(&destination)) {
+            final_route = {
+                {"host", server->host},
+                {"target", server->target},
+                {"method", "POST"},
+                {"protocol", server->protocol},
+                {"port", server->port.value_or(server->protocol == "https" ? 443 : 80)},
+                {"ephemeral_key", A.hex()}, // The x25519 ephemeral_key here is the key for the *next* hop to use
+                {"enc_type", to_string(etype)},
+            };
+
+            blob = e.encrypt(etype, to_uchar(payload).data(), server->x25519_public_key);
+        } else if (auto snode = dynamic_cast<const snode_destination*>(&destination)) {
+            nlohmann::json control{
+                {"headers", ""}
+            };
+            final_route = {
+                {"destination", snode->ed25519_public_key.hex()}, // Next hop's ed25519 key
+                {"ephemeral_key", A.hex()}, // The x25519 ephemeral_key here is the key for the *next* hop to use
+                {"enc_type", to_string(etype)},
+            };
+
+            auto data = encode_size(payload.size());
+            data += to_uchar(payload);
+            data += to_uchar(control.dump());
+            blob = e.encrypt(etype, data, snode->x25519_public_key);
+        } else {
+            throw std::runtime_error{"Invalid destination type"};
+        }
+
+        // Save these because we need them again to decrypt the final response:
+        final_seckey = a;
+        final_pubkey = A;
+    }
+    
+    for (auto it = keys.rbegin(); it != keys.rend(); ++it) {
+        // Routing data for this hop:
+        nlohmann::json routing;
+
+        if (it == keys.rbegin()) {
+            routing = final_route;
+        }
+        else {
+            routing = {
+                {"destination", std::prev(it)->first.hex()}, // Next hop's ed25519 key
+                {"ephemeral_key", A.hex()}, // The x25519 ephemeral_key here is the key for the *next* hop to use
+                {"enc_type", to_string(etype)},
+            };
+        }
+
+        auto data = encode_size(blob.size());
+        data += blob;
+        data += to_uchar(routing.dump());
+
+        // Generate eph key for *this* request and encrypt it:
+        crypto_box_keypair(A.data(), a.data());
+        ChannelEncryption e{a, A, false};
+        blob = e.encrypt(etype, data, it->second);
+    }
+
+    // The data going to the first hop needs to be wrapped in one more layer to tell the first hop
+    // how to decrypt the initial payload:
+    auto result = encode_size(blob.size());
+    result += blob;
+    result += to_uchar(nlohmann::json{
+        {"ephemeral_key", A.hex()},
+        {"enc_type", to_string(etype)}
+    }.dump());
+
+    return {result, {final_pubkey, final_seckey}};
+}
+
+ustring decrypt(
+    ustring ciphertext,
+    const x25519_pubkey destinationPubkey,
+    const x25519_pubkey finalPubkey,
+    const x25519_seckey finalSeckey,
+    std::optional<EncryptType> enc_type) {
+    ChannelEncryption d{finalSeckey, finalPubkey, false};
+    EncryptType etype = enc_type.value_or(EncryptType::xchacha20);
+
+    return d.decrypt(etype, ciphertext, destinationPubkey);
+}
+
 }  // namespace session::onionreq
 
 extern "C" {
 
 using session::ustring;
 
-LIBSESSION_C_API unsigned char* onion_request_encrypt(
-        ENCRYPT_TYPE type,
-        const unsigned char* message,
-        size_t mlen,
-        const unsigned char* pubkey,
-        size_t* ciphertext_size) {
+LIBSESSION_C_API bool onion_request_prepare_snode_destination(
+    const char* payload_in,
+    const char* destination_ed25519_pubkey,
+    const char* destination_x25519_pubkey,
+    const char** ed25519_pubkeys,
+    const char** x25519_pubkeys,
+    size_t pubkeys_len,
+    unsigned char** payload_out,
+    size_t* payload_out_len,
+    unsigned char* final_x25519_pubkey_out,
+    unsigned char* final_x25519_seckey_out
+) {
+    assert(payload_in && destination_ed25519_pubkey && destination_x25519_pubkey && ed25519_pubkeys && x25519_pubkeys);
 
-    ustring ciphertext;
+    session::onionreq::snode_destination destination = {
+        session::onionreq::ed25519_pubkey::from_hex({destination_ed25519_pubkey, 64}),
+        session::onionreq::x25519_pubkey::from_hex({destination_x25519_pubkey, 64})
+    };
+    std::vector<std::pair<session::onionreq::ed25519_pubkey, session::onionreq::x25519_pubkey>> keys;
+    for (size_t i = 0; i < pubkeys_len; i++)
+        keys.emplace_back(
+            session::onionreq::ed25519_pubkey::from_hex({ed25519_pubkeys[i], 64}),
+            session::onionreq::x25519_pubkey::from_hex({x25519_pubkeys[i], 64})
+        );
+    
     try {
-        session::onionreq::x25519_pubkey targetPubkey = session::onionreq::x25519_pubkey::from_bytes({pubkey, 32});
-        std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 32>> keys = session::xed25519::random();
-        auto& [x_priv, x_pub] = keys;
-
-        session::onionreq::ChannelEncryption c{
-            session::onionreq::x25519_seckey::from_bytes(x_priv.data()),
-            session::onionreq::x25519_pubkey::from_bytes(x_pub.data()),
-            true
-        };
+        auto result = session::onionreq::prepare(
+            payload_in,
+            destination,
+            keys,
+            session::onionreq::EncryptType::aes_gcm// xchacha20
+        );
         
-        switch (type) {
-            case ENCRYPT_TYPE::ENCRYPT_TYPE_X_CHA_CHA_20: ciphertext = c.encrypt_xchacha20({message, mlen}, targetPubkey);
-            case ENCRYPT_TYPE::ENCRYPT_TYPE_AES_GCM: ciphertext = c.encrypt_aesgcm({message, mlen}, targetPubkey);
-        }
-    } catch (...) {
-        return nullptr;
+        auto [payload, final_key_pair] = result;
+        *payload_out = static_cast<unsigned char*>(malloc(payload.size()));
+        *payload_out_len = payload.size();
+        std::memcpy(*payload_out, payload.data(), payload.size());
+        std::memcpy(final_x25519_pubkey_out, final_key_pair.first.data(), final_key_pair.first.size());
+        std::memcpy(final_x25519_seckey_out, final_key_pair.second.data(), final_key_pair.second.size());
+        return true;
     }
+    catch (...) {
+        return false;
+    }
+}
 
-    auto* data = static_cast<unsigned char*>(std::malloc(ciphertext.size()));
-    std::memcpy(data, ciphertext.data(), ciphertext.size());
-    *ciphertext_size = ciphertext.size();
-    return data;
+LIBSESSION_C_API bool onion_request_prepare_server_destination(
+    const char* payload_in,
+    const char* destination_host,
+    const char* destination_target,
+    const char* destination_protocol,
+    uint16_t destination_port,
+    const char* destination_x25519_pubkey,
+    const char** ed25519_pubkeys,
+    const char** x25519_pubkeys,
+    size_t pubkeys_len,
+    unsigned char** payload_out,
+    size_t* payload_out_len,
+    unsigned char* final_x25519_pubkey_out,
+    unsigned char* final_x25519_seckey_out
+) {
+    assert(payload_in && destination_x25519_pubkey && ed25519_pubkeys && x25519_pubkeys);
+
+    session::onionreq::server_destination destination = {
+        destination_host,
+        destination_target,
+        destination_protocol,
+        destination_port,
+        session::onionreq::x25519_pubkey::from_hex({destination_x25519_pubkey, 64})
+    };
+    std::vector<std::pair<session::onionreq::ed25519_pubkey, session::onionreq::x25519_pubkey>> keys;
+    for (size_t i = 0; i < pubkeys_len; i++)
+        keys.emplace_back(
+            session::onionreq::ed25519_pubkey::from_hex({ed25519_pubkeys[i], 64}),
+            session::onionreq::x25519_pubkey::from_hex({x25519_pubkeys[i], 64})
+        );
+    
+    try {
+        auto result = session::onionreq::prepare(
+            payload_in,
+            destination,
+            keys,
+            session::onionreq::EncryptType::aes_gcm// xchacha20
+        );
+        
+        auto [payload, final_key_pair] = result;
+        *payload_out = static_cast<unsigned char*>(malloc(payload.size()));
+        *payload_out_len = payload.size();
+        std::memcpy(*payload_out, payload.data(), payload.size());
+        std::memcpy(final_x25519_pubkey_out, final_key_pair.first.data(), final_key_pair.first.size());
+        std::memcpy(final_x25519_seckey_out, final_key_pair.second.data(), final_key_pair.second.size());
+        return true;
+    }
+    catch (...) { 
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool onion_request_decrypt(
+    const unsigned char* ciphertext_in,
+    const char* destination_x25519_pubkey,
+    unsigned char* final_x25519_pubkey,
+    unsigned char* final_x25519_seckey,
+    unsigned char** plaintext_out,
+    size_t* plaintext_out_len
+) {
+    assert(ciphertext_in && destination_x25519_pubkey && final_x25519_pubkey && final_x25519_seckey);
+
+    try {
+        auto result = session::onionreq::decrypt(
+            ciphertext_in,
+            session::onionreq::x25519_pubkey::from_hex({destination_x25519_pubkey, 64}),
+            session::onionreq::x25519_pubkey::from_bytes({final_x25519_pubkey, 32}),
+            session::onionreq::x25519_seckey::from_bytes({final_x25519_seckey, 32}),
+            session::onionreq::EncryptType::xchacha20
+        );
+    }
+    catch (...) { 
+        return false;
+    }
 }
 
 }

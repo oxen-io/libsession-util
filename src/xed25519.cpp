@@ -80,36 +80,6 @@ namespace {
 
 }  // namespace
 
-std::pair<sodium_cleared<std::array<unsigned char, 32>>, std::array<unsigned char, 32>> random() {
-    // TODO: Is there a way we can generate this directly rather than generating a random ed25519 which then gets converted?
-    // bytes<32> privateKey;
-    // randombytes_buf(privateKey.data(), privateKey.size());
-    // privateKey[0] &= 248;
-    // privateKey[31] &= 127;
-    // privateKey[31] |= 64;
-
-    // bytes<32> publicKey;
-    // uint8_t basepoint[32] = { 9 };
-    // int64_t bp[10], x[10], z[11], zmone[10];
-    // uint8_t e[32];
-    // int i;
-    // fexpand(bp, 9);
-    // curve25519_donna(publicKey.mutableBytes, privateKey.mutableBytes, basepoint);
-    std::pair<sodium_cleared<std::array<unsigned char, 32>>, std::array<unsigned char, 32>> ret;
-    auto& [x_priv, x_pub] = ret;
-    bytes<32> seed;
-    randombytes_buf(seed.data(), 16);
-
-    std::array<unsigned char, 32> pk;
-    sodium_cleared<std::array<unsigned char, 64>> sk;
-    crypto_sign_ed25519_seed_keypair(pk.data(), sk.data(), seed.data());
-    crypto_sign_ed25519_sk_to_curve25519(x_priv.data(), sk.data());
-    if (0 != crypto_sign_ed25519_pk_to_curve25519(x_pub.data(), sk.data() + 32))
-        throw std::runtime_error{"Failed to convert generate random key: invalid secret key generated"};
-
-    return ret;
-}
-
 bytes<64> sign(ustring_view curve25519_privkey, ustring_view msg) {
 
     assert(curve25519_privkey.size() == 32);

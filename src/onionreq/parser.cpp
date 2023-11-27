@@ -35,12 +35,13 @@ OnionReqParser::OnionReqParser(
         remote_pk = parse_x25519_pubkey(itr->get<std::string>());
     else
         throw std::invalid_argument{"metadata does not have 'ephemeral_key' entry"};
-
-    payload_ = enc.decrypt(enc_type, ciphertext, remote_pk);
+    
+    auto plaintext = enc.decrypt(enc_type, reinterpret_cast<const unsigned char*>(ciphertext.data()), remote_pk);
+    payload_ = {to_unsigned(plaintext.data()), plaintext.size()};
 }
 
 ustring OnionReqParser::encrypt_reply(ustring_view reply) const {
-    return enc.encrypt(enc_type, reply, remote_pk);
+    return enc.encrypt(enc_type, reinterpret_cast<const unsigned char*>(reply.data()), remote_pk);
 }
 
 }  // namespace session::onionreq
