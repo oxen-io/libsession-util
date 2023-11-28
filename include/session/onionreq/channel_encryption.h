@@ -36,8 +36,9 @@ typedef enum ENCRYPT_TYPE {
 ///
 /// Declaration:
 /// ```cpp
-/// UNSIGNED CHAR* onion_request_encrypt(
-///     [in]    const char*             payload_in,
+/// UNSIGNED CHAR* onion_request_prepare_snode_destination(
+///     [in]    const unsigned char*    payload_in,
+///     [in]    size_t                  payload_in_len,
 ///     [in]    const char*             destination_ed25519_pubkey,
 ///     [in]    const char*             destination_x25519_pubkey,
 ///     [in]    const char**            ed25519_pubkeys,
@@ -52,6 +53,7 @@ typedef enum ENCRYPT_TYPE {
 ///
 /// Inputs:
 /// - `payload_in` -- [in] The payload to be sent in the onion request
+/// - `payload_in_len` -- [in] The length of the payload_in
 /// - `destination_ed25519_pubkey` -- [in] The ed25519 public key for the snode destination
 /// - `destination_x25519_pubkey` -- [in] The x25519 public key for the snode destination
 /// - `ed25519_pubkeys` -- [in] array of ed25519 public keys for the onion request path
@@ -68,7 +70,8 @@ typedef enum ENCRYPT_TYPE {
 /// - `bool` -- True if the onion request was successfully constructed, false if it failed. 
 ///   If (and only if) true is returned then `payload_out` must be freed when done with it.
 LIBSESSION_EXPORT bool onion_request_prepare_snode_destination(
-    const char* payload_in,
+    const unsigned char* payload_in,
+    size_t payload_in_len,
     const char* destination_ed25519_pubkey,
     const char* destination_x25519_pubkey,
     const char** ed25519_pubkeys,
@@ -88,8 +91,9 @@ LIBSESSION_EXPORT bool onion_request_prepare_snode_destination(
 ///
 /// Declaration:
 /// ```cpp
-/// UNSIGNED CHAR* onion_request_encrypt(
-///     [in]    const char*             payload_in,
+/// UNSIGNED CHAR* onion_request_prepare_server_destination(
+///     [in]    const unsigned char*    payload_in,
+///     [in]    size_t                  payload_in_len,
 ///     [in]    const char*             destination_host,
 ///     [in]    const char*             destination_target,
 ///     [in]    const char*             destination_protocol,
@@ -107,6 +111,7 @@ LIBSESSION_EXPORT bool onion_request_prepare_snode_destination(
 ///
 /// Inputs:
 /// - `payload_in` -- [in] The payload to be sent in the onion request
+/// - `payload_in_len` -- [in] The length of the payload_in
 /// - `destination_host` -- [in] The host for the server destination
 /// - `destination_target` -- [in] The target (endpoint) for the server destination
 /// - `destination_protocol` -- [in] The protocol to use for the 
@@ -126,7 +131,8 @@ LIBSESSION_EXPORT bool onion_request_prepare_snode_destination(
 /// - `bool` -- True if the onion request was successfully constructed, false if it failed. 
 ///   If (and only if) true is returned then `payload_out` must be freed when done with it.
 LIBSESSION_EXPORT bool onion_request_prepare_server_destination(
-    const char* payload_in,
+    const unsigned char* payload_in,
+    size_t payload_in_len,
     const char* destination_host,
     const char* destination_target,
     const char* destination_protocol,
@@ -144,14 +150,15 @@ LIBSESSION_EXPORT bool onion_request_prepare_server_destination(
 /// API: onion_request_decrypt
 ///
 /// Wrapper around session::onionreq::decrypt.  ciphertext_in is binary.
-/// destination_x25519_pubkey is a hex string and must be exactly 64 characters. final_x25519_pubkey
-/// and final_x25519_seckey should be in bytes and be exactly 32 bytes.
-/// Returns a flag indicating success or failure.
+/// destination_x25519_pubkey, final_x25519_pubkey and final_x25519_seckey
+/// should be in bytes and be exactly 32 bytes. Returns a flag indicating
+/// success or failure.
 ///
 /// Declaration:
 /// ```cpp
-/// UNSIGNED CHAR* onion_request_encrypt(
-///     [in]    const char*             payload_in,
+/// bool onion_request_decrypt(
+///     [in]    const unsigned char*    ciphertext,
+///     [in]    size_t                  ciphertext_len,
 ///     [in]    const char*             destination_x25519_pubkey,
 ///     [in]    const char*             final_x25519_pubkey,
 ///     [in]    const char*             final_x25519_seckey,
@@ -161,19 +168,21 @@ LIBSESSION_EXPORT bool onion_request_prepare_server_destination(
 /// ```
 ///
 /// Inputs:
-/// - `ciphertext_in` -- [in] The payload to be sent in the onion request
+/// - `ciphertext` -- [in] The onion request response data
+/// - `ciphertext_len` -- [in] The length of ciphertext
 /// - `destination_x25519_pubkey` -- [in] The x25519 public key for the server destination
 /// - `final_x25519_pubkey` -- [in] The final x25519 public key used for the onion request
 /// - `final_x25519_seckey` -- [in] The final x25519 secret key used for the onion request
-/// - `plaintext_out` -- [out] decrypted content contained within ciphertext_in, will be nullptr on error
+/// - `plaintext_out` -- [out] decrypted content contained within ciphertext, will be nullptr on error
 /// - `plaintext_out_len` -- [out] length of plaintext_out if not null
 ///
 /// Outputs:
 /// - `bool` -- True if the onion request was successfully constructed, false if it failed. 
 ///   If (and only if) true is returned then `plaintext_out` must be freed when done with it.
 LIBSESSION_EXPORT bool onion_request_decrypt(
-    const unsigned char* ciphertext_in,
-    const char* destination_x25519_pubkey,
+    const unsigned char* ciphertext,
+    size_t ciphertext_len,
+    unsigned char* destination_x25519_pubkey,
     unsigned char* final_x25519_pubkey,
     unsigned char* final_x25519_seckey,
     unsigned char** plaintext_out,

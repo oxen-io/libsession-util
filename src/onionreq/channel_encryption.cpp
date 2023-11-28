@@ -1,6 +1,7 @@
 #include "session/onionreq/channel_encryption.hpp"
 
 #include <nettle/gcm.h>
+#include <oxenc/endian.h>
 #include <oxenc/hex.h>
 #include <sodium/crypto_box.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
@@ -78,16 +79,10 @@ namespace {
     }
 
     ustring encode_size(uint32_t s) {
-        ustring str{reinterpret_cast<const unsigned char*>(&s), 4};
-        return str;
-    }
-
-    std::basic_string_view<unsigned char> to_uchar(std::string_view sv) {
-        return {reinterpret_cast<const unsigned char*>(sv.data()), sv.size()};
-    }
-
-    std::string from_ustring(ustring us) {
-        return {reinterpret_cast<const char*>(us.data()), us.size()};
+        ustring result;
+        result.resize(4);
+        oxenc::write_host_as_little(s, result.data());
+        return result;
     }
 
 }  // namespace
@@ -248,7 +243,7 @@ ustring ChannelEncryption::decrypt_xchacha20(
 }
 
 std::pair<ustring, x25519_keypair> prepare(
-    std::string_view payload,
+    ustring payload,
     destination& destination,
     std::vector<std::pair<ed25519_pubkey, x25519_pubkey>> keys,
     std::optional<EncryptType> enc_type) {
@@ -317,7 +312,7 @@ std::pair<ustring, x25519_keypair> prepare(
                 {"enc_type", to_string(etype)},
             };
 
-            blob = e.encrypt(etype, to_uchar(payload).data(), server->x25519_public_key);
+            blob = e.encrypt(etype, payload.data(), server->x25519_public_key);
         } else if (auto snode = dynamic_cast<const snode_destination*>(&destination)) {
             nlohmann::json control{
                 {"headers", ""}
@@ -329,8 +324,8 @@ std::pair<ustring, x25519_keypair> prepare(
             };
 
             auto data = encode_size(payload.size());
-            data += to_uchar(payload);
-            data += to_uchar(control.dump());
+            data += payload;
+            data += to_unsigned_sv(control.dump());
             blob = e.encrypt(etype, data, snode->x25519_public_key);
         } else {
             throw std::runtime_error{"Invalid destination type"};
@@ -358,7 +353,7 @@ std::pair<ustring, x25519_keypair> prepare(
 
         auto data = encode_size(blob.size());
         data += blob;
-        data += to_uchar(routing.dump());
+        data += to_unsigned_sv(routing.dump());
 
         // Generate eph key for *this* request and encrypt it:
         crypto_box_keypair(A.data(), a.data());
@@ -370,7 +365,7 @@ std::pair<ustring, x25519_keypair> prepare(
     // how to decrypt the initial payload:
     auto result = encode_size(blob.size());
     result += blob;
-    result += to_uchar(nlohmann::json{
+    result += to_unsigned_sv(nlohmann::json{
         {"ephemeral_key", A.hex()},
         {"enc_type", to_string(etype)}
     }.dump());
@@ -397,7 +392,8 @@ extern "C" {
 using session::ustring;
 
 LIBSESSION_C_API bool onion_request_prepare_snode_destination(
-    const char* payload_in,
+    const unsigned char* payload_in,
+    size_t payload_in_len,
     const char* destination_ed25519_pubkey,
     const char* destination_x25519_pubkey,
     const char** ed25519_pubkeys,
@@ -408,7 +404,7 @@ LIBSESSION_C_API bool onion_request_prepare_snode_destination(
     unsigned char* final_x25519_pubkey_out,
     unsigned char* final_x25519_seckey_out
 ) {
-    assert(payload_in && destination_ed25519_pubkey && destination_x25519_pubkey && ed25519_pubkeys && x25519_pubkeys);
+    assert(payload_in && destination_ed25519_pubkey && destination_x25519_pubkey && ed25519_pubkeys && x25519_pubkeys && payload_in_len > 0 && pubkeys_len > 0);
 
     session::onionreq::snode_destination destination = {
         session::onionreq::ed25519_pubkey::from_hex({destination_ed25519_pubkey, 64}),
@@ -423,10 +419,10 @@ LIBSESSION_C_API bool onion_request_prepare_snode_destination(
     
     try {
         auto result = session::onionreq::prepare(
-            payload_in,
+            ustring{payload_in, payload_in_len},
             destination,
             keys,
-            session::onionreq::EncryptType::aes_gcm// xchacha20
+            session::onionreq::EncryptType::xchacha20
         );
         
         auto [payload, final_key_pair] = result;
@@ -443,7 +439,8 @@ LIBSESSION_C_API bool onion_request_prepare_snode_destination(
 }
 
 LIBSESSION_C_API bool onion_request_prepare_server_destination(
-    const char* payload_in,
+    const unsigned char* payload_in,
+    size_t payload_in_len,
     const char* destination_host,
     const char* destination_target,
     const char* destination_protocol,
@@ -457,7 +454,7 @@ LIBSESSION_C_API bool onion_request_prepare_server_destination(
     unsigned char* final_x25519_pubkey_out,
     unsigned char* final_x25519_seckey_out
 ) {
-    assert(payload_in && destination_x25519_pubkey && ed25519_pubkeys && x25519_pubkeys);
+    assert(payload_in && destination_x25519_pubkey && ed25519_pubkeys && x25519_pubkeys && pubkeys_len > 0);
 
     session::onionreq::server_destination destination = {
         destination_host,
@@ -475,10 +472,10 @@ LIBSESSION_C_API bool onion_request_prepare_server_destination(
     
     try {
         auto result = session::onionreq::prepare(
-            payload_in,
+            ustring{payload_in, payload_in_len},
             destination,
             keys,
-            session::onionreq::EncryptType::aes_gcm// xchacha20
+            session::onionreq::EncryptType::xchacha20
         );
         
         auto [payload, final_key_pair] = result;
@@ -487,6 +484,7 @@ LIBSESSION_C_API bool onion_request_prepare_server_destination(
         std::memcpy(*payload_out, payload.data(), payload.size());
         std::memcpy(final_x25519_pubkey_out, final_key_pair.first.data(), final_key_pair.first.size());
         std::memcpy(final_x25519_seckey_out, final_key_pair.second.data(), final_key_pair.second.size());
+
         return true;
     }
     catch (...) { 
@@ -495,23 +493,28 @@ LIBSESSION_C_API bool onion_request_prepare_server_destination(
 }
 
 LIBSESSION_C_API bool onion_request_decrypt(
-    const unsigned char* ciphertext_in,
-    const char* destination_x25519_pubkey,
+    const unsigned char* ciphertext,
+    size_t ciphertext_len,
+    unsigned char* destination_x25519_pubkey,
     unsigned char* final_x25519_pubkey,
     unsigned char* final_x25519_seckey,
     unsigned char** plaintext_out,
     size_t* plaintext_out_len
 ) {
-    assert(ciphertext_in && destination_x25519_pubkey && final_x25519_pubkey && final_x25519_seckey);
+    assert(ciphertext && destination_x25519_pubkey && final_x25519_pubkey && final_x25519_seckey && ciphertext_len > 0);
 
     try {
         auto result = session::onionreq::decrypt(
-            ciphertext_in,
-            session::onionreq::x25519_pubkey::from_hex({destination_x25519_pubkey, 64}),
+            ustring{ciphertext, ciphertext_len},
+            session::onionreq::x25519_pubkey::from_bytes({destination_x25519_pubkey, 32}),
             session::onionreq::x25519_pubkey::from_bytes({final_x25519_pubkey, 32}),
             session::onionreq::x25519_seckey::from_bytes({final_x25519_seckey, 32}),
             session::onionreq::EncryptType::xchacha20
         );
+        *plaintext_out = static_cast<unsigned char*>(malloc(result.size()));
+        *plaintext_out_len = result.size();
+        std::memcpy(*plaintext_out, result.data(), result.size());
+        return true;
     }
     catch (...) { 
         return false;

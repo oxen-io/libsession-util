@@ -90,7 +90,7 @@ class ChannelEncryption {
 };
 
 std::pair<ustring, x25519_keypair> prepare(
-    std::string_view payload,
+    ustring payload,
     destination& destination,
     std::vector<std::pair<ed25519_pubkey, x25519_pubkey>> keys,
     std::optional<EncryptType> enc_type);
