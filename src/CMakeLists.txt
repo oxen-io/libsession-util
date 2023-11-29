@@ -93,9 +93,11 @@ target_link_libraries(config
 
 if(ENABLE_ONIONREQ)
     add_libsession_util_library(onionreq
-        onionreq/channel_encryption.cpp
+        onionreq/builder.cpp
+        onionreq/hop_encryption.cpp
         onionreq/key_types.cpp
         onionreq/parser.cpp
+        onionreq/response_parser.cpp
     )
 
     target_link_libraries(onionreq
