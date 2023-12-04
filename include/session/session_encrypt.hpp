@@ -80,6 +80,27 @@ ustring encrypt_for_recipient(
 ustring encrypt_for_recipient_deterministic(
         ustring_view ed25519_privkey, ustring_view recipient_pubkey, ustring_view message);
 
+/// API: crypto/session_encrypt_for_blinded_recipient
+///
+/// This function attempts to encrypt a message using the SessionBlindingProtocol.
+///
+/// Inputs:
+/// - `ed25519_privkey` -- the libsodium-style secret key of the sender, 64 bytes.  Can also be
+///   passed as a 32-byte seed, but the 64-byte value is preferrable (to avoid needing to
+///   recompute the public key from the seed).
+/// - `recipient_pubkey` -- the recipient blinded id, either 0x15-prefixed or 0x25-prefixed
+///   (33 bytes).
+/// - `message` -- the message to encrypt for the recipient.
+///
+/// Outputs:
+/// - The encrypted ciphertext to send.
+/// - Throw if encryption fails or (which typically means invalid keys provided)
+ustring session_encrypt_for_blinded_recipient(
+        ustring_view ed25519_privkey,
+        ustring_view open_group_pubkey,
+        ustring_view recipient_blinded_id,
+        ustring_view message);
+
 /// API: crypto/sign_for_recipient
 ///
 /// Performs the signing steps for session protocol encryption.  This is responsible for producing
@@ -108,8 +129,8 @@ ustring sign_for_recipient(
 
 /// API: crypto/decrypt_incoming
 ///
-/// Inverse of `encrypt_for_recipient`: this decrypts the message, extracts the sender Ed25519
-/// pubkey, and verifies that the sender Ed25519 signature on the message.
+/// Inverse of `encrypt_for_recipient`: this decrypts the message, verifies that the sender Ed25519
+/// signature on the message and converts the extracted sender's Ed25519 pubkey into a session ID.
 ///
 /// Inputs:
 /// - `ed25519_privkey` -- the private key of the recipient.  Can be a 32-byte seed, or a 64-byte
@@ -118,11 +139,26 @@ ustring sign_for_recipient(
 /// - `ciphertext` -- the encrypted data
 ///
 /// Outputs:
-/// - pair consisting of the decrypted message content, and the sender Ed25519 pubkey, *if* the
-///   message decrypted and validated successfully.  Throws on error.
+/// - `std::pair<std::string, ustring>` -- the session ID (in hex) and the plaintext binary
+///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<std::string, ustring> decrypt_incoming(ustring_view ed25519_privkey, ustring_view ciphertext);
+
+/// API: crypto/decrypt_incoming
 ///
-///   To get the sender's session ID, pass the returned pubkey through
-///   crypto_sign_ed25519_pk_to_curve25519.
-std::pair<ustring, ustring> decrypt_incoming(ustring_view ed25519_privkey, ustring_view ciphertext);
+/// Inverse of `encrypt_for_recipient`: this decrypts the message, verifies that the sender Ed25519
+/// signature on the message and converts the extracted sender's Ed25519 pubkey into a session ID.
+/// This function is used for decrypting legacy group messages which only have an x25519 key pair,
+/// the Ed25519 version of this function should be preferred where possible.
+///
+/// Inputs:
+/// - `x25519_pubkey` -- the 32 byte x25519 public key of the recipient.
+/// - `x25519_seckey` -- the 32 byte x25519 private key of the recipient.
+/// - `ciphertext` -- the encrypted data
+///
+/// Outputs:
+/// - `std::pair<std::string, ustring>` -- the session ID (in hex) and the plaintext binary
+///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<std::string, ustring> decrypt_incoming(
+        ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext);
 
 }  // namespace session

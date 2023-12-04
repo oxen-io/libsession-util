@@ -60,14 +60,38 @@ namespace session {
 /// be 05-prefixed (33 bytes) or unprefixed (32 bytes).
 std::array<unsigned char, 32> blind25_factor(ustring_view session_id, ustring_view server_pk);
 
-/// Computes the 25-blinded id from a session id and server pubkey.  Values accepted and
-/// returned are hex-encoded.
-std::string blind25_id(std::string_view session_id, std::string_view server_pk);
-
 /// Same as above, but takes the session id and pubkey as byte values instead of hex, and returns a
 /// 33-byte value (instead of a 66-digit hex value).  Unlike the string version, session_id here may
 /// be passed unprefixed (i.e. 32 bytes instead of 33 with the 05 prefix).
 ustring blind25_id(ustring_view session_id, ustring_view server_pk);
+
+/// Computes a 15-blinded key pair.
+///
+/// Takes the Ed25519 secret key (64 bytes, or 32-byte seed) and the server pubkey (in hex (64
+/// digits) or bytes (32 bytes)).  Returns the 64-byte signature.
+///
+/// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
+/// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
+std::pair<ustring, ustring> blind15_key_pair(ustring_view ed25519_sk, ustring_view server_pk);
+
+/// Computes a 25-blinded key pair.
+///
+/// Takes the Ed25519 secret key (64 bytes, or 32-byte seed) and the server pubkey (in hex (64
+/// digits) or bytes (32 bytes)).  Returns the 64-byte signature.
+///
+/// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
+/// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
+std::pair<ustring, ustring> blind25_key_pair(ustring_view ed25519_sk, ustring_view server_pk);
+
+/// Computes a verifiable 15-blinded signature that validates with the blinded pubkey that would
+/// be returned from blind15_key_pair().
+///
+/// Takes the Ed25519 secret key (64 bytes, or 32-byte seed) and the server pubkey (in hex (64
+/// digits) or bytes (32 bytes)).  Returns the 64-byte signature.
+///
+/// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
+/// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
+ustring blind15_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ustring_view message);
 
 /// Computes a verifiable 25-blinded signature that validates with the blinded pubkey that would
 /// be returned from blind25_id().
@@ -78,5 +102,7 @@ ustring blind25_id(ustring_view session_id, ustring_view server_pk);
 /// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
 /// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
 ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk, ustring_view message);
+bool session_id_matches_blinded_id(std::string_view session_id, std::string_view blinded_id,
+    std::string_view server_pk);
 
 }  // namespace session

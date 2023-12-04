@@ -23,7 +23,7 @@ extern "C" {
 /// bool onion_request_decrypt(
 ///     [in]    const unsigned char*    ciphertext,
 ///     [in]    size_t                  ciphertext_len,
-///     [in]    ENCRYPT_TYPE            enc_type,
+///     [in]    ENCRYPT_TYPE            enc_type_,
 ///     [in]    const char*             destination_x25519_pubkey,
 ///     [in]    const char*             final_x25519_pubkey,
 ///     [in]    const char*             final_x25519_seckey,
@@ -35,7 +35,7 @@ extern "C" {
 /// Inputs:
 /// - `ciphertext` -- [in] The onion request response data
 /// - `ciphertext_len` -- [in] The length of ciphertext
-/// - `enc_type` -- [in] The encryption type which was used for the onion request
+/// - `enc_type_` -- [in] The encryption type which was used for the onion request
 /// - `destination_x25519_pubkey` -- [in] The x25519 public key for the server destination
 /// - `final_x25519_pubkey` -- [in] The final x25519 public key used for the onion request
 /// - `final_x25519_seckey` -- [in] The final x25519 secret key used for the onion request

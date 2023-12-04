@@ -47,9 +47,12 @@ endif()
 
 add_libsession_util_library(crypto
     blinding.cpp
+    curve25519.cpp
+    ed25519.cpp
     multi_encrypt.cpp
     session_encrypt.cpp
     util.cpp
+    xchacha.cpp
     xed25519.cpp
 )
 

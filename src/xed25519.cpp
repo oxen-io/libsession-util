@@ -156,39 +156,39 @@ using session::xed25519::ustring_view;
 
 extern "C" {
 
-LIBSESSION_EXPORT int session_xed25519_sign(
+LIBSESSION_C_API bool session_xed25519_sign(
         unsigned char* signature,
         const unsigned char* curve25519_privkey,
         const unsigned char* msg,
-        const unsigned int msg_len) {
+        size_t msg_len) {
     assert(signature != NULL);
     try {
         auto sig = session::xed25519::sign({curve25519_privkey, 32}, {msg, msg_len});
         std::memcpy(signature, sig.data(), sig.size());
-        return 0;
+        return true;
     } catch (...) {
+        return false;
     }
-    return 1;
 }
 
-LIBSESSION_EXPORT int session_xed25519_verify(
+LIBSESSION_C_API bool session_xed25519_verify(
         const unsigned char* signature,
         const unsigned char* pubkey,
         const unsigned char* msg,
-        const unsigned int msg_len) {
+        size_t msg_len) {
     return session::xed25519::verify({signature, 64}, {pubkey, 32}, {msg, msg_len}) ? 0 : 1;
 }
 
-LIBSESSION_EXPORT int session_xed25519_pubkey(
+LIBSESSION_C_API bool session_xed25519_pubkey(
         unsigned char* ed25519_pubkey, const unsigned char* curve25519_pubkey) {
     assert(ed25519_pubkey != NULL);
     try {
         auto edpk = session::xed25519::pubkey({curve25519_pubkey, 32});
         std::memcpy(ed25519_pubkey, edpk.data(), edpk.size());
-        return 0;
+        return true;
     } catch (...) {
+        return false;
     }
-    return 1;
 }
 
 }  // extern "C"
