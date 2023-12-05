@@ -16,17 +16,17 @@ ustring decrypt(
     ustring_view seckey,
     ustring_view nonce
 ) {
-    if (ciphertext.size() < 16)
+    if (ciphertext.size() < crypto_aead_xchacha20poly1305_ietf_ABYTES)
         throw std::invalid_argument{"Invalid ciphertext: expected to be greater than 16 bytes"};
 
     ustring buf;
     unsigned long long buf_len = 0;
-    buf.resize(ciphertext.size() - 16);
+    buf.resize(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
 
     if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
                      buf.data(), &buf_len, nullptr, ciphertext.data(), ciphertext.size(),
                      nullptr, 0, nonce.data(), seckey.data()))
-        throw std::runtime_error{"Failed to encrypt; perhaps the secret key is invalid?"};
+        throw std::runtime_error{"Failed to decrypt; perhaps the secret key is invalid?"};
 
     return {buf.data(), buf_len};
 }

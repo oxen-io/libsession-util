@@ -26,6 +26,7 @@ template <size_t N>
 using cleared_array = sodium_cleared<std::array<unsigned char, N>>;
 
 using uc32 = std::array<unsigned char, 32>;
+using uc33 = std::array<unsigned char, 33>;
 using uc64 = std::array<unsigned char, 64>;
 using cleared_uc32 = cleared_array<32>;
 using cleared_uc64 = cleared_array<64>;
@@ -175,8 +176,8 @@ ustring encrypt_for_blinded_recipient(
     }
 
     // Remove the blinding prefix
-    recipient_blinded_id = {recipient_blinded_id.data() + 1, 32};
-    auto [blinded_pk, blinded_sk] = blinded_key_pair;
+    ustring kB = {recipient_blinded_id.data() + 1, 32};
+    ustring kA = blinded_key_pair.first;
 
     // Calculate the shared encryption key, sending from A to B:
     //
@@ -190,16 +191,18 @@ ustring encrypt_for_blinded_recipient(
     // convert to an *x* secret key, which seems wrong--but isn't because converted keys use the
     // same secret scalar secret (and so this is just the most convenient way to get 'a' out of
     // a sodium Ed25519 secret key)
-    cleared_uc32 a, ka;
-    uc32 blind_hash;
+    cleared_uc32 a, sharedSecret;
+    uc32 enc_key;
     crypto_generichash_blake2b_state st;
     crypto_sign_ed25519_sk_to_curve25519(a.data(), ed25519_privkey.data());
-    crypto_scalarmult_ed25519_noclamp(ka.data(), a.data(), recipient_blinded_id.data());
+    if (0 != crypto_scalarmult_ed25519_noclamp(sharedSecret.data(), a.data(), kB.data()))
+        throw std::runtime_error{"Shared secret generation failed"};
+
     crypto_generichash_blake2b_init(&st, nullptr, 0, 32);
-    crypto_generichash_blake2b_update(&st, ka.data(), ka.size());
-    crypto_generichash_blake2b_update(&st, blinded_pk.data(), blinded_pk.size());
-    crypto_generichash_blake2b_update(&st, recipient_blinded_id.data(), recipient_blinded_id.size());
-    crypto_generichash_blake2b_final(&st, blind_hash.data(), blind_hash.size());
+    crypto_generichash_blake2b_update(&st, sharedSecret.data(), sharedSecret.size());
+    crypto_generichash_blake2b_update(&st, kA.data(), kA.size());
+    crypto_generichash_blake2b_update(&st, kB.data(), kB.size());
+    crypto_generichash_blake2b_final(&st, enc_key.data(), enc_key.size());
 
     // Inner data: msg || A (i.e. the sender's ed25519 master pubkey, *not* kA blinded pubkey)
     ustring buf;
@@ -214,16 +217,19 @@ ustring encrypt_for_blinded_recipient(
     ustring ciphertext;
     unsigned long long outlen = 0;
     ciphertext.resize(
-            1 + buf.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES +
+            buf.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES +
             crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     if (0 != crypto_aead_xchacha20poly1305_ietf_encrypt(
-        ciphertext.data() + 1, &outlen, buf.data(), buf.size(), nullptr, 0, nullptr,
-        nonce.data(), blind_hash.data()))
+        ciphertext.data(), &outlen, buf.data(), buf.size(), nullptr, 0, nullptr,
+        nonce.data(), enc_key.data()))
         throw std::runtime_error{"Crypto aead encryption failed"};
 
     // data = b'\x00' + ciphertext + nonce
+    ciphertext.insert(ciphertext.begin(), 0);
     assert(outlen == ciphertext.size() - 1 - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    std::memcpy(ciphertext.data() + 1 + outlen, nonce.data(), nonce.size());
+    std::memcpy(ciphertext.data() + (1 + outlen), nonce.data(), nonce.size());
+
+    return ciphertext;
 }
 
 std::pair<std::string, ustring> decrypt_incoming(
@@ -283,6 +289,122 @@ std::pair<std::string, ustring> decrypt_incoming(
     // Everything is good, so just drop A and Y off the message and prepend the '05' prefix to
     // the sender session ID
     buf.resize(buf.size() - 32 - 32);
+    sender_session_id.reserve(66);
+    sender_session_id += "05";
+    oxenc::to_hex(sender_x_pk.begin(), sender_x_pk.end(), std::back_inserter(sender_session_id));
+
+    return result;
+}
+
+std::pair<std::string, ustring> decrypt_from_blinded_recipient(
+    ustring_view ed25519_privkey,
+    ustring_view server_pk,
+    ustring_view sender_id,
+    ustring_view recipient_id,
+    ustring_view ciphertext
+) {
+    if (ed25519_privkey.size() == 32) {
+        uc32 ignore_pk;
+        cleared_uc64 ed_sk_from_seed;
+        crypto_sign_ed25519_seed_keypair(
+                ignore_pk.data(), ed_sk_from_seed.data(), ed25519_privkey.data());
+        ed25519_privkey = {ed_sk_from_seed.data(), ed_sk_from_seed.size()};
+    } else if (ed25519_privkey.size() != 64)
+        throw std::invalid_argument{"Invalid ed25519_privkey: expected 32 or 64 bytes"};
+    if (server_pk.size() != 32)
+        throw std::invalid_argument{"Invalid server_pk: expected 32 bytes"};
+    if (sender_id.size() != 33)
+        throw std::invalid_argument{"Invalid sender_id: expected 33 bytes"};
+    if (recipient_id.size() != 33)
+        throw std::invalid_argument{"Invalid recipient_id: expected 33 bytes"};
+    if (ciphertext.size() < crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + 1 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+        throw std::invalid_argument{"Invalid ciphertext: too short to contain valid encrypted data"};
+
+    std::pair<std::string, ustring> result;
+    auto& [sender_session_id, buf] = result;
+
+    // Determine whether it's an incoming or outgoing message
+    ustring_view kA = {sender_id.data() + 1, 32};
+    ustring_view kB = {recipient_id.data() + 1, 32};
+    std::pair<ustring, ustring> blinded_key_pair;
+
+    if (recipient_id[0] == 0x15 && sender_id[0] == 0x15) {
+        blinded_key_pair = blind15_key_pair(ed25519_privkey, server_pk);
+    } else if (recipient_id[0] == 0x25 && sender_id[0] == 0x25) {
+        blinded_key_pair = blind25_key_pair(ed25519_privkey, server_pk);
+    } else
+        throw std::invalid_argument{"Both sender_id and recipient_id must start with the same 0x15 or 0x25 prefix"};
+
+    // Calculate the shared encryption key, sending from A to B:
+    //
+    // BLAKE2b(a kB || kA || kB)
+    //
+    // The receiver can calulate the same value via:
+    //
+    // BLAKE2b(b kA || kA || kB)
+    //
+    // Calculate k*a.  To get 'a' (the Ed25519 private key scalar) we call the sodium function to
+    // convert to an *x* secret key, which seems wrong--but isn't because converted keys use the
+    // same secret scalar secret (and so this is just the most convenient way to get 'a' out of
+    // a sodium Ed25519 secret key)
+    cleared_uc32 a, sharedSecret;
+    uc32 dec_key;
+    crypto_generichash_blake2b_state st;
+    ustring_view dst = (ustring{sender_id.data() + 1, 32} == blinded_key_pair.first ? kB : kA);
+    crypto_sign_ed25519_sk_to_curve25519(a.data(), ed25519_privkey.data());
+    if (0 != crypto_scalarmult_ed25519_noclamp(sharedSecret.data(), a.data(), dst.data()))
+        throw std::runtime_error{"Shared secret generation failed"};
+
+    crypto_generichash_blake2b_init(&st, nullptr, 0, 32);
+    crypto_generichash_blake2b_update(&st, sharedSecret.data(), sharedSecret.size());
+    crypto_generichash_blake2b_update(&st, kA.data(), kA.size());
+    crypto_generichash_blake2b_update(&st, kB.data(), kB.size());
+    crypto_generichash_blake2b_final(&st, dec_key.data(), dec_key.size());
+
+    // v, ct, nc = data[0], data[1:-24], data[-24:]
+    if (ciphertext[0] != 0)
+        throw std::invalid_argument{"Invalid ciphertext: version is not 0"};
+
+    ustring nonce;
+    const size_t msg_size = (ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES - 1
+        - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    unsigned long long buf_len = 0;
+    buf.resize(msg_size);
+    nonce.resize(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    std::memcpy(nonce.data(), ciphertext.data() + msg_size + 1 + crypto_aead_xchacha20poly1305_ietf_ABYTES,
+        crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+
+    if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
+            buf.data(), &buf_len, nullptr, ciphertext.data() + 1,
+            ciphertext.size() - 1 - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
+            nullptr, 0, nonce.data(), dec_key.data()))
+
+    // Ensure the length is correct
+    if (buf.size() <= 32)
+        throw std::invalid_argument{"Invalid ciphertext: innerBytes too short"};
+
+    // Split up: the last 32 bytes are the sender's *unblinded* ed25519 key
+    uc32 sender_ed_pk;
+    std::memcpy(sender_ed_pk.data(), buf.data() + (buf.size() - 32), 32);
+
+    // Verify that the inner sender_ed_pk (A) yields the same outer kA we got with the message
+    uc32 blindingFactor;
+    cleared_uc32 extracted_kA;
+
+    if (sender_id[0] == 0x15)
+        blindingFactor = blind15_factor(server_pk);
+    else
+        blindingFactor = blind25_factor({sender_x_pk.data(), 32}, server_pk);    // TODO: Need to confirm this...
+
+    if (0 != crypto_scalarmult_ed25519_noclamp(extracted_kA.data(), blindingFactor.data(), sender_ed_pk.data()))
+        throw std::runtime_error{"Shared secret generation for verification failed"};
+    if (kA != ustring_view{extracted_kA.data(), 32})
+        throw std::runtime_error{"Shared secret does not match encoded public key"};
+        };
+
+    // Everything is good, so just drop the sender_ed_pk off the message and prepend the '05' prefix to
+    // the sender session ID
+    buf.resize(buf.size() - 32);
     sender_session_id.reserve(66);
     sender_session_id += "05";
     oxenc::to_hex(sender_x_pk.begin(), sender_x_pk.end(), std::back_inserter(sender_session_id));
@@ -382,6 +504,37 @@ LIBSESSION_C_API bool session_decrypt_incoming_legacy_group(
         auto result = session::decrypt_incoming(
             ustring_view{x25519_pubkey, 32},
             ustring_view{x25519_seckey, 32},
+            ustring_view{ciphertext_in, ciphertext_len}
+        );
+        auto [session_id, plaintext] = result;
+
+        std::memcpy(session_id_out, session_id.c_str(), session_id.size() + 1);
+        *plaintext_out = static_cast<unsigned char*>(malloc(plaintext.size()));
+        *plaintext_len = plaintext.size();
+        std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool session_decrypt_for_blinded_recipient(
+        const unsigned char* ciphertext_in,
+        size_t ciphertext_len,
+        const unsigned char* ed25519_privkey,
+        const unsigned char* open_group_pubkey,
+        const unsigned char* sender_id,
+        const unsigned char* recipient_id,
+        char* session_id_out,
+        unsigned char** plaintext_out,
+        size_t* plaintext_len
+) {
+    try {
+        auto result = session::decrypt_from_blinded_recipient(
+            ustring_view{ed25519_privkey, 64},
+            ustring_view{open_group_pubkey, 32},
+            ustring_view{sender_id, 33},
+            ustring_view{recipient_id, 33},
             ustring_view{ciphertext_in, ciphertext_len}
         );
         auto [session_id, plaintext] = result;

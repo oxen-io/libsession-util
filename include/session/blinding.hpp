@@ -55,9 +55,13 @@ namespace session {
 ///
 /// This (R, S) signature is then Ed25519-verifiable using pubkey kA.
 
+/// Returns the blinding factor for 15 blinding.  Typically this isn't used directly, but is
+/// exposed for debugging/testing.  Takes server pk in bytes, not hex.
+std::array<unsigned char, 32> blind15_factor(ustring_view server_pk);
+
 /// Returns the blinding factor for 25 blinding.  Typically this isn't used directly, but is
-/// exposed for debugging/testing.  Takes session id and pk in bytes, not hex.  session id can
-/// be 05-prefixed (33 bytes) or unprefixed (32 bytes).
+/// exposed for debugging/testing.  Takes session id and server pk in bytes, not hex.  session
+/// id can be 05-prefixed (33 bytes) or unprefixed (32 bytes).
 std::array<unsigned char, 32> blind25_factor(ustring_view session_id, ustring_view server_pk);
 
 /// Same as above, but takes the session id and pubkey as byte values instead of hex, and returns a
@@ -102,6 +106,13 @@ ustring blind15_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ust
 /// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
 /// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
 ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk, ustring_view message);
+
+/// Takes in a standard session_id and returns a flag indicating whether it matches the given
+/// blinded_id for a given server_pk.
+///
+/// Takes either a 0x15 or 0x25 blinded_id (33 bytes) and the server pubkey (32 bytes).
+///
+/// Returns a flag indicating whether the session_id matches the blinded_id.
 bool session_id_matches_blinded_id(std::string_view session_id, std::string_view blinded_id,
     std::string_view server_pk);
 

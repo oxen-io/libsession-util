@@ -95,9 +95,9 @@ ustring encrypt_for_recipient_deterministic(
 /// Outputs:
 /// - The encrypted ciphertext to send.
 /// - Throw if encryption fails or (which typically means invalid keys provided)
-ustring session_encrypt_for_blinded_recipient(
+ustring encrypt_for_blinded_recipient(
         ustring_view ed25519_privkey,
-        ustring_view open_group_pubkey,
+        ustring_view server_pk,
         ustring_view recipient_blinded_id,
         ustring_view message);
 
@@ -160,5 +160,12 @@ std::pair<std::string, ustring> decrypt_incoming(ustring_view ed25519_privkey, u
 ///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
 std::pair<std::string, ustring> decrypt_incoming(
         ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext);
+
+std::pair<std::string, ustring> decrypt_from_blinded_recipient(
+        ustring_view ed25519_privkey,
+        ustring_view server_pk,
+        ustring_view sender_id,
+        ustring_view recipient_id,
+        ustring_view ciphertext);
 
 }  // namespace session

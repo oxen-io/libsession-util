@@ -167,10 +167,6 @@ namespace {
     }
 }  // namespace session::onionreq
 
-extern "C" {
-
-using session::ustring;
-
 namespace {
 
 session::onionreq::Builder& unbox(onion_request_builder_object* builder) {
@@ -179,6 +175,10 @@ session::onionreq::Builder& unbox(onion_request_builder_object* builder) {
 }
 
 }
+
+extern "C" {
+
+using session::ustring;
 
 LIBSESSION_C_API void onion_request_builder_init(
     onion_request_builder_object** builder) {

@@ -126,6 +126,17 @@ LIBSESSION_EXPORT bool session_decrypt_incoming_legacy_group(
         unsigned char** plaintext_out,
         size_t* plaintext_len);
 
+LIBSESSION_EXPORT bool session_decrypt_for_blinded_recipient(
+        const unsigned char* ciphertext_in,
+        size_t ciphertext_len,
+        const unsigned char* ed25519_privkey,
+        const unsigned char* open_group_pubkey,
+        const unsigned char* sender_id,
+        const unsigned char* recipient_id,
+        char* session_id_out,
+        unsigned char** plaintext_out,
+        size_t* plaintext_len);
+
 #ifdef __cplusplus
 }
 #endif

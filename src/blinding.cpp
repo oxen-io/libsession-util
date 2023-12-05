@@ -452,6 +452,27 @@ LIBSESSION_C_API bool session_blind15_sign(
     }
 }
 
+LIBSESSION_C_API bool session_blind25_sign(
+    const unsigned char* ed25519_seckey,
+    const unsigned char* server_pk,
+    const unsigned char* msg,
+    size_t msg_len,
+    unsigned char* blinded_sig_out
+) {
+    try {
+        auto result = session::blind25_sign(
+            {ed25519_seckey, 64},
+            {from_unsigned(server_pk), 32},
+            {msg, msg_len}
+        );
+        auto sig = result;
+        std::memcpy(blinded_sig_out, sig.data(), sig.size());
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 LIBSESSION_C_API bool session_id_matches_blinded_id(
     const unsigned char* session_id,
     const unsigned char* blinded_id,
