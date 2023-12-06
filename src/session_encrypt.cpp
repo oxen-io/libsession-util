@@ -2,6 +2,7 @@
 
 #include <oxenc/hex.h>
 #include <sodium/crypto_box.h>
+#include <sodium/crypto_core_ed25519.h>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/crypto_scalarmult.h>
 #include <sodium/crypto_scalarmult_ed25519.h>
@@ -387,14 +388,27 @@ std::pair<std::string, ustring> decrypt_from_blinded_recipient(
     uc32 sender_ed_pk;
     std::memcpy(sender_ed_pk.data(), buf.data() + (buf.size() - 32), 32);
 
+    // Convert the sender_ed_pk to the sender's session ID
+    std::array<unsigned char, 32> sender_x_pk;
+    if (0 != crypto_sign_ed25519_pk_to_curve25519(sender_x_pk.data(), sender_ed_pk.data()))
+        throw std::runtime_error{"Sender ed25519 pubkey to x25519 pubkey conversion failed"};
+
     // Verify that the inner sender_ed_pk (A) yields the same outer kA we got with the message
     uc32 blindingFactor;
     cleared_uc32 extracted_kA;
 
     if (sender_id[0] == 0x15)
         blindingFactor = blind15_factor(server_pk);
-    else
-        blindingFactor = blind25_factor({sender_x_pk.data(), 32}, server_pk);    // TODO: Need to confirm this...
+    else {
+        blindingFactor = blind25_factor({sender_x_pk.data(), 32}, server_pk);
+
+        // sender_ed_pk is negative, so we need to negate `blindingFactor` to make things come out right
+        if (sender_ed_pk[31] & 0x80) {
+            uc32 blindingFactor_neg;
+            crypto_core_ed25519_scalar_negate(blindingFactor_neg.data(), blindingFactor.data());
+            std::memcpy(blindingFactor.data(), blindingFactor_neg.data(), 32);
+        }
+    }
 
     if (0 != crypto_scalarmult_ed25519_noclamp(extracted_kA.data(), blindingFactor.data(), sender_ed_pk.data()))
         throw std::runtime_error{"Shared secret generation for verification failed"};
@@ -410,6 +424,64 @@ std::pair<std::string, ustring> decrypt_from_blinded_recipient(
     oxenc::to_hex(sender_x_pk.begin(), sender_x_pk.end(), std::back_inserter(sender_session_id));
 
     return result;
+}
+
+std::string decrypt_ons_response(std::string_view lowercase_name, ustring_view ciphertext, ustring_view nonce) {
+    if (ciphertext.size() < crypto_aead_xchacha20poly1305_ietf_ABYTES)
+        throw std::invalid_argument{"Invalid ciphertext: expected to be greater than 16 bytes"};
+    
+    // Hash the ONS name using BLAKE2b
+    //
+    // xchacha-based encryption
+    // key = H(name, key=H(name))
+    uc32 key;
+    uc32 name_hash;
+    auto name_bytes = to_unsigned(lowercase_name.data());
+    crypto_generichash_blake2b(name_hash.data(), name_hash.size(), name_bytes, lowercase_name.size(), nullptr, 0);
+    crypto_generichash_blake2b(key.data(), key.size(), name_bytes, lowercase_name.size(), name_hash.data(), name_hash.size());
+
+    ustring buf;
+    unsigned long long buf_len = 0;
+    buf.resize(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
+
+    if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
+            buf.data(), &buf_len, nullptr, ciphertext.data(), ciphertext.size(),
+            nullptr, 0, nonce.data(), key.data()))
+        throw std::runtime_error{"Failed to decrypt"};
+
+    if (buf_len != 33)
+        throw std::runtime_error{"Invalid decrypted value: expected to be 33 bytes"};
+
+    std::string session_id = oxenc::to_hex(buf.begin(), buf.end());
+    return session_id;
+}
+
+ustring decrypt_push_notification(ustring_view payload, ustring_view enc_key) {
+    if (payload.size() < crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + crypto_aead_xchacha20poly1305_ietf_ABYTES)
+        throw std::invalid_argument{"Invalid payload: too short to contain valid encrypted data"};
+    if (enc_key.size() != 32)
+        throw std::invalid_argument{"Invalid enc_key: expected 32 bytes"};
+
+    ustring buf;
+    ustring nonce;
+    const size_t msg_size = (payload.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES
+        - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    unsigned long long buf_len = 0;
+    buf.resize(msg_size);
+    nonce.resize(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+    std::memcpy(nonce.data(), payload.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+
+    if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
+                     buf.data(), &buf_len, nullptr, payload.data() + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
+                     payload.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, nullptr, 0,
+                     nonce.data(), enc_key.data()))
+        throw std::runtime_error{"Failed to decrypt; perhaps the secret key is invalid?"};
+
+    // Removing any null padding bytes from the end
+    if (auto pos = buf.find_last_not_of('\0'); pos != std::string::npos)
+        buf.resize(pos + 1);
+
+    return buf;
 }
 
 }  // namespace session
@@ -540,6 +612,50 @@ LIBSESSION_C_API bool session_decrypt_for_blinded_recipient(
         auto [session_id, plaintext] = result;
 
         std::memcpy(session_id_out, session_id.c_str(), session_id.size() + 1);
+        *plaintext_out = static_cast<unsigned char*>(malloc(plaintext.size()));
+        *plaintext_len = plaintext.size();
+        std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool session_decrypt_ons_response(
+        const char* name_in,
+        size_t name_len,
+        const unsigned char* ciphertext_in,
+        size_t ciphertext_len,
+        const unsigned char* nonce_in,
+        char* session_id_out
+) {
+    try {
+        auto session_id = session::decrypt_ons_response(
+            std::string_view{name_in, name_len},
+            ustring_view{ciphertext_in, ciphertext_len},
+            ustring_view{nonce_in, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES}
+        );
+
+        std::memcpy(session_id_out, session_id.c_str(), session_id.size() + 1);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool session_decrypt_push_notification(
+        const unsigned char* payload_in,
+        size_t payload_len,
+        const unsigned char* enc_key_in,
+        unsigned char** plaintext_out,
+        size_t* plaintext_len
+) {
+    try {
+        auto plaintext = session::decrypt_push_notification(
+            ustring_view{payload_in, payload_len},
+            ustring_view{enc_key_in, 32}
+        );
+
         *plaintext_out = static_cast<unsigned char*>(malloc(plaintext.size()));
         *plaintext_len = plaintext.size();
         std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());

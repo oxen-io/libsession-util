@@ -49,10 +49,11 @@ add_libsession_util_library(crypto
     blinding.cpp
     curve25519.cpp
     ed25519.cpp
+    hash.cpp
     multi_encrypt.cpp
+    random.cpp
     session_encrypt.cpp
     util.cpp
-    xchacha.cpp
     xed25519.cpp
 )
 

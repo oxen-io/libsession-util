@@ -168,4 +168,36 @@ std::pair<std::string, ustring> decrypt_from_blinded_recipient(
         ustring_view recipient_id,
         ustring_view ciphertext);
 
+/// API: crypto/decrypt_ons_response
+///
+/// Decrypts the response of an ONS lookup.
+///
+/// Inputs:
+/// - `lowercase_name` -- the lowercase name which was looked to up to retrieve this response.
+/// - `ciphertext` -- ciphertext returned from the server.
+/// - `nonce` -- the nonce returned from the server
+///
+/// Outputs:
+/// - `std::string` -- the session ID (in hex) returned from the server, *if* the server returned
+///   a session ID.  Throws on error/failure.
+std::string decrypt_ons_response(
+        std::string_view lowercase_name,
+        ustring_view ciphertext,
+        ustring_view nonce);
+
+/// API: crypto/decrypt_push_notification
+///
+/// Decrypts a push notification payload.
+///
+/// Inputs:
+/// - `payload` -- the payload included in the push notification.
+/// - `enc_key` -- the device encryption key used when subscribing for push notifications (32 bytes).
+///
+/// Outputs:
+/// - `ustring` -- the decrypted push notification payload, *if* the decryption was
+///   successful.  Throws on error/failure.
+ustring decrypt_push_notification(
+        ustring_view payload,
+        ustring_view enc_key);
+
 }  // namespace session
