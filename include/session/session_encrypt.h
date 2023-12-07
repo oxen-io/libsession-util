@@ -30,8 +30,8 @@ extern "C" {
 LIBSESSION_EXPORT bool session_encrypt_for_recipient_deterministic(
         const unsigned char* plaintext_in,
         size_t plaintext_len,
-        const unsigned char* ed25519_privkey,
-        const unsigned char* recipient_pubkey,
+        const unsigned char* ed25519_privkey, /* 64 bytes */
+        const unsigned char* recipient_pubkey, /* 32 bytes */
         unsigned char** ciphertext_out,
         size_t* ciphertext_len);
 
@@ -60,9 +60,9 @@ LIBSESSION_EXPORT bool session_encrypt_for_recipient_deterministic(
 LIBSESSION_EXPORT bool session_encrypt_for_blinded_recipient(
         const unsigned char* plaintext_in,
         size_t plaintext_len,
-        const unsigned char* ed25519_privkey,
-        const unsigned char* open_group_pubkey,
-        const unsigned char* recipient_blinded_id,
+        const unsigned char* ed25519_privkey, /* 64 bytes */
+        const unsigned char* open_group_pubkey, /* 32 bytes */
+        const unsigned char* recipient_blinded_id, /* 33 bytes */
         unsigned char** ciphertext_out,
         size_t* ciphertext_len);
 
@@ -90,8 +90,8 @@ LIBSESSION_EXPORT bool session_encrypt_for_blinded_recipient(
 LIBSESSION_EXPORT bool session_decrypt_incoming(
         const unsigned char* ciphertext_in,
         size_t ciphertext_len,
-        const unsigned char* ed25519_privkey,
-        char* session_id_out,
+        const unsigned char* ed25519_privkey, /* 64 bytes */
+        char* session_id_out, /* 67 byte output buffer */
         unsigned char** plaintext_out,
         size_t* plaintext_len);
 
@@ -120,9 +120,9 @@ LIBSESSION_EXPORT bool session_decrypt_incoming(
 LIBSESSION_EXPORT bool session_decrypt_incoming_legacy_group(
         const unsigned char* ciphertext_in,
         size_t ciphertext_len,
-        const unsigned char* x25519_pubkey,
-        const unsigned char* x25519_seckey,
-        char* session_id_out,
+        const unsigned char* x25519_pubkey, /* 32 bytes */
+        const unsigned char* x25519_seckey, /* 32 bytes */
+        char* session_id_out, /* 67 byte output buffer */
         unsigned char** plaintext_out,
         size_t* plaintext_len);
 
@@ -156,11 +156,11 @@ LIBSESSION_EXPORT bool session_decrypt_incoming_legacy_group(
 LIBSESSION_EXPORT bool session_decrypt_for_blinded_recipient(
         const unsigned char* ciphertext_in,
         size_t ciphertext_len,
-        const unsigned char* ed25519_privkey,
-        const unsigned char* open_group_pubkey,
-        const unsigned char* sender_id,
-        const unsigned char* recipient_id,
-        char* session_id_out,
+        const unsigned char* ed25519_privkey, /* 64 bytes */
+        const unsigned char* open_group_pubkey, /* 32 bytes */
+        const unsigned char* sender_id,  /* 33 bytes */
+        const unsigned char* recipient_id, /* 33 bytes */
+        char* session_id_out,  /* 67 byte output buffer */
         unsigned char** plaintext_out,
         size_t* plaintext_len);
 
@@ -184,8 +184,8 @@ LIBSESSION_EXPORT bool session_decrypt_ons_response(
         size_t name_len,
         const unsigned char* ciphertext_in,
         size_t ciphertext_len,
-        const unsigned char* nonce_in,
-        char* session_id_out);
+        const unsigned char* nonce_in,  /* 24 bytes */
+        char* session_id_out  /* 67 byte output buffer */);
 
 /// API: crypto/session_decrypt_push_notification
 ///
@@ -207,7 +207,7 @@ LIBSESSION_EXPORT bool session_decrypt_ons_response(
 LIBSESSION_EXPORT bool session_decrypt_push_notification(
         const unsigned char* payload_in,
         size_t payload_len,
-        const unsigned char* enc_key_in,
+        const unsigned char* enc_key_in,  /* 32 bytes */
         unsigned char** plaintext_out,
         size_t* plaintext_len);
 

@@ -161,6 +161,24 @@ std::pair<std::string, ustring> decrypt_incoming(ustring_view ed25519_privkey, u
 std::pair<std::string, ustring> decrypt_incoming(
         ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext);
 
+/// API: crypto/decrypt_from_blinded_recipient
+///
+/// This function attempts to decrypt a message using the SessionBlindingProtocol.
+///
+/// Inputs:
+/// - `ed25519_privkey` -- the Ed25519 private key of the receiver.  Can be a 32-byte seed, or a 64-byte
+///   libsodium secret key.  The latter is a bit faster as it doesn't have to re-compute the pubkey
+///   from the seed.
+/// - `server_pk` -- the public key of the open group server to route the blinded message through (32 bytes).
+/// - `sender_id` -- the blinded id of the sender including the blinding prefix (33 bytes),
+///   'blind15' or 'blind25' decryption will be chosed based on this value.
+/// - `recipient_id` -- the blinded id of the recipient including the blinding prefix (33 bytes),
+///   must match the same 'blind15' or 'blind25' type of the `sender_id`.
+/// - `ciphertext` -- Pointer to a data buffer containing the encrypted data.
+///
+/// Outputs:
+/// - `std::pair<std::string, ustring>` -- the session ID (in hex) and the plaintext binary
+///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
 std::pair<std::string, ustring> decrypt_from_blinded_recipient(
         ustring_view ed25519_privkey,
         ustring_view server_pk,

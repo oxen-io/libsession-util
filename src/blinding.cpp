@@ -385,7 +385,7 @@ bool session_id_matches_blinded_id(std::string_view session_id, std::string_view
     // For the negative, what we're going to get out of the above is simply the negative of
     // converted_blind_id1, so flip the sign bit to get converted_blind_id2
     auto converted_blind_id2 = converted_blind_id1;
-    converted_blind_id2[32] &= 0x7f;
+    converted_blind_id2[32] ^= 0x80;
 
     return (
         to_unsigned_sv(blinded_id) == converted_blind_id1 ||

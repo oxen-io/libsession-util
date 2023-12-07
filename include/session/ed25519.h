@@ -19,8 +19,8 @@ extern "C" {
 /// Outputs:
 /// - `bool` -- True if the seed was successfully retrieved, false if failed.
 LIBSESSION_EXPORT bool session_ed25519_key_pair(
-    unsigned char* ed25519_pk_out,
-    unsigned char* ed25519_sk_out);
+    unsigned char* ed25519_pk_out, /* 32 byte output buffer */
+    unsigned char* ed25519_sk_out /* 64 byte output buffer */);
 
 /// API: crypto/session_ed25519_key_pair_seed
 ///
@@ -34,9 +34,9 @@ LIBSESSION_EXPORT bool session_ed25519_key_pair(
 /// Outputs:
 /// - `bool` -- True if the seed was successfully retrieved, false if failed.
 LIBSESSION_EXPORT bool session_ed25519_key_pair_seed(
-    const unsigned char* ed25519_seed,
-    unsigned char* ed25519_pk_out,
-    unsigned char* ed25519_sk_out);
+    const unsigned char* ed25519_seed, /* 32 bytes */
+    unsigned char* ed25519_pk_out, /* 32 byte output buffer */
+    unsigned char* ed25519_sk_out /* 64 byte output buffer */);
 
 /// API: crypto/session_seed_for_ed_privkey
 ///
@@ -50,8 +50,8 @@ LIBSESSION_EXPORT bool session_ed25519_key_pair_seed(
 /// Outputs:
 /// - `bool` -- True if the seed was successfully retrieved, false if failed.
 LIBSESSION_EXPORT bool session_seed_for_ed_privkey(
-    const unsigned char* ed25519_privkey,
-    unsigned char* ed25519_seed_out);
+    const unsigned char* ed25519_privkey, /* 64 bytes */
+    unsigned char* ed25519_seed_out /* 32 byte output buffer */);
 
 /// API: crypto/session_ed25519_sign
 ///
@@ -66,10 +66,10 @@ LIBSESSION_EXPORT bool session_seed_for_ed_privkey(
 /// Outputs:
 /// - `bool` -- True if the seed was successfully retrieved, false if failed.
 LIBSESSION_EXPORT bool session_ed25519_sign(
-    const unsigned char* ed25519_privkey,
+    const unsigned char* ed25519_privkey, /* 64 bytes */
     const unsigned char* msg,
     size_t msg_len,
-    unsigned char* ed25519_sig_out);
+    unsigned char* ed25519_sig_out /* 64 byte output buffer */);
 
 /// API: crypto/session_ed25519_verify
 ///
@@ -84,7 +84,7 @@ LIBSESSION_EXPORT bool session_ed25519_sign(
 /// Outputs:
 /// - A flag indicating whether the signature is valid
 LIBSESSION_EXPORT bool session_ed25519_verify(
-    const unsigned char* sig,
+    const unsigned char* sig, /* 64 bytes */
     const unsigned char* pubkey,
     const unsigned char* msg,
     size_t msg_len);
