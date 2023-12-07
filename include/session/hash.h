@@ -20,7 +20,10 @@ extern "C" {
 /// - `key_len` -- [in] length of `key_in`.
 /// - `hash_out` -- [out] pointer to a buffer of at least `size` bytes where the
 ///   hash will be written.
-LIBSESSION_EXPORT void session_hash(
+///
+/// Outputs:
+/// - `bool` -- True if the generation was successful, false if generation failed.
+LIBSESSION_EXPORT bool session_hash(
         size_t size,
         const unsigned char* msg_in,
         size_t msg_len,
