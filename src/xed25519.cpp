@@ -176,7 +176,7 @@ LIBSESSION_C_API bool session_xed25519_verify(
         const unsigned char* pubkey,
         const unsigned char* msg,
         size_t msg_len) {
-    return session::xed25519::verify({signature, 64}, {pubkey, 32}, {msg, msg_len}) ? 0 : 1;
+    return session::xed25519::verify({signature, 64}, {pubkey, 32}, {msg, msg_len});
 }
 
 LIBSESSION_C_API bool session_xed25519_pubkey(

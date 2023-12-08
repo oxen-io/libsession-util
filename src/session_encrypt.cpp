@@ -233,9 +233,50 @@ ustring encrypt_for_blinded_recipient(
     return ciphertext;
 }
 
-std::pair<std::string, ustring> decrypt_incoming(
+std::pair<ustring, std::string> decrypt_incoming_session_id(
         ustring_view ed25519_privkey, ustring_view ciphertext) {
+    auto [buf, sender_ed_pk] = decrypt_incoming(ed25519_privkey, ciphertext);
 
+    // Convert the sender_ed_pk to the sender's session ID
+    std::array<unsigned char, 32> sender_x_pk;
+
+    if (0 != crypto_sign_ed25519_pk_to_curve25519(
+        sender_x_pk.data(), sender_ed_pk.data()))
+        throw std::runtime_error{"Sender ed25519 pubkey to x25519 pubkey conversion failed"};
+
+    // Everything is good, so just drop A and Y off the message and prepend the '05' prefix to
+    // the sender session ID
+    std::string sender_session_id;
+    sender_session_id.reserve(66);
+    sender_session_id += "05";
+    oxenc::to_hex(sender_x_pk.begin(), sender_x_pk.end(), std::back_inserter(sender_session_id));
+
+    return {buf, sender_session_id};
+}
+
+std::pair<ustring, std::string> decrypt_incoming_session_id(
+        ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext) {
+    auto [buf, sender_ed_pk] = decrypt_incoming(x25519_pubkey, x25519_seckey, ciphertext);
+
+    // Convert the sender_ed_pk to the sender's session ID
+    std::array<unsigned char, 32> sender_x_pk;
+
+    if (0 != crypto_sign_ed25519_pk_to_curve25519(
+        sender_x_pk.data(), sender_ed_pk.data()))
+        throw std::runtime_error{"Sender ed25519 pubkey to x25519 pubkey conversion failed"};
+
+    // Everything is good, so just drop A and Y off the message and prepend the '05' prefix to
+    // the sender session ID
+    std::string sender_session_id;
+    sender_session_id.reserve(66);
+    sender_session_id += "05";
+    oxenc::to_hex(sender_x_pk.begin(), sender_x_pk.end(), std::back_inserter(sender_session_id));
+
+    return {buf, sender_session_id};
+}
+
+std::pair<ustring, ustring> decrypt_incoming(
+        ustring_view ed25519_privkey, ustring_view ciphertext) {
     cleared_uc64 ed_sk_from_seed;
     if (ed25519_privkey.size() == 32) {
         uc32 ignore_pk;
@@ -254,7 +295,7 @@ std::pair<std::string, ustring> decrypt_incoming(
     return decrypt_incoming({x_pub.data(), 32}, {x_sec.data(), 32}, ciphertext);
 }
 
-std::pair<std::string, ustring> decrypt_incoming(
+std::pair<ustring, ustring> decrypt_incoming(
         ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext) {
 
     if (ciphertext.size() < crypto_box_SEALBYTES + 32 + 64)
@@ -262,8 +303,8 @@ std::pair<std::string, ustring> decrypt_incoming(
     const size_t outer_size = ciphertext.size() - crypto_box_SEALBYTES;
     const size_t msg_size = outer_size - 32 - 64;
 
-    std::pair<std::string, ustring> result;
-    auto& [sender_session_id, buf] = result;
+    std::pair<ustring, ustring> result;
+    auto& [buf, sender_ed_pk] = result;
 
     buf.resize(outer_size);
     if (0 != crypto_box_seal_open(
@@ -271,7 +312,7 @@ std::pair<std::string, ustring> decrypt_incoming(
         throw std::runtime_error{"Decryption failed"};
 
     uc64 sig;
-    auto sender_ed_pk = buf.substr(msg_size, 32);
+    sender_ed_pk = buf.substr(msg_size, 32);
     std::memcpy(sig.data(), buf.data() + msg_size + 32, 64);
     buf.resize(buf.size() - 64);  // Remove SIG, then append Y so that we get M||A||Y to verify
     buf += ustring_view{x25519_pubkey.data(), 32};
@@ -280,24 +321,13 @@ std::pair<std::string, ustring> decrypt_incoming(
                      sig.data(), buf.data(), buf.size(), sender_ed_pk.data()))
         throw std::runtime_error{"Signature verification failed"};
 
-    // Convert the sender_ed_pk to the sender's session ID
-    std::array<unsigned char, 32> sender_x_pk;
-
-    if (0 != crypto_sign_ed25519_pk_to_curve25519(
-        sender_x_pk.data(), sender_ed_pk.data()))
-        throw std::runtime_error{"Sender ed25519 pubkey to x25519 pubkey conversion failed"};
-
-    // Everything is good, so just drop A and Y off the message and prepend the '05' prefix to
-    // the sender session ID
+    // Everything is good, so just drop A and Y off the message
     buf.resize(buf.size() - 32 - 32);
-    sender_session_id.reserve(66);
-    sender_session_id += "05";
-    oxenc::to_hex(sender_x_pk.begin(), sender_x_pk.end(), std::back_inserter(sender_session_id));
 
     return result;
 }
 
-std::pair<std::string, ustring> decrypt_from_blinded_recipient(
+std::pair<ustring, std::string> decrypt_from_blinded_recipient(
     ustring_view ed25519_privkey,
     ustring_view server_pk,
     ustring_view sender_id,
@@ -321,8 +351,8 @@ std::pair<std::string, ustring> decrypt_from_blinded_recipient(
     if (ciphertext.size() < crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + 1 + crypto_aead_xchacha20poly1305_ietf_ABYTES)
         throw std::invalid_argument{"Invalid ciphertext: too short to contain valid encrypted data"};
 
-    std::pair<std::string, ustring> result;
-    auto& [sender_session_id, buf] = result;
+    std::pair<ustring, std::string> result;
+    auto& [buf, sender_session_id] = result;
 
     // Determine whether it's an incoming or outgoing message
     ustring_view kA = {sender_id.data() + 1, 32};
@@ -547,11 +577,11 @@ LIBSESSION_C_API bool session_decrypt_incoming(
     size_t* plaintext_len
 ) {
     try {
-        auto result = session::decrypt_incoming(
+        auto result = session::decrypt_incoming_session_id(
             ustring_view{ed25519_privkey, 64},
             ustring_view{ciphertext_in, ciphertext_len}
         );
-        auto [session_id, plaintext] = result;
+        auto [plaintext, session_id] = result;
 
         std::memcpy(session_id_out, session_id.c_str(), session_id.size() + 1);
         *plaintext_out = static_cast<unsigned char*>(malloc(plaintext.size()));
@@ -573,12 +603,12 @@ LIBSESSION_C_API bool session_decrypt_incoming_legacy_group(
     size_t* plaintext_len
 ) {
     try {
-        auto result = session::decrypt_incoming(
+        auto result = session::decrypt_incoming_session_id(
             ustring_view{x25519_pubkey, 32},
             ustring_view{x25519_seckey, 32},
             ustring_view{ciphertext_in, ciphertext_len}
         );
-        auto [session_id, plaintext] = result;
+        auto [plaintext, session_id] = result;
 
         std::memcpy(session_id_out, session_id.c_str(), session_id.size() + 1);
         *plaintext_out = static_cast<unsigned char*>(malloc(plaintext.size()));
@@ -609,7 +639,7 @@ LIBSESSION_C_API bool session_decrypt_for_blinded_recipient(
             ustring_view{recipient_id, 33},
             ustring_view{ciphertext_in, ciphertext_len}
         );
-        auto [session_id, plaintext] = result;
+        auto [plaintext, session_id] = result;
 
         std::memcpy(session_id_out, session_id.c_str(), session_id.size() + 1);
         *plaintext_out = static_cast<unsigned char*>(malloc(plaintext.size()));

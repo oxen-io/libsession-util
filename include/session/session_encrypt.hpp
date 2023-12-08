@@ -129,6 +129,42 @@ ustring sign_for_recipient(
 
 /// API: crypto/decrypt_incoming
 ///
+/// Inverse of `encrypt_for_recipient`: this decrypts the message, extracts the sender Ed25519
+/// pubkey, and verifies that the sender Ed25519 signature on the message.
+///
+/// Inputs:
+/// - `ed25519_privkey` -- the private key of the recipient.  Can be a 32-byte seed, or a 64-byte
+///   libsodium secret key.  The latter is a bit faster as it doesn't have to re-compute the pubkey
+///   from the seed.
+/// - `ciphertext` -- the encrypted data
+///
+/// Outputs:
+/// - `std::pair<ustring, ustring>` -- the plaintext binary data that was encrypted and the
+///   sender's ED25519 pubkey, *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<ustring, ustring> decrypt_incoming(
+        ustring_view ed25519_privkey, ustring_view ciphertext);
+
+/// API: crypto/decrypt_incoming
+///
+/// Inverse of `encrypt_for_recipient`: this decrypts the message, extracts the sender Ed25519
+/// pubkey, and verifies that the sender Ed25519 signature on the message. This function is used
+/// for decrypting legacy group messages which only have an x25519 key pair, the Ed25519 version
+/// of this function should be preferred where possible.
+///
+/// Inputs:
+/// - `ed25519_privkey` -- the private key of the recipient.  Can be a 32-byte seed, or a 64-byte
+///   libsodium secret key.  The latter is a bit faster as it doesn't have to re-compute the pubkey
+///   from the seed.
+/// - `ciphertext` -- the encrypted data
+///
+/// Outputs:
+/// - `std::pair<ustring, ustring>` -- the plaintext binary data that was encrypted and the
+///   sender's ED25519 pubkey, *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<ustring, ustring> decrypt_incoming(
+        ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext);
+
+/// API: crypto/decrypt_incoming
+///
 /// Inverse of `encrypt_for_recipient`: this decrypts the message, verifies that the sender Ed25519
 /// signature on the message and converts the extracted sender's Ed25519 pubkey into a session ID.
 ///
@@ -139,9 +175,10 @@ ustring sign_for_recipient(
 /// - `ciphertext` -- the encrypted data
 ///
 /// Outputs:
-/// - `std::pair<std::string, ustring>` -- the session ID (in hex) and the plaintext binary
-///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
-std::pair<std::string, ustring> decrypt_incoming(ustring_view ed25519_privkey, ustring_view ciphertext);
+/// - `std::pair<ustring, std::string>` -- the plaintext binary data that was encrypted and the
+///   session ID (in hex), *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<ustring, std::string> decrypt_incoming_session_id(
+        ustring_view ed25519_privkey, ustring_view ciphertext);
 
 /// API: crypto/decrypt_incoming
 ///
@@ -156,9 +193,9 @@ std::pair<std::string, ustring> decrypt_incoming(ustring_view ed25519_privkey, u
 /// - `ciphertext` -- the encrypted data
 ///
 /// Outputs:
-/// - `std::pair<std::string, ustring>` -- the session ID (in hex) and the plaintext binary
-///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
-std::pair<std::string, ustring> decrypt_incoming(
+/// - `std::pair<ustring, std::string>` -- the plaintext binary data that was encrypted and the
+///   session ID (in hex), *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<ustring, std::string> decrypt_incoming_session_id(
         ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext);
 
 /// API: crypto/decrypt_from_blinded_recipient
@@ -177,9 +214,9 @@ std::pair<std::string, ustring> decrypt_incoming(
 /// - `ciphertext` -- Pointer to a data buffer containing the encrypted data.
 ///
 /// Outputs:
-/// - `std::pair<std::string, ustring>` -- the session ID (in hex) and the plaintext binary
-///   data that was encrypted, *if* the message decrypted and validated successfully.  Throws on error.
-std::pair<std::string, ustring> decrypt_from_blinded_recipient(
+/// - `std::pair<ustring, std::string>` -- the plaintext binary data that was encrypted and the
+///   session ID (in hex), *if* the message decrypted and validated successfully.  Throws on error.
+std::pair<ustring, std::string> decrypt_from_blinded_recipient(
         ustring_view ed25519_privkey,
         ustring_view server_pk,
         ustring_view sender_id,

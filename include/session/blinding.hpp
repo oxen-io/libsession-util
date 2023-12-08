@@ -64,6 +64,10 @@ std::array<unsigned char, 32> blind15_factor(ustring_view server_pk);
 /// id can be 05-prefixed (33 bytes) or unprefixed (32 bytes).
 std::array<unsigned char, 32> blind25_factor(ustring_view session_id, ustring_view server_pk);
 
+/// Computes the 25-blinded id from a session id and server pubkey.  Values accepted and
+/// returned are hex-encoded.
+std::string blind25_id(std::string_view session_id, std::string_view server_pk);
+
 /// Same as above, but takes the session id and pubkey as byte values instead of hex, and returns a
 /// 33-byte value (instead of a 66-digit hex value).  Unlike the string version, session_id here may
 /// be passed unprefixed (i.e. 32 bytes instead of 33 with the 05 prefix).
