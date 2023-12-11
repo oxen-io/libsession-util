@@ -334,9 +334,9 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
     ustring_view recipient_id,
     ustring_view ciphertext
 ) {
+    cleared_uc64 ed_sk_from_seed;
     if (ed25519_privkey.size() == 32) {
         uc32 ignore_pk;
-        cleared_uc64 ed_sk_from_seed;
         crypto_sign_ed25519_seed_keypair(
                 ignore_pk.data(), ed_sk_from_seed.data(), ed25519_privkey.data());
         ed25519_privkey = {ed_sk_from_seed.data(), ed_sk_from_seed.size()};

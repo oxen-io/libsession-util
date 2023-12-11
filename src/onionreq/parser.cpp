@@ -36,12 +36,12 @@ OnionReqParser::OnionReqParser(
     else
         throw std::invalid_argument{"metadata does not have 'ephemeral_key' entry"};
     
-    auto plaintext = enc.decrypt(enc_type, reinterpret_cast<const unsigned char*>(ciphertext.data()), remote_pk);
+    auto plaintext = enc.decrypt(enc_type, {ciphertext.data(), ciphertext.size()}, remote_pk);
     payload_ = {to_unsigned(plaintext.data()), plaintext.size()};
 }
 
 ustring OnionReqParser::encrypt_reply(ustring_view reply) const {
-    return enc.encrypt(enc_type, reinterpret_cast<const unsigned char*>(reply.data()), remote_pk);
+    return enc.encrypt(enc_type, {reply.data(), reply.size()}, remote_pk);
 }
 
 }  // namespace session::onionreq

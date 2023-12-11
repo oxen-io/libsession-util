@@ -235,9 +235,10 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
         auto enc = encrypt_for_blinded_recipient({to_sv(ed_sk).data(), 32}, to_unsigned_sv(server_pk),
                 {blind15_pk2_prefixed.data(), 33}, to_unsigned_sv(lorem_ipsum));
         CHECK(enc.find(to_unsigned("dolore magna")) == std::string::npos);
-        auto [msg, sender] = decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
+
+        auto [msg, sender] = decrypt_from_blinded_recipient({to_sv(ed_sk2).data(), 32}, to_unsigned_sv(server_pk),
                 {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, enc);
-        CHECK(oxenc::to_hex(sender) == sid);
+        CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == lorem_ipsum);
 
         auto broken = enc;
