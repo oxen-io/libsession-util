@@ -4,8 +4,15 @@
 #include <sodium/crypto_sign_ed25519.h>
 
 #include "session/export.h"
+#include "session/util.hpp"
 
 namespace session::ed25519 {
+
+template <size_t N>
+using cleared_array = sodium_cleared<std::array<unsigned char, N>>;
+
+using uc32 = std::array<unsigned char, 32>;
+using cleared_uc64 = cleared_array<64>;
 
 std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> ed25519_key_pair() {
     std::array<unsigned char, 32> ed_pk;
@@ -31,25 +38,30 @@ std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> ed25519_
     return {ed_pk, ed_sk};
 }
 
-ustring seed_for_ed_privkey(
-    ustring_view ed25519_privkey) {
-    ustring result;
-    result.reserve(32);
+std::array<unsigned char, 32> seed_for_ed_privkey(ustring_view ed25519_privkey) {
+    std::array<unsigned char, 32> seed;
     
-    if (ed25519_privkey.size() == 32) {
-        // Assume we we actually given the seed so just return it
-        result += ed25519_privkey.data();
-        return result;
-    } else if (ed25519_privkey.size() == 64) {
-        // The first 32 bytes of a 64 byte ed25519 private key are the seed
-        result += ed25519_privkey.substr(0, 32);
-        return result;
-    }
+    if (ed25519_privkey.size() == 32 || ed25519_privkey.size() == 64)
+        // The first 32 bytes of a 64 byte ed25519 private key are the seed, otherwise
+        // if the provided value is 32 bytes we just assume we were given a seed
+        std::memcpy(seed.data(), ed25519_privkey.data(), 32);
+    else
+        throw std::invalid_argument{"Invalid ed25519_privkey: expected 32 or 64 bytes"};
 
-    throw std::invalid_argument{"Invalid ed25519_privkey: expected 32 or 64 bytes"};
+    return seed;
 }
 
 ustring sign(ustring_view ed25519_privkey, ustring_view msg) {
+    cleared_uc64 ed_sk_from_seed;
+    if (ed25519_privkey.size() == 32) {
+        uc32 ignore_pk;
+        crypto_sign_ed25519_seed_keypair(
+                ignore_pk.data(), ed_sk_from_seed.data(), ed25519_privkey.data());
+        ed25519_privkey = {ed_sk_from_seed.data(), ed_sk_from_seed.size()};
+    } else if (ed25519_privkey.size() != 64) {
+        throw std::invalid_argument{"Invalid ed25519_privkey: expected 32 or 64 bytes"};
+    }
+
     std::array<unsigned char, 64> sig;
     if (0 != crypto_sign_ed25519_detached(
                      sig.data(), nullptr, msg.data(), msg.size(), ed25519_privkey.data()))
@@ -59,6 +71,11 @@ ustring sign(ustring_view ed25519_privkey, ustring_view msg) {
 }
 
 bool verify(ustring_view sig, ustring_view pubkey, ustring_view msg) {
+    if (sig.size() != 64)
+        throw std::invalid_argument{"Invalid sig: expected 64 bytes"};
+    if (pubkey.size() != 32)
+        throw std::invalid_argument{"Invalid pubkey: expected 32 bytes"};
+
     return (0 == crypto_sign_ed25519_verify_detached(
         sig.data(), msg.data(), msg.size(), pubkey.data()));
 }

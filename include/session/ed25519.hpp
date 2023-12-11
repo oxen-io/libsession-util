@@ -23,7 +23,7 @@ std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> ed25519_
 ///
 /// Outputs:
 /// - The ed25519 seed
-ustring seed_for_ed_privkey(ustring_view ed25519_privkey);
+std::array<unsigned char, 32> seed_for_ed_privkey(ustring_view ed25519_privkey);
 
 /// API: ed25519/sign
 ///

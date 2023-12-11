@@ -10,6 +10,8 @@ add_executable(testAll
     test_configdata.cpp
     test_config_contacts.cpp
     test_config_convo_info_volatile.cpp
+    test_curve25519.cpp
+    test_ed25519.cpp
     test_encrypt.cpp
     test_group_keys.cpp
     test_group_info.cpp
