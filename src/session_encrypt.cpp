@@ -444,7 +444,6 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
         throw std::runtime_error{"Shared secret generation for verification failed"};
     if (kA != ustring_view{extracted_kA.data(), 32})
         throw std::runtime_error{"Shared secret does not match encoded public key"};
-        };
 
     // Everything is good, so just drop the sender_ed_pk off the message and prepend the '05' prefix to
     // the sender session ID

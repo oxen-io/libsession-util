@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "types.hpp"
 
 namespace session::curve25519 {
