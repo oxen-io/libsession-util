@@ -13,10 +13,10 @@ TEST_CASE("Ed25519 key pair generation", "[ed25519][keypair]") {
     auto kp1 = session::ed25519::ed25519_key_pair();
     auto kp2 = session::ed25519::ed25519_key_pair();
     
-    REQUIRE(kp1.first.size() == 32);
-    REQUIRE(kp1.second.size() == 64);
-    REQUIRE(kp1.first != kp2.first);
-    REQUIRE(kp1.second != kp2.second);
+    CHECK(kp1.first.size() == 32);
+    CHECK(kp1.second.size() == 64);
+    CHECK(kp1.first != kp2.first);
+    CHECK(kp1.second != kp2.second);
 }
 
 TEST_CASE("Ed25519 key pair generation seed", "[ed25519][keypair]") {
@@ -30,21 +30,21 @@ TEST_CASE("Ed25519 key pair generation seed", "[ed25519][keypair]") {
     auto kp2 = session::ed25519::ed25519_key_pair(to_unsigned_sv(ed_seed2));
     CHECK_THROWS(session::ed25519::ed25519_key_pair(to_unsigned_sv(ed_seed_invalid)));
     
-    REQUIRE(kp1.first.size() == 32);
-    REQUIRE(kp1.second.size() == 64);
-    REQUIRE(kp1.first != kp2.first);
-    REQUIRE(kp1.second != kp2.second);
-    REQUIRE(oxenc::to_hex(kp1.first.begin(), kp1.first.end()) ==
+    CHECK(kp1.first.size() == 32);
+    CHECK(kp1.second.size() == 64);
+    CHECK(kp1.first != kp2.first);
+    CHECK(kp1.second != kp2.second);
+    CHECK(oxenc::to_hex(kp1.first.begin(), kp1.first.end()) ==
         "8862834829a87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f");
-    REQUIRE(oxenc::to_hex(kp2.first.begin(), kp2.first.end()) ==
+    CHECK(oxenc::to_hex(kp2.first.begin(), kp2.first.end()) ==
         "cd83ca3d13ad8a954d5011aa7861abe3a29ac25b70c4ed5234aff74d34ef5786");
 
     auto kp_sk1 = "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab78862834829a"
         "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f";
     auto kp_sk2 = "5ea34e72bb044654a6a23675690ef5ffaaf1656b02f93fb76655f9cbdbe89876cd83ca3d13a"
         "d8a954d5011aa7861abe3a29ac25b70c4ed5234aff74d34ef5786";
-    REQUIRE(oxenc::to_hex(kp1.second.begin(), kp1.second.end()) == kp_sk1);
-    REQUIRE(oxenc::to_hex(kp2.second.begin(), kp2.second.end()) == kp_sk2);
+    CHECK(oxenc::to_hex(kp1.second.begin(), kp1.second.end()) == kp_sk1);
+    CHECK(oxenc::to_hex(kp2.second.begin(), kp2.second.end()) == kp_sk2);
 }
 
 TEST_CASE("Ed25519 seed for private key", "[ed25519][seed]") {
@@ -59,9 +59,9 @@ TEST_CASE("Ed25519 seed for private key", "[ed25519][seed]") {
     auto seed2 = session::ed25519::seed_for_ed_privkey(to_unsigned_sv(ed_sk2));
     CHECK_THROWS(session::ed25519::seed_for_ed_privkey(to_unsigned_sv(ed_sk_invalid)));
     
-    REQUIRE(oxenc::to_hex(seed1.begin(), seed1.end()) ==
+    CHECK(oxenc::to_hex(seed1.begin(), seed1.end()) ==
         "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab7");
-    REQUIRE(oxenc::to_hex(seed2.begin(), seed2.end()) ==
+    CHECK(oxenc::to_hex(seed2.begin(), seed2.end()) ==
         "5ea34e72bb044654a6a23675690ef5ffaaf1656b02f93fb76655f9cbdbe89876");
 }
 
@@ -77,10 +77,10 @@ TEST_CASE("Ed25519", "[ed25519][signature]") {
 
     auto expected_sig_hex = "e03b6e87a53d83f202f2501e9b52193dbe4a64c6503f88244948dee53271"
         "85011574589aa7b59bc9757f9b9c31b7be9c9212b92ac7c81e029ee21c338ee12405";
-    REQUIRE(oxenc::to_hex(sig1.begin(), sig1.end()) ==
+    CHECK(oxenc::to_hex(sig1.begin(), sig1.end()) ==
         expected_sig_hex);
 
-    REQUIRE(session::ed25519::verify(sig1, ed_pk, to_unsigned_sv("hello")));
+    CHECK(session::ed25519::verify(sig1, ed_pk, to_unsigned_sv("hello")));
     CHECK_THROWS(session::ed25519::verify(ed_invalid, ed_pk, to_unsigned_sv("hello")));
     CHECK_THROWS(session::ed25519::verify(ed_pk, ed_invalid, to_unsigned_sv("hello")));
 }

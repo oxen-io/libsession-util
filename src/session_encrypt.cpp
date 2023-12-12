@@ -459,6 +459,8 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
 std::string decrypt_ons_response(std::string_view lowercase_name, ustring_view ciphertext, ustring_view nonce) {
     if (ciphertext.size() < crypto_aead_xchacha20poly1305_ietf_ABYTES)
         throw std::invalid_argument{"Invalid ciphertext: expected to be greater than 16 bytes"};
+    if (nonce.size() != crypto_aead_xchacha20poly1305_ietf_NPUBBYTES)
+        throw std::invalid_argument{"Invalid nonce: expected to be 24 bytes"};
     
     // Hash the ONS name using BLAKE2b
     //

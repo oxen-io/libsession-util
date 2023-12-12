@@ -12,10 +12,10 @@ TEST_CASE("X25519 key pair generation", "[curve25519][keypair]") {
     auto kp1 = session::curve25519::curve25519_key_pair();
     auto kp2 = session::curve25519::curve25519_key_pair();
     
-    REQUIRE(kp1.first.size() == 32);
-    REQUIRE(kp1.second.size() == 64);
-    REQUIRE(kp1.first != kp2.first);
-    REQUIRE(kp1.second != kp2.second);
+    CHECK(kp1.first.size() == 32);
+    CHECK(kp1.second.size() == 64);
+    CHECK(kp1.first != kp2.first);
+    CHECK(kp1.second != kp2.second);
 }
 
 TEST_CASE("X25519 conversion", "[curve25519][to curve25519 pubkey]") {
@@ -27,9 +27,9 @@ TEST_CASE("X25519 conversion", "[curve25519][to curve25519 pubkey]") {
     auto x_pk1 = curve25519::to_curve25519_pubkey(to_unsigned_sv(ed_pk1));
     auto x_pk2 = curve25519::to_curve25519_pubkey(to_unsigned_sv(ed_pk2));
 
-    REQUIRE(oxenc::to_hex(x_pk1.begin(), x_pk1.end()) ==
+    CHECK(oxenc::to_hex(x_pk1.begin(), x_pk1.end()) ==
         "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
-    REQUIRE(oxenc::to_hex(x_pk2.begin(), x_pk2.end()) ==
+    CHECK(oxenc::to_hex(x_pk2.begin(), x_pk2.end()) ==
         "aa654f00fc39fc69fd0db829410ca38177d7732a8d2f0934ab3872ac56d5aa74");
 }
 
@@ -43,8 +43,8 @@ TEST_CASE("X25519 conversion", "[curve25519][to curve25519 seckey]") {
     auto x_sk1 = curve25519::to_curve25519_seckey(to_unsigned_sv(ed_sk1));
     auto x_sk2 = curve25519::to_curve25519_seckey(to_unsigned_sv(ed_sk2));
 
-    REQUIRE(oxenc::to_hex(x_sk1.begin(), x_sk1.end()) ==
+    CHECK(oxenc::to_hex(x_sk1.begin(), x_sk1.end()) ==
         "207e5d97e761300f96c10adc11efdd6d5c15188a9a7682ec05b30ca017e9b447");
-    REQUIRE(oxenc::to_hex(x_sk2.begin(), x_sk2.end()) ==
+    CHECK(oxenc::to_hex(x_sk2.begin(), x_sk2.end()) ==
         "904943eff27142a8e5cd37c84e2437c9979a560b044bf9a65a8d644b325fe56a");
 }

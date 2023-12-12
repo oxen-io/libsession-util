@@ -56,6 +56,16 @@ std::array<unsigned char, 32> blind25_factor(ustring_view session_id, ustring_vi
 
 namespace {
 
+    void blind15_id_impl(ustring_view session_id, ustring_view server_pk, unsigned char* out) {
+        auto k = blind15_factor(server_pk);
+        if (session_id.size() == 33)
+            session_id.remove_prefix(1);
+        auto ed_pk = xed25519::pubkey(session_id);
+        if (0 != crypto_scalarmult_ed25519_noclamp(out + 1, k.data(), ed_pk.data()))
+            throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
+        out[0] = 0x15;
+    }
+
     void blind25_id_impl(ustring_view session_id, ustring_view server_pk, unsigned char* out) {
         auto k = blind25_factor(session_id, server_pk);
         if (session_id.size() == 33)
@@ -81,15 +91,26 @@ ustring blind15_id(ustring_view session_id, ustring_view server_pk) {
 
     ustring result;
     result.resize(33);
-    result[0] = 0x15;
-    
-    auto k = blind15_factor(server_pk);
-    auto ed_pk = xed25519::pubkey(session_id);
-    
-    if (0 != crypto_scalarmult_ed25519_noclamp(result.data() + 1, k.data(), ed_pk.data()))
-        throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
-
+    blind15_id_impl(session_id, server_pk, result.data());
     return result;
+}
+
+std::string blind15_id(std::string_view session_id, std::string_view server_pk) {
+    if (session_id.size() != 66 || !oxenc::is_hex(session_id))
+        throw std::invalid_argument{"blind15_id: session_id must be hex (66 digits)"};
+    if (session_id[0] != '0' || session_id[1] != '5')
+        throw std::invalid_argument{"blind15_id: session_id must start with 05"};
+    if (server_pk.size() != 64 || !oxenc::is_hex(server_pk))
+        throw std::invalid_argument{"blind15_id: server_pk must be hex (64 digits)"};
+
+    uc33 raw_sid;
+    oxenc::from_hex(session_id.begin(), session_id.end(), raw_sid.begin());
+    uc32 raw_server_pk;
+    oxenc::from_hex(server_pk.begin(), server_pk.end(), raw_server_pk.begin());
+
+    uc33 blinded;
+    blind15_id_impl(to_sv(raw_sid), to_sv(raw_server_pk), blinded.data());
+    return oxenc::to_hex(blinded.begin(), blinded.end());
 }
 
 ustring blind25_id(ustring_view session_id, ustring_view server_pk) {
@@ -367,30 +388,37 @@ ustring blind15_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ust
 
 bool session_id_matches_blinded_id(std::string_view session_id, std::string_view blinded_id,
     std::string_view server_pk) {
-    ustring converted_blind_id1;
-    converted_blind_id1.resize(33);
+    if (session_id.size() != 66 || !oxenc::is_hex(session_id))
+        throw std::invalid_argument{"session_id_matches_blinded_id: session_id must be hex (66 digits)"};
+    if (session_id[0] != '0' || session_id[1] != '5')
+        throw std::invalid_argument{"session_id_matches_blinded_id: session_id must start with 05"};
+    if (blinded_id[1] != '5' && (blinded_id[0] != '1' || blinded_id[0] != '2'))
+        throw std::invalid_argument{"session_id_matches_blinded_id: blinded_id must start with 15 or 25"};
+    if (server_pk.size() != 64 || !oxenc::is_hex(server_pk))
+        throw std::invalid_argument{"session_id_matches_blinded_id: server_pk must be hex (64 digits)"};
+
+    std::string converted_blind_id1, converted_blind_id2;
+    ustring converted_blind_id1_raw;
 
     switch (blinded_id[0]) {
-        case 0x15:
-            converted_blind_id1 = blind15_id(to_unsigned_sv(session_id), to_unsigned_sv(server_pk));
-            break;
+        case '1':
+            converted_blind_id1 = blind15_id(session_id, server_pk);
+            
+            // For the negative, what we're going to get out of the above is simply the negative of
+            // converted_blind_id1, so flip the sign bit to get converted_blind_id2
+            oxenc::from_hex(converted_blind_id1.begin(), converted_blind_id1.end(), std::back_inserter(converted_blind_id1_raw));
+            converted_blind_id1_raw[32] ^= 0x80;
+            converted_blind_id2 = oxenc::to_hex(converted_blind_id1_raw);
+            
+            return (
+                blinded_id == converted_blind_id1 ||
+                blinded_id == converted_blind_id2
+            );
 
-        case 0x25:
-            converted_blind_id1 = blind25_id(to_unsigned_sv(session_id), to_unsigned_sv(server_pk));
-            break;
-
-        default: throw std::invalid_argument{"Invalid blinded_id: must start with 0x15 or 0x25"};
+        // blind25 doesn't run into the negative issue that blind15 did
+        case '2': return blinded_id == blind25_id(session_id, server_pk);
+        default: throw std::invalid_argument{"Invalid blinded_id: must start with 15 or 25"};
     }
-
-    // For the negative, what we're going to get out of the above is simply the negative of
-    // converted_blind_id1, so flip the sign bit to get converted_blind_id2
-    auto converted_blind_id2 = converted_blind_id1;
-    converted_blind_id2[32] ^= 0x80;
-
-    return (
-        to_unsigned_sv(blinded_id) == converted_blind_id1 ||
-        to_unsigned_sv(blinded_id) == converted_blind_id2
-    );
 }
 
 }  // namespace session
@@ -474,15 +502,15 @@ LIBSESSION_C_API bool session_blind25_sign(
 }
 
 LIBSESSION_C_API bool session_id_matches_blinded_id(
-    const unsigned char* session_id,
-    const unsigned char* blinded_id,
-    const unsigned char* server_pk
+    const char* session_id,
+    const char* blinded_id,
+    const char* server_pk
 ) {
     try {
         return session::session_id_matches_blinded_id(
-            {from_unsigned(session_id), 33},
-            {from_unsigned(blinded_id), 33},
-            {from_unsigned(server_pk), 32}
+            {session_id, 66},
+            {blinded_id, 66},
+            {server_pk, 64}
         );
     } catch (...) {
         return false;

@@ -99,16 +99,16 @@ LIBSESSION_EXPORT bool session_blind25_sign(
 /// This function attempts to generate a signature for a message using a blind25 private key.
 ///
 /// Inputs:
-/// - `session_id` -- [in] the session_id to compare (either 32 bytes, or 33 bytes with a 0x05 prefix).
-/// - `blinded_id` -- [in] the blinded_id to compare, can be either 0x15 or 0x25 blinded (33 bytes).
-/// - `server_pk` -- [in] the public key of the open group server to the blinded id came from (32 bytes).
+/// - `session_id` -- [in] the session_id to compare (66 bytes with a 05 prefix).
+/// - `blinded_id` -- [in] the blinded_id to compare, can be either 15 or 25 blinded (66 bytes).
+/// - `server_pk` -- [in] the public key of the open group server to the blinded id came from (64 bytes).
 ///
 /// Outputs:
 /// - `bool` -- True if the session_id matches the blinded_id, false if not.
 LIBSESSION_EXPORT bool session_id_matches_blinded_id(
-    const unsigned char* session_id, /* 32 or 33 bytes */
-    const unsigned char* blinded_id, /* 33 bytes */
-    const unsigned char* server_pk /* 32 bytes */);
+    const char* session_id, /* 66 bytes */
+    const char* blinded_id, /* 66 bytes */
+    const char* server_pk /* 64 bytes */);
 
 #ifdef __cplusplus
 }

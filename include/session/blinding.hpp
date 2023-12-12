@@ -64,6 +64,15 @@ std::array<unsigned char, 32> blind15_factor(ustring_view server_pk);
 /// id can be 05-prefixed (33 bytes) or unprefixed (32 bytes).
 std::array<unsigned char, 32> blind25_factor(ustring_view session_id, ustring_view server_pk);
 
+/// Computes the 15-blinded id from a session id and server pubkey.  Values accepted and
+/// returned are hex-encoded.
+ustring blind15_id(ustring_view session_id, ustring_view server_pk);
+
+/// Same as above, but takes the session id and pubkey as byte values instead of hex, and returns a
+/// 33-byte value (instead of a 66-digit hex value).  Unlike the string version, session_id here may
+/// be passed unprefixed (i.e. 32 bytes instead of 33 with the 05 prefix).
+std::string blind15_id(std::string_view session_id, std::string_view server_pk);
+
 /// Computes the 25-blinded id from a session id and server pubkey.  Values accepted and
 /// returned are hex-encoded.
 std::string blind25_id(std::string_view session_id, std::string_view server_pk);
@@ -114,7 +123,7 @@ ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk, ustrin
 /// Takes in a standard session_id and returns a flag indicating whether it matches the given
 /// blinded_id for a given server_pk.
 ///
-/// Takes either a 0x15 or 0x25 blinded_id (33 bytes) and the server pubkey (32 bytes).
+/// Takes either a 15 or 25 blinded_id (66 bytes) and the server pubkey (64 bytes).
 ///
 /// Returns a flag indicating whether the session_id matches the blinded_id.
 bool session_id_matches_blinded_id(std::string_view session_id, std::string_view blinded_id,
