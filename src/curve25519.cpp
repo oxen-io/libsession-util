@@ -1,9 +1,12 @@
-#include "session/ed25519.hpp"
+#include "session/curve25519.hpp"
 
 #include <sodium/crypto_box.h>
 #include <sodium/crypto_sign_ed25519.h>
 
+#include <stdexcept>
+
 #include "session/export.h"
+#include "session/util.hpp"
 
 namespace session::curve25519 {
 

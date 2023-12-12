@@ -3,6 +3,8 @@
 #include <sodium/crypto_sign.h>
 #include <sodium/crypto_sign_ed25519.h>
 
+#include <stdexcept>
+
 #include "session/export.h"
 #include "session/util.hpp"
 
