@@ -42,8 +42,12 @@ class Builder {
         ed25519_public_key_.emplace(ed25519_public_key);
     }
 
-    void set_server_destination(std::string host, std::string target, std::string protocol, std::optional<uint16_t> port,
-        x25519_pubkey x25519_public_key) {
+    void set_server_destination(
+            std::string host,
+            std::string target,
+            std::string protocol,
+            std::optional<uint16_t> port,
+            x25519_pubkey x25519_public_key) {
         destination_x25519_public_key.reset();
 
         host_.emplace(host);
@@ -56,9 +60,7 @@ class Builder {
         destination_x25519_public_key.emplace(x25519_public_key);
     }
 
-    void add_hop(std::pair<ed25519_pubkey, x25519_pubkey> keys) {
-        hops_.push_back(keys);
-    }
+    void add_hop(std::pair<ed25519_pubkey, x25519_pubkey> keys) { hops_.push_back(keys); }
 
     ustring build(ustring payload);
 

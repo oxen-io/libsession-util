@@ -3,23 +3,21 @@
 #include <oxenc/endian.h>
 #include <sodium/core.h>
 
-#include "session/onionreq/builder.h"
-#include "session/onionreq/builder.hpp"
-#include "session/onionreq/hop_encryption.hpp"
 #include <stdexcept>
 
 #include "session/export.h"
+#include "session/onionreq/builder.h"
+#include "session/onionreq/builder.hpp"
+#include "session/onionreq/hop_encryption.hpp"
 
 namespace session::onionreq {
 
-ResponseParser::ResponseParser(
-    session::onionreq::Builder builder
-) {
+ResponseParser::ResponseParser(session::onionreq::Builder builder) {
     if (!builder.destination_x25519_public_key.has_value())
         throw std::runtime_error{"Builder does not contain destination x25519 public key"};
     if (!builder.final_hop_x25519_keypair.has_value())
         throw std::runtime_error{"Builder does not contain final keypair"};
-    
+
     enc_type_ = builder.enc_type;
     destination_x25519_public_key_ = builder.destination_x25519_public_key.value();
     x25519_keypair_ = builder.final_hop_x25519_keypair.value();
@@ -38,16 +36,16 @@ extern "C" {
 using session::ustring;
 
 LIBSESSION_C_API bool onion_request_decrypt(
-    const unsigned char* ciphertext,
-    size_t ciphertext_len,
-    ENCRYPT_TYPE enc_type_,
-    unsigned char* destination_x25519_pubkey,
-    unsigned char* final_x25519_pubkey,
-    unsigned char* final_x25519_seckey,
-    unsigned char** plaintext_out,
-    size_t* plaintext_out_len
-) {
-    assert(ciphertext && destination_x25519_pubkey && final_x25519_pubkey && final_x25519_seckey && ciphertext_len > 0);
+        const unsigned char* ciphertext,
+        size_t ciphertext_len,
+        ENCRYPT_TYPE enc_type_,
+        unsigned char* destination_x25519_pubkey,
+        unsigned char* final_x25519_pubkey,
+        unsigned char* final_x25519_seckey,
+        unsigned char** plaintext_out,
+        size_t* plaintext_out_len) {
+    assert(ciphertext && destination_x25519_pubkey && final_x25519_pubkey && final_x25519_seckey &&
+           ciphertext_len > 0);
 
     try {
         auto enc_type = session::onionreq::EncryptType::xchacha20;
@@ -61,29 +59,26 @@ LIBSESSION_C_API bool onion_request_decrypt(
                 enc_type = session::onionreq::EncryptType::xchacha20;
                 break;
 
-            default: throw std::runtime_error{"Invalid decryption type " + std::to_string(enc_type_)};
+            default:
+                throw std::runtime_error{"Invalid decryption type " + std::to_string(enc_type_)};
         }
 
         session::onionreq::HopEncryption d{
-            session::onionreq::x25519_seckey::from_bytes({final_x25519_seckey, 32}),
-            session::onionreq::x25519_pubkey::from_bytes({final_x25519_pubkey, 32}),
-            false
-        };
+                session::onionreq::x25519_seckey::from_bytes({final_x25519_seckey, 32}),
+                session::onionreq::x25519_pubkey::from_bytes({final_x25519_pubkey, 32}),
+                false};
 
         auto result = d.decrypt(
-            enc_type,
-            ustring{ciphertext, ciphertext_len},
-            session::onionreq::x25519_pubkey::from_bytes({destination_x25519_pubkey, 32})
-        );
+                enc_type,
+                ustring{ciphertext, ciphertext_len},
+                session::onionreq::x25519_pubkey::from_bytes({destination_x25519_pubkey, 32}));
 
         *plaintext_out = static_cast<unsigned char*>(malloc(result.size()));
         *plaintext_out_len = result.size();
         std::memcpy(*plaintext_out, result.data(), result.size());
         return true;
-    }
-    catch (...) { 
+    } catch (...) {
         return false;
     }
 }
-
 }

@@ -1,8 +1,8 @@
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
-#include <session/session_encrypt.hpp>
 #include <session/blinding.hpp>
+#include <session/session_encrypt.hpp>
 #include <session/util.hpp>
 
 #include "utils.hpp"
@@ -68,7 +68,8 @@ TEST_CASE("Session protocol encryption", "[session-protocol][encrypt]") {
                 "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu "
                 "fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
                 "culpa qui officia deserunt mollit anim id est laborum."sv;
-        auto enc = encrypt_for_recipient({to_sv(ed_sk).data(), 32}, sid_raw2, to_unsigned_sv(lorem_ipsum));
+        auto enc = encrypt_for_recipient(
+                {to_sv(ed_sk).data(), 32}, sid_raw2, to_unsigned_sv(lorem_ipsum));
         CHECK(enc.find(to_unsigned("dolore magna")) == std::string::npos);
 
         CHECK_THROWS(decrypt_incoming(to_sv(ed_sk), enc));
@@ -144,7 +145,8 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
     using namespace session;
 
     const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
-    const auto server_pk = "1d7e7f92b1ed3643855c98ecac02fc7274033a3467653f047d6e433540c03f17"_hexbytes;
+    const auto server_pk =
+            "1d7e7f92b1ed3643855c98ecac02fc7274033a3467653f047d6e433540c03f17"_hexbytes;
     std::array<unsigned char, 32> ed_pk, curve_pk;
     std::array<unsigned char, 64> ed_sk;
     crypto_sign_ed25519_seed_keypair(ed_pk.data(), ed_sk.data(), seed.data());
@@ -191,44 +193,82 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
     memcpy(blind25_pk2_prefixed.data() + 1, blind25_pk2.data(), 32);
 
     SECTION("blind15, full secret, recipient decrypt") {
-        auto enc = encrypt_for_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind15_pk2_prefixed.data(), 33}, to_unsigned_sv("hello"));
+        auto enc = encrypt_for_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind15_pk2_prefixed.data(), 33},
+                to_unsigned_sv("hello"));
         CHECK(from_unsigned_sv(enc) != "hello");
 
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                blind15_pk, {blind15_pk2_prefixed.data(), 33}, enc));
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, blind15_pk2, enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                blind15_pk,
+                {blind15_pk2_prefixed.data(), 33},
+                enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                blind15_pk2,
+                enc));
 
-        auto [msg, sender] = decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, enc);
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                {blind15_pk2_prefixed.data(), 33},
+                enc);
         CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == "hello");
 
         auto broken = enc;
-        broken[23] ^= 0x80;     // 1 + 5 + 16 = 22 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, broken));
+        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                {blind15_pk2_prefixed.data(), 33},
+                broken));
     }
     SECTION("blind15, full secret, sender decrypt") {
-        auto enc = encrypt_for_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind15_pk2_prefixed.data(), 33}, to_unsigned_sv("hello"));
+        auto enc = encrypt_for_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind15_pk2_prefixed.data(), 33},
+                to_unsigned_sv("hello"));
         CHECK(from_unsigned_sv(enc) != "hello");
 
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                blind15_pk, {blind15_pk2_prefixed.data(), 33}, enc));
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, blind15_pk2, enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                blind15_pk,
+                {blind15_pk2_prefixed.data(), 33},
+                enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                blind15_pk2,
+                enc));
 
-        auto [msg, sender] = decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, enc);
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                {blind15_pk2_prefixed.data(), 33},
+                enc);
         CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == "hello");
 
         auto broken = enc;
-        broken[23] ^= 0x80;     // 1 + 5 + 16 = 22 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, broken));
+        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                {blind15_pk2_prefixed.data(), 33},
+                broken));
     }
     SECTION("blind15, only seed, recipient decrypt") {
         constexpr auto lorem_ipsum =
@@ -238,59 +278,108 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
                 "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu "
                 "fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
                 "culpa qui officia deserunt mollit anim id est laborum."sv;
-        auto enc = encrypt_for_blinded_recipient({to_sv(ed_sk).data(), 32}, to_unsigned_sv(server_pk),
-                {blind15_pk2_prefixed.data(), 33}, to_unsigned_sv(lorem_ipsum));
+        auto enc = encrypt_for_blinded_recipient(
+                {to_sv(ed_sk).data(), 32},
+                to_unsigned_sv(server_pk),
+                {blind15_pk2_prefixed.data(), 33},
+                to_unsigned_sv(lorem_ipsum));
         CHECK(enc.find(to_unsigned("dolore magna")) == std::string::npos);
 
-        auto [msg, sender] = decrypt_from_blinded_recipient({to_sv(ed_sk2).data(), 32}, to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, enc);
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                {to_sv(ed_sk2).data(), 32},
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                {blind15_pk2_prefixed.data(), 33},
+                enc);
         CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == lorem_ipsum);
 
         auto broken = enc;
-        broken[463] ^= 0x80;     // 1 + 445 + 16 = 462 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient({to_sv(ed_sk2).data(), 32}, to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33}, {blind15_pk2_prefixed.data(), 33}, broken));
+        broken[463] ^= 0x80;  // 1 + 445 + 16 = 462 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                {to_sv(ed_sk2).data(), 32},
+                to_unsigned_sv(server_pk),
+                {blind15_pk_prefixed.data(), 33},
+                {blind15_pk2_prefixed.data(), 33},
+                broken));
     }
     SECTION("blind25, full secret, recipient decrypt") {
-        auto enc = encrypt_for_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind25_pk2_prefixed.data(), 33}, to_unsigned_sv("hello"));
+        auto enc = encrypt_for_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk2_prefixed.data(), 33},
+                to_unsigned_sv("hello"));
         CHECK(from_unsigned_sv(enc) != "hello");
-        
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                blind25_pk, {blind25_pk2_prefixed.data(), 33}, enc));
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, blind25_pk2, enc));
 
-        auto [msg, sender] = decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, {blind25_pk2_prefixed.data(), 33}, enc);
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                blind25_pk,
+                {blind25_pk2_prefixed.data(), 33},
+                enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                blind25_pk2,
+                enc));
+
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                enc);
         CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == "hello");
 
         auto broken = enc;
-        broken[23] ^= 0x80;     // 1 + 5 + 16 = 22 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk2), to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, {blind25_pk2_prefixed.data(), 33}, broken));
+        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                broken));
     }
     SECTION("blind25, full secret, sender decrypt") {
-        auto enc = encrypt_for_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind25_pk2_prefixed.data(), 33}, to_unsigned_sv("hello"));
+        auto enc = encrypt_for_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk2_prefixed.data(), 33},
+                to_unsigned_sv("hello"));
         CHECK(from_unsigned_sv(enc) != "hello");
 
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                blind25_pk, {blind25_pk2_prefixed.data(), 33}, enc));
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, blind25_pk2, enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                blind25_pk,
+                {blind25_pk2_prefixed.data(), 33},
+                enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                blind25_pk2,
+                enc));
 
-        auto [msg, sender] = decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, {blind25_pk2_prefixed.data(), 33}, enc);
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                enc);
         CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == "hello");
 
         auto broken = enc;
-        broken[23] ^= 0x80;     // 1 + 5 + 16 = 22 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient(to_sv(ed_sk), to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, {blind25_pk2_prefixed.data(), 33}, broken));
+        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                broken));
     }
     SECTION("blind25, only seed, recipient decrypt") {
         constexpr auto lorem_ipsum =
@@ -300,19 +389,30 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
                 "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu "
                 "fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
                 "culpa qui officia deserunt mollit anim id est laborum."sv;
-        auto enc = encrypt_for_blinded_recipient({to_sv(ed_sk).data(), 32}, to_unsigned_sv(server_pk),
-                {blind25_pk2_prefixed.data(), 33}, to_unsigned_sv(lorem_ipsum));
+        auto enc = encrypt_for_blinded_recipient(
+                {to_sv(ed_sk).data(), 32},
+                to_unsigned_sv(server_pk),
+                {blind25_pk2_prefixed.data(), 33},
+                to_unsigned_sv(lorem_ipsum));
         CHECK(enc.find(to_unsigned("dolore magna")) == std::string::npos);
 
-        auto [msg, sender] = decrypt_from_blinded_recipient({to_sv(ed_sk2).data(), 32}, to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, {blind25_pk2_prefixed.data(), 33}, enc);
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                {to_sv(ed_sk2).data(), 32},
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                enc);
         CHECK(sender == sid);
         CHECK(from_unsigned_sv(msg) == lorem_ipsum);
 
         auto broken = enc;
-        broken[463] ^= 0x80;     // 1 + 445 + 16 = 462 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient({to_sv(ed_sk2).data(), 32}, to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33}, {blind25_pk2_prefixed.data(), 33}, broken));
+        broken[463] ^= 0x80;  // 1 + 445 + 16 = 462 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                {to_sv(ed_sk2).data(), 32},
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                broken));
     }
 }
 
@@ -320,13 +420,15 @@ TEST_CASE("Session ONS response decryption", "[session-ons][decrypt]") {
     using namespace session;
 
     std::string_view name = "test";
-    auto ciphertext = "3575802dd9bfea72672a208840f37ca289ceade5d3ffacabe2d231f109d204329fc33e28c33"
-        "1580d9a8c9b8a64cacfec97"_hexbytes;
+    auto ciphertext =
+            "3575802dd9bfea72672a208840f37ca289ceade5d3ffacabe2d231f109d204329fc33e28c33"
+            "1580d9a8c9b8a64cacfec97"_hexbytes;
     auto nonce = "00112233445566778899aabbccddeeff00ffeeddccbbaa99"_hexbytes;
-    ustring sid_data = "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72"_hexbytes;
+    ustring sid_data =
+            "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72"_hexbytes;
 
-    CHECK(decrypt_ons_response(name, ciphertext, nonce) == 
-        "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK(decrypt_ons_response(name, ciphertext, nonce) ==
+          "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
     CHECK_THROWS(decrypt_ons_response(name, to_unsigned_sv("invalid"), nonce));
     CHECK_THROWS(decrypt_ons_response(name, ciphertext, to_unsigned_sv("invalid")));
 }
@@ -334,10 +436,12 @@ TEST_CASE("Session ONS response decryption", "[session-ons][decrypt]") {
 TEST_CASE("Session push notification decryption", "[session-notification][decrypt]") {
     using namespace session;
 
-    auto payload = "00112233445566778899aabbccddeeff00ffeeddccbbaa991bcba42892762dbeecbfb1a375f"
-        "ab4aca5f0991e99eb0344ceeafa"_hexbytes;
-    auto payload_padded = "00112233445566778899aabbccddeeff00ffeeddccbbaa991bcba42892762dbeecbfb1a375f"
-        "ab4aca5f0991e99eb0344ceeafa"_hexbytes;
+    auto payload =
+            "00112233445566778899aabbccddeeff00ffeeddccbbaa991bcba42892762dbeecbfb1a375f"
+            "ab4aca5f0991e99eb0344ceeafa"_hexbytes;
+    auto payload_padded =
+            "00112233445566778899aabbccddeeff00ffeeddccbbaa991bcba42892762dbeecbfb1a375f"
+            "ab4aca5f0991e99eb0344ceeafa"_hexbytes;
     auto enc_key = "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
 
     CHECK(decrypt_push_notification(payload, enc_key) == to_unsigned("TestMessage"));

@@ -11,7 +11,7 @@ std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> ed25519_
 
 /// Given an Ed25519 seed this returns the associated Ed25519 key pair
 std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> ed25519_key_pair(
-    ustring_view ed25519_seed);
+        ustring_view ed25519_seed);
 
 /// API: ed25519/seed_for_ed_privkey
 ///

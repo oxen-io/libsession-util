@@ -9,8 +9,8 @@
 #include <cassert>
 #include <stdexcept>
 
-#include "session/xed25519.hpp"
 #include "session/export.h"
+#include "session/xed25519.hpp"
 
 namespace session {
 
@@ -361,7 +361,7 @@ ustring blind15_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ust
     crypto_hash_sha512_update(&st2, message.data(), message.size());
     crypto_hash_sha512_final(&st2, r_hash.data());
     crypto_core_ed25519_scalar_reduce(r.data(), r_hash.data());
-    
+
     // sig_R = salt.crypto_scalarmult_ed25519_base_noclamp(r)
     ustring result;
     result.resize(64);
@@ -379,23 +379,26 @@ ustring blind15_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ust
     crypto_hash_sha512_final(&st3, hram.data());
 
     // sig_s = salt.crypto_core_ed25519_scalar_add(r, salt.crypto_core_ed25519_scalar_mul(HRAM, ka))
-    crypto_core_ed25519_scalar_reduce(sig_S, hram.data());  // S = H(R||A||M)
+    crypto_core_ed25519_scalar_reduce(sig_S, hram.data());             // S = H(R||A||M)
     crypto_core_ed25519_scalar_mul(sig_S, sig_S, blind_15_sk.data());  // S = H(R||A||M) a
-    crypto_core_ed25519_scalar_add(sig_S, sig_S, r.data());  // S = r + H(R||A||M) a
-    
+    crypto_core_ed25519_scalar_add(sig_S, sig_S, r.data());            // S = r + H(R||A||M) a
+
     return result;
 }
 
-bool session_id_matches_blinded_id(std::string_view session_id, std::string_view blinded_id,
-    std::string_view server_pk) {
+bool session_id_matches_blinded_id(
+        std::string_view session_id, std::string_view blinded_id, std::string_view server_pk) {
     if (session_id.size() != 66 || !oxenc::is_hex(session_id))
-        throw std::invalid_argument{"session_id_matches_blinded_id: session_id must be hex (66 digits)"};
+        throw std::invalid_argument{
+                "session_id_matches_blinded_id: session_id must be hex (66 digits)"};
     if (session_id[0] != '0' || session_id[1] != '5')
         throw std::invalid_argument{"session_id_matches_blinded_id: session_id must start with 05"};
     if (blinded_id[1] != '5' && (blinded_id[0] != '1' || blinded_id[0] != '2'))
-        throw std::invalid_argument{"session_id_matches_blinded_id: blinded_id must start with 15 or 25"};
+        throw std::invalid_argument{
+                "session_id_matches_blinded_id: blinded_id must start with 15 or 25"};
     if (server_pk.size() != 64 || !oxenc::is_hex(server_pk))
-        throw std::invalid_argument{"session_id_matches_blinded_id: server_pk must be hex (64 digits)"};
+        throw std::invalid_argument{
+                "session_id_matches_blinded_id: server_pk must be hex (64 digits)"};
 
     std::string converted_blind_id1, converted_blind_id2;
     ustring converted_blind_id1_raw;
@@ -403,17 +406,17 @@ bool session_id_matches_blinded_id(std::string_view session_id, std::string_view
     switch (blinded_id[0]) {
         case '1':
             converted_blind_id1 = blind15_id(session_id, server_pk);
-            
+
             // For the negative, what we're going to get out of the above is simply the negative of
             // converted_blind_id1, so flip the sign bit to get converted_blind_id2
-            oxenc::from_hex(converted_blind_id1.begin(), converted_blind_id1.end(), std::back_inserter(converted_blind_id1_raw));
+            oxenc::from_hex(
+                    converted_blind_id1.begin(),
+                    converted_blind_id1.end(),
+                    std::back_inserter(converted_blind_id1_raw));
             converted_blind_id1_raw[32] ^= 0x80;
             converted_blind_id2 = oxenc::to_hex(converted_blind_id1_raw);
-            
-            return (
-                blinded_id == converted_blind_id1 ||
-                blinded_id == converted_blind_id2
-            );
+
+            return (blinded_id == converted_blind_id1 || blinded_id == converted_blind_id2);
 
         // blind25 doesn't run into the negative issue that blind15 did
         case '2': return blinded_id == blind25_id(session_id, server_pk);
@@ -426,11 +429,10 @@ bool session_id_matches_blinded_id(std::string_view session_id, std::string_view
 using namespace session;
 
 LIBSESSION_C_API bool session_blind15_key_pair(
-    const unsigned char* ed25519_seckey,
-    const unsigned char* server_pk,
-    unsigned char* blinded_pk_out,
-    unsigned char* blinded_sk_out
-) {
+        const unsigned char* ed25519_seckey,
+        const unsigned char* server_pk,
+        unsigned char* blinded_pk_out,
+        unsigned char* blinded_sk_out) {
     try {
         auto result = session::blind15_key_pair({ed25519_seckey, 64}, {server_pk, 32});
         auto [b_pk, b_sk] = result;
@@ -443,11 +445,10 @@ LIBSESSION_C_API bool session_blind15_key_pair(
 }
 
 LIBSESSION_C_API bool session_blind25_key_pair(
-    const unsigned char* ed25519_seckey,
-    const unsigned char* server_pk,
-    unsigned char* blinded_pk_out,
-    unsigned char* blinded_sk_out
-) {
+        const unsigned char* ed25519_seckey,
+        const unsigned char* server_pk,
+        unsigned char* blinded_pk_out,
+        unsigned char* blinded_sk_out) {
     try {
         auto result = session::blind25_key_pair({ed25519_seckey, 64}, {server_pk, 32});
         auto [b_pk, b_sk] = result;
@@ -460,18 +461,14 @@ LIBSESSION_C_API bool session_blind25_key_pair(
 }
 
 LIBSESSION_C_API bool session_blind15_sign(
-    const unsigned char* ed25519_seckey,
-    const unsigned char* server_pk,
-    const unsigned char* msg,
-    size_t msg_len,
-    unsigned char* blinded_sig_out
-) {
+        const unsigned char* ed25519_seckey,
+        const unsigned char* server_pk,
+        const unsigned char* msg,
+        size_t msg_len,
+        unsigned char* blinded_sig_out) {
     try {
         auto result = session::blind15_sign(
-            {ed25519_seckey, 64},
-            {from_unsigned(server_pk), 32},
-            {msg, msg_len}
-        );
+                {ed25519_seckey, 64}, {from_unsigned(server_pk), 32}, {msg, msg_len});
         auto sig = result;
         std::memcpy(blinded_sig_out, sig.data(), sig.size());
         return true;
@@ -481,18 +478,14 @@ LIBSESSION_C_API bool session_blind15_sign(
 }
 
 LIBSESSION_C_API bool session_blind25_sign(
-    const unsigned char* ed25519_seckey,
-    const unsigned char* server_pk,
-    const unsigned char* msg,
-    size_t msg_len,
-    unsigned char* blinded_sig_out
-) {
+        const unsigned char* ed25519_seckey,
+        const unsigned char* server_pk,
+        const unsigned char* msg,
+        size_t msg_len,
+        unsigned char* blinded_sig_out) {
     try {
         auto result = session::blind25_sign(
-            {ed25519_seckey, 64},
-            {from_unsigned(server_pk), 32},
-            {msg, msg_len}
-        );
+                {ed25519_seckey, 64}, {from_unsigned(server_pk), 32}, {msg, msg_len});
         auto sig = result;
         std::memcpy(blinded_sig_out, sig.data(), sig.size());
         return true;
@@ -502,16 +495,10 @@ LIBSESSION_C_API bool session_blind25_sign(
 }
 
 LIBSESSION_C_API bool session_id_matches_blinded_id(
-    const char* session_id,
-    const char* blinded_id,
-    const char* server_pk
-) {
+        const char* session_id, const char* blinded_id, const char* server_pk) {
     try {
         return session::session_id_matches_blinded_id(
-            {session_id, 66},
-            {blinded_id, 66},
-            {server_pk, 64}
-        );
+                {session_id, 66}, {blinded_id, 66}, {server_pk, 64});
     } catch (...) {
         return false;
     }

@@ -284,9 +284,8 @@ TEST_CASE("Communities 15xxx-blinded signing", "[blinding15][sign]") {
                        to_unsigned(oxenc::from_hex(b15_6).data()) + 1));
 }
 
-
 TEST_CASE("Communities session id blinded id matching", "[blinding][matching]") {
-      std::array server_pks = {
+    std::array server_pks = {
             "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,
             "00cdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,
             "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,

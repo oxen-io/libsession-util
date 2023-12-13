@@ -4,8 +4,8 @@
 extern "C" {
 #endif
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "../export.h"
 
@@ -17,7 +17,7 @@ typedef enum ENCRYPT_TYPE {
 typedef struct onion_request_builder_object {
     // Internal opaque object pointer; calling code should leave this alone.
     void* internals;
-    
+
     ENCRYPT_TYPE enc_type;
 } onion_request_builder_object;
 
@@ -30,8 +30,7 @@ typedef struct onion_request_builder_object {
 ///
 /// Inputs:
 /// - `builder` -- [out] Pointer to the builder object
-LIBSESSION_EXPORT void onion_request_builder_init(
-        onion_request_builder_object** builder);
+LIBSESSION_EXPORT void onion_request_builder_init(onion_request_builder_object** builder);
 
 /// API: onion_request_builder_set_enc_type
 ///
@@ -49,8 +48,7 @@ LIBSESSION_EXPORT void onion_request_builder_init(
 /// - `builder` -- [in] Pointer to the builder object
 /// - `enc_type` -- [in] The encryption type to use in the onion request
 LIBSESSION_EXPORT void onion_request_builder_set_enc_type(
-    onion_request_builder_object* builder,
-    ENCRYPT_TYPE enc_type);
+        onion_request_builder_object* builder, ENCRYPT_TYPE enc_type);
 
 /// API: onion_request_builder_set_snode_destination
 ///
@@ -71,9 +69,9 @@ LIBSESSION_EXPORT void onion_request_builder_set_enc_type(
 /// - `ed25519_pubkey` -- [in] The ed25519 public key for the snode destination
 /// - `x25519_pubkey` -- [in] The x25519 public key for the snode destination
 LIBSESSION_EXPORT void onion_request_builder_set_snode_destination(
-    onion_request_builder_object* builder,
-    const char* ed25519_pubkey,
-    const char* x25519_pubkey);
+        onion_request_builder_object* builder,
+        const char* ed25519_pubkey,
+        const char* x25519_pubkey);
 
 /// API: onion_request_builder_set_server_destination
 ///
@@ -96,16 +94,16 @@ LIBSESSION_EXPORT void onion_request_builder_set_snode_destination(
 /// - `builder` -- [in] Pointer to the builder object
 /// - `host` -- [in] The host for the server destination
 /// - `target` -- [in] The target (endpoint) for the server destination
-/// - `protocol` -- [in] The protocol to use for the 
+/// - `protocol` -- [in] The protocol to use for the
 /// - `port` -- [in] The host for the server destination
 /// - `x25519_pubkey` -- [in] The x25519 public key for the snode destination
 LIBSESSION_EXPORT void onion_request_builder_set_server_destination(
-    onion_request_builder_object* builder,
-    const char* host,
-    const char* target,
-    const char* protocol,
-    uint16_t port,
-    const char* x25519_pubkey);
+        onion_request_builder_object* builder,
+        const char* host,
+        const char* target,
+        const char* protocol,
+        uint16_t port,
+        const char* x25519_pubkey);
 
 /// API: onion_request_builder_add_hop
 ///
@@ -126,9 +124,9 @@ LIBSESSION_EXPORT void onion_request_builder_set_server_destination(
 /// - `ed25519_pubkey` -- [in] The ed25519 public key for the snode hop
 /// - `x25519_pubkey` -- [in] The x25519 public key for the snode hop
 LIBSESSION_EXPORT void onion_request_builder_add_hop(
-    onion_request_builder_object* builder,
-    const char* ed25519_pubkey,
-    const char* x25519_pubkey);
+        onion_request_builder_object* builder,
+        const char* ed25519_pubkey,
+        const char* x25519_pubkey);
 
 /// API: onion_request_builder_build
 ///
@@ -162,16 +160,16 @@ LIBSESSION_EXPORT void onion_request_builder_add_hop(
 /// x25519 secret key used for the onion request will be written if successful
 ///
 /// Outputs:
-/// - `bool` -- True if the onion request payload was successfully constructed, false if it failed. 
+/// - `bool` -- True if the onion request payload was successfully constructed, false if it failed.
 ///   If (and only if) true is returned then `payload_out` must be freed when done with it.
 LIBSESSION_EXPORT bool onion_request_builder_build(
-    onion_request_builder_object* builder,
-    const unsigned char* payload_in,
-    size_t payload_in_len,
-    unsigned char** payload_out,
-    size_t* payload_out_len,
-    unsigned char* final_x25519_pubkey_out,
-    unsigned char* final_x25519_seckey_out);
+        onion_request_builder_object* builder,
+        const unsigned char* payload_in,
+        size_t payload_in_len,
+        unsigned char** payload_out,
+        size_t* payload_out_len,
+        unsigned char* final_x25519_pubkey_out,
+        unsigned char* final_x25519_seckey_out);
 
 #ifdef __cplusplus
 }

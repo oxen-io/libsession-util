@@ -140,9 +140,9 @@ ustring sign_for_recipient(
 ///
 /// Outputs:
 /// - `std::pair<ustring, ustring>` -- the plaintext binary data that was encrypted and the
-///   sender's ED25519 pubkey, *if* the message decrypted and validated successfully.  Throws on error.
-std::pair<ustring, ustring> decrypt_incoming(
-        ustring_view ed25519_privkey, ustring_view ciphertext);
+///   sender's ED25519 pubkey, *if* the message decrypted and validated successfully.  Throws on
+///   error.
+std::pair<ustring, ustring> decrypt_incoming(ustring_view ed25519_privkey, ustring_view ciphertext);
 
 /// API: crypto/decrypt_incoming
 ///
@@ -159,7 +159,8 @@ std::pair<ustring, ustring> decrypt_incoming(
 ///
 /// Outputs:
 /// - `std::pair<ustring, ustring>` -- the plaintext binary data that was encrypted and the
-///   sender's ED25519 pubkey, *if* the message decrypted and validated successfully.  Throws on error.
+///   sender's ED25519 pubkey, *if* the message decrypted and validated successfully.  Throws on
+///   error.
 std::pair<ustring, ustring> decrypt_incoming(
         ustring_view x25519_pubkey, ustring_view x25519_seckey, ustring_view ciphertext);
 
@@ -203,10 +204,12 @@ std::pair<ustring, std::string> decrypt_incoming_session_id(
 /// This function attempts to decrypt a message using the SessionBlindingProtocol.
 ///
 /// Inputs:
-/// - `ed25519_privkey` -- the Ed25519 private key of the receiver.  Can be a 32-byte seed, or a 64-byte
+/// - `ed25519_privkey` -- the Ed25519 private key of the receiver.  Can be a 32-byte seed, or a
+/// 64-byte
 ///   libsodium secret key.  The latter is a bit faster as it doesn't have to re-compute the pubkey
 ///   from the seed.
-/// - `server_pk` -- the public key of the open group server to route the blinded message through (32 bytes).
+/// - `server_pk` -- the public key of the open group server to route the blinded message through
+/// (32 bytes).
 /// - `sender_id` -- the blinded id of the sender including the blinding prefix (33 bytes),
 ///   'blind15' or 'blind25' decryption will be chosed based on this value.
 /// - `recipient_id` -- the blinded id of the recipient including the blinding prefix (33 bytes),
@@ -236,9 +239,7 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
 /// - `std::string` -- the session ID (in hex) returned from the server, *if* the server returned
 ///   a session ID.  Throws on error/failure.
 std::string decrypt_ons_response(
-        std::string_view lowercase_name,
-        ustring_view ciphertext,
-        ustring_view nonce);
+        std::string_view lowercase_name, ustring_view ciphertext, ustring_view nonce);
 
 /// API: crypto/decrypt_push_notification
 ///
@@ -246,13 +247,12 @@ std::string decrypt_ons_response(
 ///
 /// Inputs:
 /// - `payload` -- the payload included in the push notification.
-/// - `enc_key` -- the device encryption key used when subscribing for push notifications (32 bytes).
+/// - `enc_key` -- the device encryption key used when subscribing for push notifications (32
+/// bytes).
 ///
 /// Outputs:
 /// - `ustring` -- the decrypted push notification payload, *if* the decryption was
 ///   successful.  Throws on error/failure.
-ustring decrypt_push_notification(
-        ustring_view payload,
-        ustring_view enc_key);
+ustring decrypt_push_notification(ustring_view payload, ustring_view enc_key);
 
 }  // namespace session

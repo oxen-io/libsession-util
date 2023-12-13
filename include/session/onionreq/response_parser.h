@@ -4,8 +4,8 @@
 extern "C" {
 #endif
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "../export.h"
 #include "builder.h"
@@ -39,23 +39,23 @@ extern "C" {
 /// - `destination_x25519_pubkey` -- [in] The x25519 public key for the server destination
 /// - `final_x25519_pubkey` -- [in] The final x25519 public key used for the onion request
 /// - `final_x25519_seckey` -- [in] The final x25519 secret key used for the onion request
-/// - `plaintext_out` -- [out] decrypted content contained within ciphertext, will be nullptr on error
+/// - `plaintext_out` -- [out] decrypted content contained within ciphertext, will be nullptr on
+/// error
 /// - `plaintext_out_len` -- [out] length of plaintext_out if not null
 ///
 /// Outputs:
-/// - `bool` -- True if the onion request was successfully constructed, false if it failed. 
+/// - `bool` -- True if the onion request was successfully constructed, false if it failed.
 ///   If (and only if) true is returned then `plaintext_out` must be freed when done with it.
 LIBSESSION_EXPORT bool onion_request_decrypt(
-    const unsigned char* ciphertext,
-    size_t ciphertext_len,
-    ENCRYPT_TYPE enc_type_,
-    unsigned char* destination_x25519_pubkey,
-    unsigned char* final_x25519_pubkey,
-    unsigned char* final_x25519_seckey,
-    unsigned char** plaintext_out,
-    size_t* plaintext_out_len
-);
-        
+        const unsigned char* ciphertext,
+        size_t ciphertext_len,
+        ENCRYPT_TYPE enc_type_,
+        unsigned char* destination_x25519_pubkey,
+        unsigned char* final_x25519_pubkey,
+        unsigned char* final_x25519_seckey,
+        unsigned char** plaintext_out,
+        size_t* plaintext_out_len);
+
 #ifdef __cplusplus
 }
 #endif

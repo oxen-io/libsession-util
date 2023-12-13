@@ -3,24 +3,24 @@
 #include <nettle/gcm.h>
 #include <oxenc/endian.h>
 #include <oxenc/hex.h>
-#include <sodium/crypto_box.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_auth_hmacsha256.h>
+#include <sodium/crypto_box.h>
 #include <sodium/crypto_generichash.h>
 #include <sodium/crypto_scalarmult.h>
 #include <sodium/randombytes.h>
 #include <sodium/utils.h>
 
-#include <nlohmann/json.hpp>
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <nlohmann/json.hpp>
 
-#include "session/xed25519.hpp"
+#include "session/export.h"
 #include "session/onionreq/builder.hpp"
 #include "session/onionreq/key_types.hpp"
-#include "session/export.h"
 #include "session/util.hpp"
+#include "session/xed25519.hpp"
 
 namespace session::onionreq {
 
@@ -98,8 +98,7 @@ ustring HopEncryption::decrypt(
     throw std::runtime_error{"Invalid decryption type"};
 }
 
-ustring HopEncryption::encrypt_aesgcm(
-        ustring plaintext, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::encrypt_aesgcm(ustring plaintext, const x25519_pubkey& pubKey) const {
     auto key = derive_symmetric_key(private_key_, pubKey);
 
     // Initialise cipher context with the key
@@ -129,8 +128,7 @@ ustring HopEncryption::encrypt_aesgcm(
     return output;
 }
 
-ustring HopEncryption::decrypt_aesgcm(
-        ustring ciphertext_, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::decrypt_aesgcm(ustring ciphertext_, const x25519_pubkey& pubKey) const {
     ustring_view ciphertext = {ciphertext_.data(), ciphertext_.size()};
 
     if (ciphertext.size() < GCM_IV_SIZE + GCM_DIGEST_SIZE)
@@ -163,8 +161,7 @@ ustring HopEncryption::decrypt_aesgcm(
     return plaintext;
 }
 
-ustring HopEncryption::encrypt_xchacha20(
-        ustring plaintext, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::encrypt_xchacha20(ustring plaintext, const x25519_pubkey& pubKey) const {
 
     ustring ciphertext;
     ciphertext.resize(
@@ -177,7 +174,7 @@ ustring HopEncryption::encrypt_xchacha20(
     randombytes_buf(ciphertext.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
 
     auto* c = reinterpret_cast<unsigned char*>(ciphertext.data()) +
-        crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
+              crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
     unsigned long long clen;
 
     crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -195,8 +192,7 @@ ustring HopEncryption::encrypt_xchacha20(
     return ciphertext;
 }
 
-ustring HopEncryption::decrypt_xchacha20(
-        ustring ciphertext_, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::decrypt_xchacha20(ustring ciphertext_, const x25519_pubkey& pubKey) const {
     ustring_view ciphertext = {ciphertext_.data(), ciphertext_.size()};
 
     // Extract nonce from the beginning of the ciphertext:

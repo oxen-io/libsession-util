@@ -24,10 +24,10 @@ extern "C" {
 /// Outputs:
 /// - `bool` -- True if the key was successfully generated, false if generation failed.
 LIBSESSION_EXPORT bool session_blind15_key_pair(
-    const unsigned char* ed25519_seckey, /* 64 bytes */
-    const unsigned char* server_pk, /* 32 bytes */
-    unsigned char* blinded_pk_out, /* 32 byte output buffer */
-    unsigned char* blinded_sk_out /* 32 byte output buffer */);
+        const unsigned char* ed25519_seckey, /* 64 bytes */
+        const unsigned char* server_pk,      /* 32 bytes */
+        unsigned char* blinded_pk_out,       /* 32 byte output buffer */
+        unsigned char* blinded_sk_out /* 32 byte output buffer */);
 
 /// API: crypto/session_blind25_key_pair
 ///
@@ -45,10 +45,10 @@ LIBSESSION_EXPORT bool session_blind15_key_pair(
 /// Outputs:
 /// - `bool` -- True if the key was successfully generated, false if generation failed.
 LIBSESSION_EXPORT bool session_blind25_key_pair(
-    const unsigned char* ed25519_seckey, /* 64 bytes */
-    const unsigned char* server_pk, /* 32 bytes */
-    unsigned char* blinded_pk_out, /* 32 byte output buffer */
-    unsigned char* blinded_sk_out /* 32 byte output buffer */);
+        const unsigned char* ed25519_seckey, /* 64 bytes */
+        const unsigned char* server_pk,      /* 32 bytes */
+        unsigned char* blinded_pk_out,       /* 32 byte output buffer */
+        unsigned char* blinded_sk_out /* 32 byte output buffer */);
 
 /// API: crypto/session_blind15_sign
 ///
@@ -66,11 +66,11 @@ LIBSESSION_EXPORT bool session_blind25_key_pair(
 /// Outputs:
 /// - `bool` -- True if the signature was successfully generated, false if generation failed.
 LIBSESSION_EXPORT bool session_blind15_sign(
-    const unsigned char* ed25519_seckey, /* 64 bytes */
-    const unsigned char* server_pk, /* 32 bytes */
-    const unsigned char* msg,
-    size_t msg_len,
-    unsigned char* blinded_sig_out /* 64 byte output buffer */);
+        const unsigned char* ed25519_seckey, /* 64 bytes */
+        const unsigned char* server_pk,      /* 32 bytes */
+        const unsigned char* msg,
+        size_t msg_len,
+        unsigned char* blinded_sig_out /* 64 byte output buffer */);
 
 /// API: crypto/session_blind25_sign
 ///
@@ -88,11 +88,11 @@ LIBSESSION_EXPORT bool session_blind15_sign(
 /// Outputs:
 /// - `bool` -- True if the signature was successfully generated, false if generation failed.
 LIBSESSION_EXPORT bool session_blind25_sign(
-    const unsigned char* ed25519_seckey, /* 64 bytes */
-    const unsigned char* server_pk, /* 32 bytes */
-    const unsigned char* msg,
-    size_t msg_len,
-    unsigned char* blinded_sig_out /* 64 byte output buffer */);
+        const unsigned char* ed25519_seckey, /* 64 bytes */
+        const unsigned char* server_pk,      /* 32 bytes */
+        const unsigned char* msg,
+        size_t msg_len,
+        unsigned char* blinded_sig_out /* 64 byte output buffer */);
 
 /// API: crypto/session_blind25_sign
 ///
@@ -101,14 +101,15 @@ LIBSESSION_EXPORT bool session_blind25_sign(
 /// Inputs:
 /// - `session_id` -- [in] the session_id to compare (66 bytes with a 05 prefix).
 /// - `blinded_id` -- [in] the blinded_id to compare, can be either 15 or 25 blinded (66 bytes).
-/// - `server_pk` -- [in] the public key of the open group server to the blinded id came from (64 bytes).
+/// - `server_pk` -- [in] the public key of the open group server to the blinded id came from (64
+/// bytes).
 ///
 /// Outputs:
 /// - `bool` -- True if the session_id matches the blinded_id, false if not.
 LIBSESSION_EXPORT bool session_id_matches_blinded_id(
-    const char* session_id, /* 66 bytes */
-    const char* blinded_id, /* 66 bytes */
-    const char* server_pk /* 64 bytes */);
+        const char* session_id, /* 66 bytes */
+        const char* blinded_id, /* 66 bytes */
+        const char* server_pk /* 64 bytes */);
 
 #ifdef __cplusplus
 }

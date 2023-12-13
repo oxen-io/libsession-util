@@ -126,7 +126,7 @@ ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk, ustrin
 /// Takes either a 15 or 25 blinded_id (66 bytes) and the server pubkey (64 bytes).
 ///
 /// Returns a flag indicating whether the session_id matches the blinded_id.
-bool session_id_matches_blinded_id(std::string_view session_id, std::string_view blinded_id,
-    std::string_view server_pk);
+bool session_id_matches_blinded_id(
+        std::string_view session_id, std::string_view blinded_id, std::string_view server_pk);
 
 }  // namespace session

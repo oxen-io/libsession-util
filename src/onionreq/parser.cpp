@@ -35,7 +35,7 @@ OnionReqParser::OnionReqParser(
         remote_pk = parse_x25519_pubkey(itr->get<std::string>());
     else
         throw std::invalid_argument{"metadata does not have 'ephemeral_key' entry"};
-    
+
     auto plaintext = enc.decrypt(enc_type, {ciphertext.data(), ciphertext.size()}, remote_pk);
     payload_ = {to_unsigned(plaintext.data()), plaintext.size()};
 }

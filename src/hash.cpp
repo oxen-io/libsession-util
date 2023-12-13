@@ -16,10 +16,15 @@ ustring hash(const size_t size, ustring_view msg, std::optional<ustring_view> ke
 
     auto result_code = 0;
     unsigned char result[size];
-    
+
     if (key)
-        result_code = crypto_generichash_blake2b(result, size, msg.data(), msg.size(),
-            static_cast<ustring_view>(*key).data(), static_cast<ustring_view>(*key).size());
+        result_code = crypto_generichash_blake2b(
+                result,
+                size,
+                msg.data(),
+                msg.size(),
+                static_cast<ustring_view>(*key).data(),
+                static_cast<ustring_view>(*key).size());
     else
         result_code = crypto_generichash_blake2b(result, size, msg.data(), msg.size(), nullptr, 0);
 
@@ -37,13 +42,12 @@ using session::ustring_view;
 extern "C" {
 
 LIBSESSION_C_API bool session_hash(
-    size_t size,
-    const unsigned char* msg_in,
-    size_t msg_len,
-    const unsigned char* key_in,
-    size_t key_len,
-    unsigned char* hash_out
-) {
+        size_t size,
+        const unsigned char* msg_in,
+        size_t msg_len,
+        const unsigned char* key_in,
+        size_t key_len,
+        unsigned char* hash_out) {
     try {
         std::optional<ustring_view> key;
 
