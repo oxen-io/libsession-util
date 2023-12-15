@@ -22,12 +22,14 @@ add_executable(testAll
     test_proto.cpp
     test_random.cpp
     test_session_encrypt.cpp
+    test_state.cpp
     test_xed25519.cpp
     )
 
 target_link_libraries(testAll PRIVATE
     libsession::config
     libsession::onionreq
+    libsession::state
     libsodium::sodium-internal
     Catch2::Catch2WithMain)
 

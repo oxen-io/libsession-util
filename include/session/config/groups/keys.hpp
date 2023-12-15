@@ -186,6 +186,20 @@ class Keys final : public ConfigSig {
          Info& info,
          Members& members);
 
+    /// Same as the above but takes pointers instead of references. For internal use only.
+    Keys(ustring_view user_ed25519_secretkey,
+         ustring_view group_ed25519_pubkey,
+         std::optional<ustring_view> group_ed25519_secretkey,
+         std::optional<ustring_view> dumped,
+         Info* info,
+         Members* members) :
+            Keys(user_ed25519_secretkey,
+                 group_ed25519_pubkey,
+                 group_ed25519_secretkey,
+                 dumped,
+                 *info,
+                 *members) {}
+
     /// API: groups/Keys::storage_namespace
     ///
     /// Returns the Keys namespace. Is constant, will always return Namespace::GroupKeys

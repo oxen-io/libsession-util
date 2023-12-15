@@ -76,6 +76,9 @@ add_libsession_util_library(config
     fields.cpp
 )
 
+add_libsession_util_library(state
+    state.cpp
+)
 
 
 target_link_libraries(crypto
@@ -86,6 +89,16 @@ target_link_libraries(crypto
 )
 
 target_link_libraries(config
+    PUBLIC
+    crypto
+    common
+    libsession::protos
+    PRIVATE
+    libsodium::sodium-internal
+    libzstd::static
+)
+
+target_link_libraries(state
     PUBLIC
     crypto
     common

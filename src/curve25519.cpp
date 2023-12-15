@@ -1,5 +1,6 @@
 #include "session/curve25519.hpp"
 
+#include <sodium/core.h>
 #include <sodium/crypto_box.h>
 #include <sodium/crypto_sign_ed25519.h>
 
@@ -11,6 +12,9 @@
 namespace session::curve25519 {
 
 std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> curve25519_key_pair() {
+    if (sodium_init() == -1)
+        throw std::runtime_error{"libsodium initialization failed!"};
+
     std::array<unsigned char, 32> curve_pk;
     std::array<unsigned char, 64> curve_sk;
     crypto_box_keypair(curve_pk.data(), curve_sk.data());

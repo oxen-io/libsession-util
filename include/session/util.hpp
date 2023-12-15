@@ -46,6 +46,10 @@ inline ustring_view to_unsigned_sv(std::string_view v) {
 inline ustring_view to_unsigned_sv(std::basic_string_view<std::byte> v) {
     return {to_unsigned(v.data()), v.size()};
 }
+template <size_t N>
+inline ustring_view to_unsigned_sv(const std::array<unsigned char, N>& v) {
+    return {v.data(), v.size()};
+}
 inline ustring_view to_unsigned_sv(ustring_view v) {
     return v;  // no-op, but helps with template metaprogamming
 }
