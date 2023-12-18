@@ -20,30 +20,16 @@ TEST_CASE("State", "[state][state]") {
 
     auto state = State(ed_sk);
 
-    // User Profile forwarding
-    CHECK_FALSE(state.get_profile_name().has_value());
-    state.set_profile_name("Test Name");
-    CHECK(state.get_profile_name() == "Test Name");
-
-    CHECK(state.get_profile_pic().empty());
-    state.set_profile_pic("https://oxen.io", to_unsigned_sv("secret78901234567890123456789012"));
-    CHECK(state.get_profile_pic().url == "https://oxen.io");
-    CHECK(state.get_profile_pic().key == "secret78901234567890123456789012"_bytes);
-
-    auto second_pic =
-            profile_pic("https://oxen.io/2", to_unsigned_sv("secret78901234567890123456789012"));
-    state.set_profile_pic(second_pic);
-    CHECK(state.get_profile_pic().url == "https://oxen.io/2");
-
-    CHECK_FALSE(state.get_profile_blinded_msgreqs());
-    state.set_profile_blinded_msgreqs(true);
-    CHECK(state.get_profile_blinded_msgreqs());
+    // Sanity check direct config access
+    CHECK_FALSE(state.config_user_profile->get_name().has_value());
+    state.config_user_profile->set_name("Test Name");
+    CHECK(state.config_user_profile->get_name() == "Test Name");
 
     auto dump = state.dump(Namespace::UserProfile);
     auto state2 = State(ed_sk);
-    CHECK_FALSE(state2.get_profile_name().has_value());
+    CHECK_FALSE(state2.config_user_profile->get_name().has_value());
     state2.load(Namespace::UserProfile, std::nullopt, {dump.data(), dump.size()});
-    CHECK(state2.get_profile_name() == "Test Name");
+    CHECK(state2.config_user_profile->get_name() == "Test Name");
 }
 
 TEST_CASE("State c API", "[state][state][c]") {

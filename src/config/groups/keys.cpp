@@ -38,7 +38,8 @@ Keys::Keys(
         std::optional<ustring_view> group_ed25519_secretkey,
         std::optional<ustring_view> dumped,
         Info& info,
-        Members& members) {
+        Members& members,
+        std::optional<session::state::State*> parent_state) {
 
     if (sodium_init() == -1)
         throw std::runtime_error{"libsodium initialization failed!"};
@@ -49,6 +50,9 @@ Keys::Keys(
         throw std::invalid_argument{"Invalid Keys construction: invalid group ed25519 public key"};
     if (group_ed25519_secretkey && group_ed25519_secretkey->size() != 64)
         throw std::invalid_argument{"Invalid Keys construction: invalid group ed25519 secret key"};
+
+    if (parent_state)
+        _parent_state = *parent_state;
 
     init_sig_keys(group_ed25519_pubkey, group_ed25519_secretkey);
 

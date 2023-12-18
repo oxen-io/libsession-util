@@ -104,6 +104,7 @@ target_link_libraries(state
     common
     libsession::protos
     PRIVATE
+    nlohmann_json::nlohmann_json
     libsodium::sodium-internal
     libzstd::static
 )

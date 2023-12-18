@@ -57,7 +57,8 @@ class Info final : public ConfigBase {
     ///   that was previously dumped from an instance of this class by calling `dump()`.
     Info(ustring_view ed25519_pubkey,
          std::optional<ustring_view> ed25519_secretkey,
-         std::optional<ustring_view> dumped);
+         std::optional<ustring_view> dumped,
+         std::optional<session::state::State*> parent_state = std::nullopt);
 
     /// API: groups/Info::storage_namespace
     ///

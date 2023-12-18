@@ -30,17 +30,44 @@ class GroupConfigs {
     GroupConfigs& operator=(GroupConfigs&&) = delete;
     GroupConfigs& operator=(const GroupConfigs&) = delete;
 
-    std::unique_ptr<session::config::groups::Info> _config_info;
-    std::unique_ptr<session::config::groups::Members> _config_members;
-    std::unique_ptr<session::config::groups::Keys> _config_keys;
+    std::unique_ptr<session::config::groups::Info> config_info;
+    std::unique_ptr<session::config::groups::Members> config_members;
+    std::unique_ptr<session::config::groups::Keys> config_keys;
+};
+
+struct config_message {
+    config::Namespace namespace_;
+    std::string hash;
+    uint64_t timestamp_ms;
+    ustring data;
+
+    config_message(
+            config::Namespace namespace_, std::string hash, uint64_t timestamp_ms, ustring data) :
+            namespace_{namespace_}, hash{hash}, timestamp_ms{timestamp_ms}, data{data} {};
+    config_message(
+            config::Namespace namespace_,
+            std::string hash,
+            uint64_t timestamp_ms,
+            ustring_view data) :
+            namespace_{namespace_}, hash{hash}, timestamp_ms{timestamp_ms}, data{data} {};
+
+    config_message() = delete;
+    config_message(config_message&&) = default;
+    config_message(const config_message&) = default;
+    config_message& operator=(config_message&&) = default;
+    config_message& operator=(const config_message&) = default;
+
+    auto cmpval() const { return std::tie(namespace_, hash, timestamp_ms, data); }
+    bool operator<(const config_message& b) const { return cmpval() < b.cmpval(); }
+    bool operator>(const config_message& b) const { return cmpval() > b.cmpval(); }
+    bool operator<=(const config_message& b) const { return cmpval() <= b.cmpval(); }
+    bool operator>=(const config_message& b) const { return cmpval() >= b.cmpval(); }
+    bool operator==(const config_message& b) const { return cmpval() == b.cmpval(); }
+    bool operator!=(const config_message& b) const { return cmpval() != b.cmpval(); }
 };
 
 class State {
   private:
-    std::unique_ptr<session::config::Contacts> _config_contacts;
-    std::unique_ptr<session::config::ConvoInfoVolatile> _config_convo_info_volatile;
-    std::unique_ptr<session::config::UserGroups> _config_user_groups;
-    std::unique_ptr<session::config::UserProfile> _config_user_profile;
     std::map<std::string_view, std::unique_ptr<GroupConfigs>> _config_groups;
 
   protected:
@@ -54,6 +81,15 @@ class State {
     }
 
   public:
+    std::unique_ptr<session::config::Contacts> config_contacts;
+    std::unique_ptr<session::config::ConvoInfoVolatile> config_convo_info_volatile;
+    std::unique_ptr<session::config::UserGroups> config_user_groups;
+    std::unique_ptr<session::config::UserProfile> config_user_profile;
+
+    std::chrono::milliseconds network_offset;
+
+    GroupConfigs* group_config(std::string_view pubkey_hex);
+
     // Constructs a state with a secretkey that will be used for signing.
     State(ustring_view ed25519_secretkey);
 
@@ -89,6 +125,52 @@ class State {
             std::optional<std::string_view> pubkey_hex,
             ustring_view dump);
 
+    /// API: base/ConfigBase::merge
+    ///
+    /// This takes all of the messages pulled down from the server and does whatever is necessary to
+    /// merge (or replace) the current values.
+    ///
+    /// Values are pairs of the message hash (as provided by the server) and the raw message body.
+    ///
+    /// For backwards compatibility, for certain message types (ones that have a
+    /// `accepts_protobuf()` override returning true) optional protobuf unwrapping of the incoming
+    /// message is performed; if successful then the unwrapped raw value is used; if the protobuf
+    /// unwrapping fails, the value is used directly as a raw value.
+    ///
+    /// After this call the caller should check `needs_push()` to see if the data on hand was
+    /// updated and needs to be pushed to the server again (for example, because the data contained
+    /// conflicts that required another update to resolve).
+    ///
+    /// Returns the number of the given config messages that were successfully parsed.
+    ///
+    /// Will throw on serious error (i.e. if neither the current nor any of the given configs are
+    /// parseable).  This should not happen (the current config, at least, should always be
+    /// re-parseable).
+    ///
+    /// Declaration:
+    /// ```cpp
+    /// std::vector<std::string> merge(
+    ///     const std::vector<std::pair<std::string, ustring_view>>& configs);
+    /// std::vector<std::string> merge(
+    ///     const std::vector<std::pair<std::string, ustring>>& configs);
+    /// ```
+    ///
+    /// Inputs:
+    /// - `configs` -- vector of pairs containing the message hash and the raw message body (or
+    ///   protobuf-wrapped raw message for certain config types).
+    ///
+    /// Outputs:
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    std::vector<std::string> merge(
+            std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs);
+
+    std::function<void(std::string pubkey, ustring data)> send;
+
+    void config_changed(std::optional<std::string_view> pubkey_hex = std::nullopt);
+
     /// API: state/State::dump
     ///
     /// Returns a bt-encoded dict containing the dumps of each of the current config states for
@@ -122,6 +204,13 @@ class State {
             config::Namespace namespace_,
             std::optional<std::string_view> pubkey_hex = std::nullopt);
 
+  public:
+    void set_service_node_timestamp(std::chrono::milliseconds timestamp) {
+        network_offset =
+                (timestamp - std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::system_clock::now().time_since_epoch()));
+    };
+
     // User Profile functions
   public:
     /// API: state/State::get_profile_name
@@ -133,7 +222,7 @@ class State {
     /// Outputs:
     /// - `std::optional<std::string>` - Returns the user profile name if it exists
     std::optional<std::string_view> get_profile_name() const {
-        return _config_user_profile->get_name();
+        return config_user_profile->get_name();
     };
 
     /// API: state/State::set_profile_name
@@ -142,7 +231,7 @@ class State {
     ///
     /// Inputs:
     /// - `new_name` -- The name to be put into the user profile
-    void set_profile_name(std::string_view new_name) { _config_user_profile->set_name(new_name); };
+    void set_profile_name(std::string_view new_name) { config_user_profile->set_name(new_name); };
 
     /// API: user_profile/UserProfile::get_profile_pic
     ///
@@ -153,7 +242,7 @@ class State {
     ///
     /// Outputs:
     /// - `profile_pic` - Returns the profile pic
-    config::profile_pic get_profile_pic() const { return _config_user_profile->get_profile_pic(); };
+    config::profile_pic get_profile_pic() const { return config_user_profile->get_profile_pic(); };
 
     /// API: state/State::set_profile_pic
     ///
@@ -173,9 +262,9 @@ class State {
     /// - Second function:
     ///    - `pic` -- Profile pic object
     void set_profile_pic(std::string_view url, ustring_view key) {
-        _config_user_profile->set_profile_pic(url, key);
+        config_user_profile->set_profile_pic(url, key);
     };
-    void set_profile_pic(config::profile_pic pic) { _config_user_profile->set_profile_pic(pic); };
+    void set_profile_pic(config::profile_pic pic) { config_user_profile->set_profile_pic(pic); };
 
     /// API: state/State::get_profile_blinded_msgreqs
     ///
@@ -193,7 +282,7 @@ class State {
     /// - `std::optional<bool>` - true/false if blinded message requests are enabled or disabled;
     ///   `std::nullopt` if the option has not been set either way.
     std::optional<bool> get_profile_blinded_msgreqs() const {
-        return _config_user_profile->get_blinded_msgreqs();
+        return config_user_profile->get_blinded_msgreqs();
     };
 
     /// API: state/State::set_profile_blinded_msgreqs
@@ -207,7 +296,7 @@ class State {
     ///   not, and `std::nullopt` to drop the setting from the config (and thus use the client's
     ///   default).
     void set_profile_blinded_msgreqs(std::optional<bool> enabled) {
-        _config_user_profile->set_blinded_msgreqs(enabled);
+        config_user_profile->set_blinded_msgreqs(enabled);
     };
 };
 

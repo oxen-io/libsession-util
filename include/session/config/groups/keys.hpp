@@ -73,6 +73,9 @@ using namespace std::literals;
 ///   key="SessionGroupKeyGen"), where S = H(group_seed, key="SessionGroupKeySeed").
 
 class Keys final : public ConfigSig {
+    // The parent state which owns this config object. By providing a pointer to the parent state
+    // we can inform the parent when changes occur.
+    std::optional<session::state::State*> _parent_state;
 
     Ed25519Secret user_ed25519_sk;
 
@@ -184,7 +187,8 @@ class Keys final : public ConfigSig {
          std::optional<ustring_view> group_ed25519_secretkey,
          std::optional<ustring_view> dumped,
          Info& info,
-         Members& members);
+         Members& members,
+         std::optional<session::state::State*> parent_state = std::nullopt);
 
     /// Same as the above but takes pointers instead of references. For internal use only.
     Keys(ustring_view user_ed25519_secretkey,
@@ -192,13 +196,15 @@ class Keys final : public ConfigSig {
          std::optional<ustring_view> group_ed25519_secretkey,
          std::optional<ustring_view> dumped,
          Info* info,
-         Members* members) :
+         Members* members,
+         std::optional<session::state::State*> parent_state = std::nullopt) :
             Keys(user_ed25519_secretkey,
                  group_ed25519_pubkey,
                  group_ed25519_secretkey,
                  dumped,
                  *info,
-                 *members) {}
+                 *members,
+                 parent_state) {}
 
     /// API: groups/Keys::storage_namespace
     ///
@@ -219,6 +225,16 @@ class Keys final : public ConfigSig {
     /// Outputs:
     /// - `const char*` - Will return "groups::Keys"
     const char* encryption_domain() const { return "groups::Keys"; }
+
+    /// API: groups/Keys::default_ttl
+    ///
+    /// The default duration the config message should last for before it expires.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::chrono::milliseconds` -- Duration the mesage should last for in milliseconds.
+    virtual std::chrono::milliseconds default_ttl() const { return std::chrono::hours(30 * 24); }
 
     /// API: groups/Keys::group_keys
     ///

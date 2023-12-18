@@ -17,6 +17,7 @@
 #include "session/config/encrypt.hpp"
 #include "session/config/protos.hpp"
 #include "session/export.h"
+#include "session/state.hpp"
 #include "session/util.hpp"
 
 using namespace std::literals;
@@ -33,6 +34,9 @@ void ConfigBase::set_state(ConfigState s) {
     }
     _state = s;
     _needs_dump = true;
+    
+    if (_parent_state && _sign_pk)
+        (*_parent_state)->config_changed("03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end()));
 }
 
 MutableConfigMessage& ConfigBase::dirty() {
@@ -347,12 +351,16 @@ ustring ConfigBase::make_dump() const {
 }
 
 ConfigBase::ConfigBase(
+        std::optional<session::state::State*> parent_state,
         std::optional<ustring_view> dump,
         std::optional<ustring_view> ed25519_pubkey,
         std::optional<ustring_view> ed25519_secretkey) {
 
     if (sodium_init() == -1)
         throw std::runtime_error{"libsodium initialization failed!"};
+
+    if (parent_state)
+        _parent_state = *parent_state;
 
     if (dump)
         init_from_dump(from_unsigned_sv(*dump));

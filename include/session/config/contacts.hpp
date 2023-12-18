@@ -118,7 +118,10 @@ class Contacts : public ConfigBase {
     ///
     /// Outputs:
     /// - `Contact` - Constructor
-    Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
+    Contacts(
+            ustring_view ed25519_secretkey,
+            std::optional<ustring_view> dumped,
+            std::optional<session::state::State*> parent_state = std::nullopt);
 
     /// API: contacts/Contacts::storage_namespace
     ///

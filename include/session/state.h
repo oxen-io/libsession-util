@@ -25,6 +25,45 @@ typedef struct state_object {
     char _error_buf[256];
 } state_object;
 
+typedef struct state_config_message {
+    NAMESPACE namespace_;
+    const char* hash;
+    uint64_t timestamp_ms;
+    const unsigned char* data;
+    size_t datalen;
+} state_config_message;
+
+/// API: state/state_set_logger
+///
+/// Sets a logging function; takes the log function pointer and a context pointer (which can be NULL
+/// if not needed).  The given function pointer will be invoked with one of the above values, a
+/// null-terminated c string containing the log message, and the void* context object given when
+/// setting the logger (this is for caller-specific state data and won't be touched).
+///
+/// The logging function must have signature:
+///
+/// void log(config_log_level lvl, const char* msg, void* ctx);
+///
+/// Can be called with callback set to NULL to clear an existing logger.
+///
+/// The config object itself has no log level: the caller should filter by level as needed.
+///
+/// Declaration:
+/// ```cpp
+/// VOID config_set_logger(
+///     [in, out]   state_object*                                   state,
+///     [in]        void(*)(config_log_level, const char*, void*)   callback,
+///     [in]        void*                                           ctx
+/// );
+/// ```
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to config_object object
+/// - `callback` -- [in] Callback function
+/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
+LIBSESSION_EXPORT void state_set_logger(
+        state_object* state, void (*callback)(config_log_level, const char*, void*), void* ctx);
+
 /// API: state/state_create
 ///
 /// Constructs a new state which generates it's own random ed25519 key pair.
@@ -105,6 +144,13 @@ LIBSESSION_EXPORT bool state_load(
         const char* pubkey_hex,
         const unsigned char* dump,
         size_t dumplen);
+
+LIBSESSION_EXPORT void state_set_send_callback(
+        state_object* state, void (*callback)(const char*, const unsigned char*, size_t));
+// std::function<void(std::string_view swarm, ustring data)> send;
+
+LIBSESSION_EXPORT config_string_list* state_merge(
+        state_object* state, const char* pubkey_hex_, state_config_message* configs, size_t count);
 
 /// API: state/state_dump
 ///

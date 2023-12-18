@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <session/config.hpp>
 #include <session/util.hpp>
@@ -12,6 +13,10 @@
 
 #include "base.h"
 #include "namespaces.hpp"
+
+namespace session::state {
+class State;
+}
 
 namespace session::config {
 
@@ -137,6 +142,10 @@ class ConfigSig {
 /// sub-types.
 class ConfigBase : public ConfigSig {
   private:
+    // The parent state which owns this config object. By providing a pointer to the parent state
+    // we can inform the parent when changes occur.
+    std::optional<session::state::State*> _parent_state;
+
     // The object (either base config message or MutableConfigMessage) that stores the current
     // config message.  Subclasses do not directly access this: instead they call `dirty()` if they
     // intend to make changes, or the `set_config_field` wrapper.
@@ -174,6 +183,7 @@ class ConfigBase : public ConfigSig {
     // verification of incoming messages using the associated pubkey, and will be signed using the
     // secretkey (if a secret key is given).
     explicit ConfigBase(
+            std::optional<session::state::State*> parent_state = std::nullopt,
             std::optional<ustring_view> dump = std::nullopt,
             std::optional<ustring_view> ed25519_pubkey = std::nullopt,
             std::optional<ustring_view> ed25519_secretkey = std::nullopt);
@@ -867,6 +877,16 @@ class ConfigBase : public ConfigSig {
     /// Outputs:
     /// - `std::optional<int>` -- Returns the compression level
     virtual std::optional<int> compression_level() const { return 1; }
+
+    /// API: base/ConfigBase::default_ttl
+    ///
+    /// The default duration the config message should last for before it expires.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::chrono::milliseconds` -- Duration the mesage should last for in milliseconds.
+    virtual std::chrono::milliseconds default_ttl() const { return std::chrono::hours(30 * 24); }
 
     /// API: base/ConfigBase::config_lags
     ///

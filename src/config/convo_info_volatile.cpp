@@ -92,8 +92,10 @@ namespace convo {
 }  // namespace convo
 
 ConvoInfoVolatile::ConvoInfoVolatile(
-        ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
-        ConfigBase{dumped} {
+        ustring_view ed25519_secretkey,
+        std::optional<ustring_view> dumped,
+        std::optional<session::state::State*> parent_state) :
+        ConfigBase{parent_state, dumped} {
     load_key(ed25519_secretkey);
 }
 

@@ -47,7 +47,10 @@ class UserProfile final : public ConfigBase {
     ///
     /// Outputs:
     /// - `UserProfile` - Constructor
-    UserProfile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
+    UserProfile(
+            ustring_view ed25519_secretkey,
+            std::optional<ustring_view> dumped,
+            std::optional<session::state::State*> parent_state = std::nullopt);
 
     /// API: user_profile/UserProfile::storage_namespace
     ///
