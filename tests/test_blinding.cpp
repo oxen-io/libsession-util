@@ -193,26 +193,13 @@ TEST_CASE("Communities 15xxx-blinded signing", "[blinding15][sign]") {
             "999def0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,
             "888def0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,
             "777def0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv};
-    auto b15_1 = blind15_id(session_id1, server_pks[0]);
-    auto b15_2 = blind15_id(session_id1, server_pks[1]);
-    auto b15_3 = blind15_id(session_id2, server_pks[2]);
-    auto b15_4 = blind15_id(session_id2, server_pks[3]);
-    auto b15_5 = blind15_id(session_id2, server_pks[4]);
-    auto b15_6 = blind15_id(session_id1, server_pks[5]);
-
-    // The `seed2` results in a negative Ed25519 pubkey which would result in an invalid signature
-    // since the sessionId always used the positive curve, as a result we need to flip the sign bit
-    // on the blinded id to ensure everything works nicely
-    ustring b15_3_raw, b15_4_raw, b15_5_raw;
-    oxenc::from_hex(b15_3.begin(), b15_3.end(), std::back_inserter(b15_3_raw));
-    oxenc::from_hex(b15_4.begin(), b15_4.end(), std::back_inserter(b15_4_raw));
-    oxenc::from_hex(b15_5.begin(), b15_5.end(), std::back_inserter(b15_5_raw));
-    b15_3_raw[32] ^= 0x80;
-    b15_4_raw[32] ^= 0x80;
-    b15_5_raw[32] ^= 0x80;
-    b15_3 = oxenc::to_hex(b15_3_raw);
-    b15_4 = oxenc::to_hex(b15_4_raw);
-    b15_5 = oxenc::to_hex(b15_5_raw);
+    auto b15_1 = blind15_id(session_id1, server_pks[0])[0];
+    auto b15_2 = blind15_id(session_id1, server_pks[1])[0];
+    // session_id2 has a negative pubkey, so these next three need the negative [1] instead:
+    auto b15_3 = blind15_id(session_id2, server_pks[2])[1];
+    auto b15_4 = blind15_id(session_id2, server_pks[3])[1];
+    auto b15_5 = blind15_id(session_id2, server_pks[4])[1];
+    auto b15_6 = blind15_id(session_id1, server_pks[5])[0];
 
     auto sig1 = blind15_sign(to_usv(seed1), server_pks[0], to_unsigned_sv("hello"));
     CHECK(oxenc::to_hex(sig1) ==
@@ -292,12 +279,12 @@ TEST_CASE("Communities session id blinded id matching", "[blinding][matching]") 
             "999def0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,
             "888def0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv,
             "777def0123456789abcdef0123456789abcdef0123456789abcdef0123456789"sv};
-    auto b15_1 = blind15_id(session_id1, server_pks[0]);
-    auto b15_2 = blind15_id(session_id1, server_pks[1]);
-    auto b15_3 = blind15_id(session_id2, server_pks[2]);
-    auto b15_4 = blind15_id(session_id2, server_pks[3]);
-    auto b15_5 = blind15_id(session_id2, server_pks[4]);
-    auto b15_6 = blind15_id(session_id1, server_pks[5]);
+    auto b15_1 = blind15_id(session_id1, server_pks[0])[0];
+    auto b15_2 = blind15_id(session_id1, server_pks[1])[0];
+    auto b15_3 = blind15_id(session_id2, server_pks[2])[1];
+    auto b15_4 = blind15_id(session_id2, server_pks[3])[1];
+    auto b15_5 = blind15_id(session_id2, server_pks[4])[1];
+    auto b15_6 = blind15_id(session_id1, server_pks[5])[0];
     auto b25_1 = blind25_id(session_id1, server_pks[0]);
     auto b25_2 = blind25_id(session_id1, server_pks[1]);
     auto b25_3 = blind25_id(session_id2, server_pks[2]);

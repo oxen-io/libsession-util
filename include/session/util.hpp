@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -143,6 +144,15 @@ struct sodium_cleared : T {
 
     ~sodium_cleared() { sodium_zero_buffer(this, sizeof(*this)); }
 };
+
+template <size_t N>
+using cleared_array = sodium_cleared<std::array<unsigned char, N>>;
+
+using uc32 = std::array<unsigned char, 32>;
+using uc33 = std::array<unsigned char, 33>;
+using uc64 = std::array<unsigned char, 64>;
+using cleared_uc32 = cleared_array<32>;
+using cleared_uc64 = cleared_array<64>;
 
 // This is an optional (i.e. can be empty) fixed-size (at construction) buffer that does allocation
 // and freeing via libsodium.  It is slower and heavier than a regular allocation type but takes

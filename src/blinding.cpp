@@ -95,7 +95,7 @@ ustring blind15_id(ustring_view session_id, ustring_view server_pk) {
     return result;
 }
 
-std::string blind15_id(std::string_view session_id, std::string_view server_pk) {
+std::array<std::string, 2> blind15_id(std::string_view session_id, std::string_view server_pk) {
     if (session_id.size() != 66 || !oxenc::is_hex(session_id))
         throw std::invalid_argument{"blind15_id: session_id must be hex (66 digits)"};
     if (session_id[0] != '0' || session_id[1] != '5')
@@ -110,7 +110,11 @@ std::string blind15_id(std::string_view session_id, std::string_view server_pk) 
 
     uc33 blinded;
     blind15_id_impl(to_sv(raw_sid), to_sv(raw_server_pk), blinded.data());
-    return oxenc::to_hex(blinded.begin(), blinded.end());
+    std::array<std::string, 2> result;
+    result[0] = oxenc::to_hex(blinded.begin(), blinded.end());
+    blinded.back() ^= 0x80;
+    result[1] = oxenc::to_hex(blinded.begin(), blinded.end());
+    return result;
 }
 
 ustring blind25_id(ustring_view session_id, ustring_view server_pk) {
@@ -147,7 +151,68 @@ std::string blind25_id(std::string_view session_id, std::string_view server_pk) 
     return oxenc::to_hex(blinded.begin(), blinded.end());
 }
 
-std::pair<ustring, ustring> blind15_key_pair(ustring_view ed25519_sk, ustring_view server_pk) {
+ustring blinded15_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ustring* session_id) {
+    if (ed_pubkey.size() != 32)
+        throw std::invalid_argument{"blind15_id_from_ed: ed_pubkey must be 32 bytes"};
+    if (server_pk.size() != 32)
+        throw std::invalid_argument{"blind15_id_from_ed: server_pk must be 32 bytes"};
+    if (session_id && !session_id->empty())
+        throw std::invalid_argument{"blind15_id_from_ed: session_id pointer must be an empty string"};
+
+    if (session_id) {
+        session_id->resize(33);
+        session_id->front() = 0x05;
+        if (0 != crypto_sign_ed25519_pk_to_curve25519(session_id->data() + 1, ed_pubkey.data()))
+            throw std::runtime_error{"ed25519 pubkey to x25519 pubkey conversion failed"};
+    }
+
+    ustring result;
+    result.resize(33);
+    auto k = blind15_factor(server_pk);
+    if (0 != crypto_scalarmult_ed25519_noclamp(result.data() + 1, k.data(), ed_pubkey.data()))
+        throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
+    result[0] = 0x15;
+    return result;
+}
+
+ustring blinded25_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ustring* session_id) {
+    if (ed_pubkey.size() != 32)
+        throw std::invalid_argument{"blind25_id_from_ed: ed_pubkey must be 32 bytes"};
+    if (server_pk.size() != 32)
+        throw std::invalid_argument{"blind25_id_from_ed: server_pk must be 32 bytes"};
+    if (session_id && session_id->size() != 0 && session_id->size() != 33)
+        throw std::invalid_argument{"blind25_id_from_ed: session_id pointer must be 0 or 33 bytes"};
+
+    ustring tmp_session_id;
+    if (!session_id)
+        session_id = &tmp_session_id;
+    if (session_id->size() == 0) {
+        session_id->resize(33);
+        session_id->front() = 0x05;
+        if (0 != crypto_sign_ed25519_pk_to_curve25519(session_id->data() + 1, ed_pubkey.data()))
+            throw std::runtime_error{"ed25519 pubkey to x25519 pubkey conversion failed"};
+    }
+
+    auto k = blind25_factor(*session_id, server_pk);
+
+    ustring result;
+    result.resize(33);
+    // Blinded25 ids are always constructed using the absolute value of the ed pubkey, so if
+    // negative we need to clear the sign bit to make it positive before computing the blinded
+    // pubkey.
+    uc32 pos_ed_pubkey;
+    std::memcpy(pos_ed_pubkey.data(), ed_pubkey.data(), 32);
+    pos_ed_pubkey[31] &= 0x7f;
+
+    if (0 != crypto_scalarmult_ed25519_noclamp(result.data() + 1, k.data(), pos_ed_pubkey.data()))
+            throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
+    result[0] = 0x25;
+    return result;
+}
+
+
+std::pair<uc32, cleared_uc32> blind15_key_pair(
+        ustring_view ed25519_sk, ustring_view server_pk, uc32* k) {
     std::array<unsigned char, 64> ed_sk_tmp;
     if (ed25519_sk.size() == 32) {
         std::array<unsigned char, 32> pk_ignore;
@@ -161,25 +226,29 @@ std::pair<ustring, ustring> blind15_key_pair(ustring_view ed25519_sk, ustring_vi
     if (server_pk.size() != 32)
         throw std::invalid_argument{"blind15_key_pair: server_pk must be 32 bytes"};
 
-    /// Generate the blinding factor
-    uc32 k = blind15_factor(server_pk);
+    std::pair<uc32, cleared_uc32> result;
+    auto& [A, a] = result;
+
+    /// Generate the blinding factor (storing into `*k`, if a pointer was provided)
+    uc32 k_tmp;
+    if (!k)
+        k = &k_tmp;
+    *k = blind15_factor(server_pk);
 
     /// Generate a scalar for the private key
-    uc32 x_sk;
-    if (0 != crypto_sign_ed25519_sk_to_curve25519(x_sk.data(), ed25519_sk.data()))
+    if (0 != crypto_sign_ed25519_sk_to_curve25519(a.data(), ed25519_sk.data()))
         throw std::runtime_error{
                 "blind15_key_pair: Invalid ed25519_sk; conversion to curve25519 seckey failed"};
 
     // Turn a, A into their blinded versions
-    uc32 a;
-    uc32 A;
-    crypto_core_ed25519_scalar_mul(a.data(), k.data(), x_sk.data());
+    crypto_core_ed25519_scalar_mul(a.data(), k->data(), a.data());
     crypto_scalarmult_ed25519_base_noclamp(A.data(), a.data());
 
-    return {{A.data(), 32}, {a.data(), 32}};
+    return result;
 }
 
-std::pair<ustring, ustring> blind25_key_pair(ustring_view ed25519_sk, ustring_view server_pk) {
+std::pair<uc32, cleared_uc32> blind25_key_pair(
+        ustring_view ed25519_sk, ustring_view server_pk, uc32* k_prime) {
     std::array<unsigned char, 64> ed_sk_tmp;
     if (ed25519_sk.size() == 32) {
         std::array<unsigned char, 32> pk_ignore;
@@ -192,42 +261,41 @@ std::pair<ustring, ustring> blind25_key_pair(ustring_view ed25519_sk, ustring_vi
 
     if (server_pk.size() != 32)
         throw std::invalid_argument{"blind15_key_pair: server_pk must be 32 bytes"};
-
-    ustring_view S{ed25519_sk.data() + 32, 32};
 
     uc33 session_id;
     session_id[0] = 0x05;
     if (0 != crypto_sign_ed25519_pk_to_curve25519(session_id.data() + 1, ed25519_sk.data() + 32))
         throw std::runtime_error{
-                "blind25_sign: Invalid ed25519_sk; conversion to curve25519 pubkey failed"};
+                "blind25_key_pair: Invalid ed25519_sk; conversion to curve25519 pubkey failed"};
 
     ustring_view X{session_id.data() + 1, 32};
 
-    /// Generate the blinding factor
-    auto k = blind25_factor(X, {server_pk.data(), server_pk.size()});
+    /// Generate the blinding factor (storing into `*k`, if a pointer was provided)
+    uc32 k_tmp;
+    if (!k_prime)
+        k_prime = &k_tmp;
+    *k_prime = blind25_factor(X, {server_pk.data(), server_pk.size()});
 
-    /// Generate a scalar for the private key
-    uc32 x_sk;
-    if (0 != crypto_sign_ed25519_sk_to_curve25519(x_sk.data(), ed25519_sk.data()))
+    // For a negative pubkey we use k' = -k so that k'A == kA when A is positive, and k'A = -kA =
+    // k|A| when A is negative.
+    if (*(ed25519_sk.data() + 63) & 0x80)
+        crypto_core_ed25519_scalar_negate(k_prime->data(), k_prime->data());
+
+    std::pair<uc32, cleared_uc32> result;
+    auto& [A, a] = result;
+
+    // Generate the private key (scalar), a; (the sodium function naming here is misleading; this
+    // call actually has nothing to do with conversion to X25519, it just so happens that the
+    // conversion method is the easiest way to get `a` out of libsodium).
+    if (0 != crypto_sign_ed25519_sk_to_curve25519(a.data(), ed25519_sk.data()))
         throw std::runtime_error{
                 "blind25_key_pair: Invalid ed25519_sk; conversion to curve25519 seckey failed"};
 
     // Turn a, A into their blinded versions
-    uc32 a;
-    uc32 A;
-    std::memcpy(A.data(), S.data(), 32);
-    if (S[31] & 0x80) {
-        // Ed25519 pubkey is negative, so we need to negate `z` to make things come out right
-        crypto_core_ed25519_scalar_negate(a.data(), x_sk.data());
-        A[31] &= 0x7f;
-    } else
-        std::memcpy(a.data(), x_sk.data(), 32);
-
-    // Turn a, A into their blinded versions
-    crypto_core_ed25519_scalar_mul(a.data(), k.data(), a.data());
+    crypto_core_ed25519_scalar_mul(a.data(), k_prime->data(), a.data());
     crypto_scalarmult_ed25519_base_noclamp(A.data(), a.data());
 
-    return {{A.data(), 32}, {a.data(), 32}};
+    return result;
 }
 
 static const auto hash_key_seed = to_unsigned_sv("SessCommBlind25_seed"sv);
@@ -251,34 +319,7 @@ ustring blind25_sign(ustring_view ed25519_sk, std::string_view server_pk_in, ust
     else
         throw std::invalid_argument{"blind25_sign: Invalid server_pk: expected 32 bytes or 64 hex"};
 
-    ustring_view S{ed25519_sk.data() + 32, 32};
-
-    uc32 z;
-    crypto_sign_ed25519_sk_to_curve25519(z.data(), ed25519_sk.data());
-
-    uc33 session_id;
-    session_id[0] = 0x05;
-    if (0 != crypto_sign_ed25519_pk_to_curve25519(session_id.data() + 1, ed25519_sk.data() + 32))
-        throw std::runtime_error{
-                "blind25_sign: Invalid ed25519_sk; conversion to curve25519 pubkey failed"};
-
-    ustring_view X{session_id.data() + 1, 32};
-
-    auto k = blind25_factor(X, {server_pk.data(), server_pk.size()});
-
-    uc32 a;
-    uc32 A;
-    std::memcpy(A.data(), S.data(), 32);
-    if (S[31] & 0x80) {
-        // Ed25519 pubkey is negative, so we need to negate `z` to make things come out right
-        crypto_core_ed25519_scalar_negate(a.data(), z.data());
-        A[31] &= 0x7f;
-    } else
-        std::memcpy(a.data(), z.data(), 32);
-
-    // Turn a, A into their blinded versions
-    crypto_core_ed25519_scalar_mul(a.data(), k.data(), a.data());
-    crypto_scalarmult_ed25519_base_noclamp(A.data(), a.data());
+    auto [A, a] = blind25_key_pair(ed25519_sk, to_sv(server_pk));
 
     uc32 seedhash;
     crypto_generichash_blake2b(
@@ -404,19 +445,10 @@ bool session_id_matches_blinded_id(
     ustring converted_blind_id1_raw;
 
     switch (blinded_id[0]) {
-        case '1':
-            converted_blind_id1 = blind15_id(session_id, server_pk);
-
-            // For the negative, what we're going to get out of the above is simply the negative of
-            // converted_blind_id1, so flip the sign bit to get converted_blind_id2
-            oxenc::from_hex(
-                    converted_blind_id1.begin(),
-                    converted_blind_id1.end(),
-                    std::back_inserter(converted_blind_id1_raw));
-            converted_blind_id1_raw[32] ^= 0x80;
-            converted_blind_id2 = oxenc::to_hex(converted_blind_id1_raw);
-
+        case '1': {
+            auto [converted_blind_id1, converted_blind_id2] = blind15_id(session_id, server_pk);
             return (blinded_id == converted_blind_id1 || blinded_id == converted_blind_id2);
+        }
 
         // blind25 doesn't run into the negative issue that blind15 did
         case '2': return blinded_id == blind25_id(session_id, server_pk);
