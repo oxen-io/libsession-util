@@ -423,8 +423,9 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
                 "Invalid ciphertext: too short to contain valid encrypted data"};
 
     cleared_uc32 dec_key;
-    auto blinded_id = recipient_id[0] == 0x25 ? blinded25_id_from_ed(to_sv(ed_pk_from_seed), server_pk)
-                                              : blinded15_id_from_ed(to_sv(ed_pk_from_seed), server_pk);
+    auto blinded_id = recipient_id[0] == 0x25
+                            ? blinded25_id_from_ed(to_sv(ed_pk_from_seed), server_pk)
+                            : blinded15_id_from_ed(to_sv(ed_pk_from_seed), server_pk);
 
     if (sender_id == blinded_id)
         dec_key = blinded_shared_secret(ed25519_privkey, sender_id, recipient_id, server_pk, true);
@@ -479,11 +480,13 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
     if (0 != crypto_sign_ed25519_pk_to_curve25519(sender_x_pk.data(), sender_ed_pk.data()))
         throw std::runtime_error{"Sender ed25519 pubkey to x25519 pubkey conversion failed"};
 
-    ustring session_id; // Gets populated by the following ..._from_ed calls
+    ustring session_id;  // Gets populated by the following ..._from_ed calls
 
     // Verify that the inner sender_ed_pk (A) yields the same outer kA we got with the message
-    auto extracted_sender = recipient_id[0] == 0x25 ? blinded25_id_from_ed(to_sv(sender_ed_pk), server_pk, &session_id)
-                                                    : blinded15_id_from_ed(to_sv(sender_ed_pk), server_pk, &session_id);
+    auto extracted_sender =
+            recipient_id[0] == 0x25
+                    ? blinded25_id_from_ed(to_sv(sender_ed_pk), server_pk, &session_id)
+                    : blinded15_id_from_ed(to_sv(sender_ed_pk), server_pk, &session_id);
 
     bool matched = sender_id == extracted_sender;
     if (!matched && extracted_sender[0] == 0x15) {

@@ -157,7 +157,8 @@ ustring blinded15_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ust
     if (server_pk.size() != 32)
         throw std::invalid_argument{"blind15_id_from_ed: server_pk must be 32 bytes"};
     if (session_id && !session_id->empty())
-        throw std::invalid_argument{"blind15_id_from_ed: session_id pointer must be an empty string"};
+        throw std::invalid_argument{
+                "blind15_id_from_ed: session_id pointer must be an empty string"};
 
     if (session_id) {
         session_id->resize(33);
@@ -205,11 +206,10 @@ ustring blinded25_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ust
     pos_ed_pubkey[31] &= 0x7f;
 
     if (0 != crypto_scalarmult_ed25519_noclamp(result.data() + 1, k.data(), pos_ed_pubkey.data()))
-            throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
+        throw std::runtime_error{"Cannot blind: invalid session_id (not on main subgroup)"};
     result[0] = 0x25;
     return result;
 }
-
 
 std::pair<uc32, cleared_uc32> blind15_key_pair(
         ustring_view ed25519_sk, ustring_view server_pk, uc32* k) {

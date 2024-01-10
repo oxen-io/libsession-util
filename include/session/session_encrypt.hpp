@@ -201,7 +201,9 @@ std::pair<ustring, std::string> decrypt_incoming_session_id(
 
 /// API: crypto/decrypt_from_blinded_recipient
 ///
-/// This function attempts to decrypt a message using the SessionBlindingProtocol.
+/// This function attempts to decrypt a message using the SessionBlindingProtocol. If the
+/// `sender_id` matches the `blinded_id` generated from the `ed25519_privkey` this function assumes
+/// the `ciphertext` is an outgoing message and decrypts it as such.
 ///
 /// Inputs:
 /// - `ed25519_privkey` -- the Ed25519 private key of the receiver.  Can be a 32-byte seed, or a

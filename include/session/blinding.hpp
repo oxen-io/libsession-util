@@ -94,7 +94,8 @@ ustring blind25_id(ustring_view session_id, ustring_view server_pk);
 /// `blinded25_id_from_ed`, but unlike the 25 version, this value is not read if non-empty, and is
 /// not an optimization (that is: it is purely for convenience and is no more efficient to use this
 /// than it is to compute it yourself).
-ustring blinded15_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ustring* session_id = nullptr);
+ustring blinded15_id_from_ed(
+        ustring_view ed_pubkey, ustring_view server_pk, ustring* session_id = nullptr);
 
 /// Computes the 25-blinded id from a 32-byte Ed25519 pubkey, i.e. from the known underlying Ed25519
 /// pubkey behind a (X25519) Session ID.  This will be the same as blind25_id (if given the X25519
@@ -106,7 +107,8 @@ ustring blinded15_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ust
 /// containing the precomputed value (to avoid needing to compute it again).  If unknown but needed
 /// then a pointer to an empty string can be given to computed and stored the value here.  Otherwise
 /// (if omitted or nullptr) then the value will temporarily computed within the function.
-ustring blinded25_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ustring* session_id = nullptr);
+ustring blinded25_id_from_ed(
+        ustring_view ed_pubkey, ustring_view server_pk, ustring* session_id = nullptr);
 
 /// Computes a 15-blinded key pair.
 ///
@@ -118,7 +120,8 @@ ustring blinded25_id_from_ed(ustring_view ed_pubkey, ustring_view server_pk, ust
 ///
 /// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
 /// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
-std::pair<uc32, cleared_uc32> blind15_key_pair(ustring_view ed25519_sk, ustring_view server_pk, uc32* k = nullptr);
+std::pair<uc32, cleared_uc32> blind15_key_pair(
+        ustring_view ed25519_sk, ustring_view server_pk, uc32* k = nullptr);
 
 /// Computes a 25-blinded key pair.
 ///
@@ -132,7 +135,8 @@ std::pair<uc32, cleared_uc32> blind15_key_pair(ustring_view ed25519_sk, ustring_
 ///
 /// It is recommended to pass the full 64-byte libsodium-style secret key for `ed25519_sk` (i.e.
 /// seed + appended pubkey) as with just the 32-byte seed the public key has to be recomputed.
-std::pair<uc32, cleared_uc32> blind25_key_pair(ustring_view ed25519_sk, ustring_view server_pk, uc32* k_prime = nullptr);
+std::pair<uc32, cleared_uc32> blind25_key_pair(
+        ustring_view ed25519_sk, ustring_view server_pk, uc32* k_prime = nullptr);
 
 /// Computes a verifiable 15-blinded signature that validates with the blinded pubkey that would
 /// be returned from blind15_key_pair().
