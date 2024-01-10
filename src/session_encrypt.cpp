@@ -407,21 +407,29 @@ std::pair<ustring, std::string> decrypt_from_blinded_recipient(
         ustring_view sender_id,
         ustring_view recipient_id,
         ustring_view ciphertext) {
+    uc32 ed_pk_from_seed;
     cleared_uc64 ed_sk_from_seed;
     if (ed25519_privkey.size() == 32) {
-        uc32 ignore_pk;
         crypto_sign_ed25519_seed_keypair(
-                ignore_pk.data(), ed_sk_from_seed.data(), ed25519_privkey.data());
+                ed_pk_from_seed.data(), ed_sk_from_seed.data(), ed25519_privkey.data());
         ed25519_privkey = {ed_sk_from_seed.data(), ed_sk_from_seed.size()};
-    } else if (ed25519_privkey.size() != 64)
+    } else if (ed25519_privkey.size() == 64)
+        std::memcpy(ed_pk_from_seed.data(), ed25519_privkey.data() + 32, 32);
+    else
         throw std::invalid_argument{"Invalid ed25519_privkey: expected 32 or 64 bytes"};
     if (ciphertext.size() < crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + 1 +
                                     crypto_aead_xchacha20poly1305_ietf_ABYTES)
         throw std::invalid_argument{
                 "Invalid ciphertext: too short to contain valid encrypted data"};
 
-    auto dec_key =
-            blinded_shared_secret(ed25519_privkey, recipient_id, sender_id, server_pk, false);
+    cleared_uc32 dec_key;
+    auto blinded_id = recipient_id[0] == 0x25 ? blinded25_id_from_ed(to_sv(ed_pk_from_seed), server_pk)
+                                              : blinded15_id_from_ed(to_sv(ed_pk_from_seed), server_pk);
+
+    if (sender_id == blinded_id)
+        dec_key = blinded_shared_secret(ed25519_privkey, sender_id, recipient_id, server_pk, true);
+    else
+        dec_key = blinded_shared_secret(ed25519_privkey, recipient_id, sender_id, server_pk, false);
 
     std::pair<ustring, std::string> result;
     auto& [buf, sender_session_id] = result;
