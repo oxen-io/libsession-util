@@ -26,13 +26,17 @@ ResponseParser::ResponseParser(session::onionreq::Builder builder) {
 ustring ResponseParser::decrypt(ustring ciphertext) const {
     HopEncryption d{x25519_keypair_.second, x25519_keypair_.first, false};
 
-    // FIXME: The legacy PN server doesn't support 'xchacha20' onion requests so would return an error encrypted with 'aes_gcm' so try to decrypt in case that is what happened - this workaround can be removed once the legacy PN server is removed
+    // FIXME: The legacy PN server doesn't support 'xchacha20' onion requests so would return an
+    // error encrypted with 'aes_gcm' so try to decrypt in case that is what happened - this
+    // workaround can be removed once the legacy PN server is removed
     try {
         return d.decrypt(enc_type_, ciphertext, destination_x25519_public_key_);
     } catch (const std::exception& e) {
         if (enc_type_ == session::onionreq::EncryptType::xchacha20)
-            return d.decrypt(session::onionreq::EncryptType::aes_gcm, ciphertext,
-                             destination_x25519_public_key_);
+            return d.decrypt(
+                    session::onionreq::EncryptType::aes_gcm,
+                    ciphertext,
+                    destination_x25519_public_key_);
         else
             throw e;
     }
@@ -79,7 +83,9 @@ LIBSESSION_C_API bool onion_request_decrypt(
 
         ustring result;
 
-        // FIXME: The legacy PN server doesn't support 'xchacha20' onion requests so would return an error encrypted with 'aes_gcm' so try to decrypt in case that is what happened - this workaround can be removed once the legacy PN server is removed
+        // FIXME: The legacy PN server doesn't support 'xchacha20' onion requests so would return an
+        // error encrypted with 'aes_gcm' so try to decrypt in case that is what happened - this
+        // workaround can be removed once the legacy PN server is removed
         try {
             result = d.decrypt(
                     enc_type,
@@ -90,7 +96,8 @@ LIBSESSION_C_API bool onion_request_decrypt(
                 result = d.decrypt(
                         session::onionreq::EncryptType::aes_gcm,
                         ustring{ciphertext, ciphertext_len},
-                        session::onionreq::x25519_pubkey::from_bytes({destination_x25519_pubkey, 32}));
+                        session::onionreq::x25519_pubkey::from_bytes(
+                                {destination_x25519_pubkey, 32}));
             else
                 return false;
         }
