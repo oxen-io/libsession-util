@@ -1,6 +1,6 @@
 #include <string>
 
-#include "session/onionreq/channel_encryption.hpp"
+#include "session/onionreq/hop_encryption.hpp"
 #include "session/types.hpp"
 
 namespace session::onionreq {
@@ -11,7 +11,7 @@ constexpr size_t DEFAULT_MAX_SIZE = 10'485'760;  // 10 MiB
 class OnionReqParser {
   private:
     x25519_keypair keys;
-    ChannelEncryption enc;
+    HopEncryption enc;
     EncryptType enc_type = EncryptType::aes_gcm;
     x25519_pubkey remote_pk;
     ustring payload_;
