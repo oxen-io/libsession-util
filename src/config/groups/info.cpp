@@ -30,7 +30,21 @@ std::optional<std::string_view> Info::get_name() const {
 }
 
 void Info::set_name(std::string_view new_name) {
+    if (new_name.size() > NAME_MAX_LENGTH)
+        new_name = new_name.substr(0, NAME_MAX_LENGTH);
     set_nonempty_str(data["n"], new_name);
+}
+
+std::optional<std::string_view> Info::get_description() const {
+    if (auto* s = data["o"].string(); s && !s->empty())
+        return *s;
+    return std::nullopt;
+}
+
+void Info::set_description(std::string_view new_desc) {
+    if (new_desc.size() > DESCRIPTION_MAX_LENGTH)
+        new_desc = new_desc.substr(0, DESCRIPTION_MAX_LENGTH);
+    set_nonempty_str(data["o"], new_desc);
 }
 
 profile_pic Info::get_profile_pic() const {
@@ -105,6 +119,10 @@ bool Info::is_destroyed() const {
 using namespace session;
 using namespace session::config;
 
+LIBSESSION_C_API const size_t GROUP_INFO_NAME_MAX_LENGTH = groups::Info::NAME_MAX_LENGTH;
+LIBSESSION_C_API const size_t GROUP_INFO_DESCRIPTION_MAX_LENGTH =
+        groups::Info::DESCRIPTION_MAX_LENGTH;
+
 LIBSESSION_C_API int groups_info_init(
         config_object** conf,
         const unsigned char* ed25519_pubkey,
@@ -147,6 +165,44 @@ LIBSESSION_C_API const char* groups_info_get_name(const config_object* conf) {
 LIBSESSION_C_API int groups_info_set_name(config_object* conf, const char* name) {
     try {
         unbox<groups::Info>(conf)->set_name(name);
+    } catch (const std::exception& e) {
+        return set_error(conf, SESSION_ERR_BAD_VALUE, e);
+    }
+    return 0;
+}
+
+/// API: groups_info/groups_info_get_description
+///
+/// Returns a pointer to the currently-set description (null-terminated), or NULL if there is
+/// no description at all.  Should be copied right away as the pointer may not remain valid
+/// beyond other API calls.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `char*` -- Pointer to the currently-set description as a null-terminated string, or NULL
+/// if there is no description
+LIBSESSION_C_API const char* groups_info_get_description(const config_object* conf) {
+    if (auto s = unbox<groups::Info>(conf)->get_description())
+        return s->data();
+    return nullptr;
+}
+
+/// API: groups_info/groups_info_set_description
+///
+/// Sets the group's description to the null-terminated C string.  Returns 0 on success, non-zero on
+/// error (and sets the config_object's error string).
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `description` -- [in] Pointer to the description as a null-terminated C string
+///
+/// Outputs:
+/// - `int` -- Returns 0 on success, non-zero on error
+LIBSESSION_C_API int groups_info_set_description(config_object* conf, const char* description) {
+    try {
+        unbox<groups::Info>(conf)->set_description(description);
     } catch (const std::exception& e) {
         return set_error(conf, SESSION_ERR_BAD_VALUE, e);
     }

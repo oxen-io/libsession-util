@@ -1,9 +1,11 @@
-#include "session/onionreq/channel_encryption.hpp"
+#include "session/onionreq/hop_encryption.hpp"
 
 #include <nettle/gcm.h>
+#include <oxenc/endian.h>
 #include <oxenc/hex.h>
 #include <sodium/crypto_aead_xchacha20poly1305.h>
 #include <sodium/crypto_auth_hmacsha256.h>
+#include <sodium/crypto_box.h>
 #include <sodium/crypto_generichash.h>
 #include <sodium/crypto_scalarmult.h>
 #include <sodium/randombytes.h>
@@ -12,6 +14,13 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <nlohmann/json.hpp>
+
+#include "session/export.h"
+#include "session/onionreq/builder.hpp"
+#include "session/onionreq/key_types.hpp"
+#include "session/util.hpp"
+#include "session/xed25519.hpp"
 
 namespace session::onionreq {
 
@@ -71,16 +80,8 @@ namespace {
 
 }  // namespace
 
-EncryptType parse_enc_type(std::string_view enc_type) {
-    if (enc_type == "xchacha20" || enc_type == "xchacha20-poly1305")
-        return EncryptType::xchacha20;
-    if (enc_type == "aes-gcm" || enc_type == "gcm")
-        return EncryptType::aes_gcm;
-    throw std::runtime_error{"Invalid encryption type " + std::string{enc_type}};
-}
-
-ustring ChannelEncryption::encrypt(
-        EncryptType type, ustring_view plaintext, const x25519_pubkey& pubkey) const {
+ustring HopEncryption::encrypt(
+        EncryptType type, ustring plaintext, const x25519_pubkey& pubkey) const {
     switch (type) {
         case EncryptType::xchacha20: return encrypt_xchacha20(plaintext, pubkey);
         case EncryptType::aes_gcm: return encrypt_aesgcm(plaintext, pubkey);
@@ -88,8 +89,8 @@ ustring ChannelEncryption::encrypt(
     throw std::runtime_error{"Invalid encryption type"};
 }
 
-ustring ChannelEncryption::decrypt(
-        EncryptType type, ustring_view ciphertext, const x25519_pubkey& pubkey) const {
+ustring HopEncryption::decrypt(
+        EncryptType type, ustring ciphertext, const x25519_pubkey& pubkey) const {
     switch (type) {
         case EncryptType::xchacha20: return decrypt_xchacha20(ciphertext, pubkey);
         case EncryptType::aes_gcm: return decrypt_aesgcm(ciphertext, pubkey);
@@ -97,9 +98,7 @@ ustring ChannelEncryption::decrypt(
     throw std::runtime_error{"Invalid decryption type"};
 }
 
-ustring ChannelEncryption::encrypt_aesgcm(
-        ustring_view plaintext, const x25519_pubkey& pubKey) const {
-
+ustring HopEncryption::encrypt_aesgcm(ustring plaintext, const x25519_pubkey& pubKey) const {
     auto key = derive_symmetric_key(private_key_, pubKey);
 
     // Initialise cipher context with the key
@@ -129,8 +128,8 @@ ustring ChannelEncryption::encrypt_aesgcm(
     return output;
 }
 
-ustring ChannelEncryption::decrypt_aesgcm(
-        ustring_view ciphertext, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::decrypt_aesgcm(ustring ciphertext_, const x25519_pubkey& pubKey) const {
+    ustring_view ciphertext = {ciphertext_.data(), ciphertext_.size()};
 
     if (ciphertext.size() < GCM_IV_SIZE + GCM_DIGEST_SIZE)
         throw std::runtime_error{"ciphertext data is too short"};
@@ -162,8 +161,7 @@ ustring ChannelEncryption::decrypt_aesgcm(
     return plaintext;
 }
 
-ustring ChannelEncryption::encrypt_xchacha20(
-        ustring_view plaintext, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::encrypt_xchacha20(ustring plaintext, const x25519_pubkey& pubKey) const {
 
     ustring ciphertext;
     ciphertext.resize(
@@ -175,7 +173,8 @@ ustring ChannelEncryption::encrypt_xchacha20(
     // Generate random nonce, and stash it at the beginning of ciphertext:
     randombytes_buf(ciphertext.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
 
-    auto* c = ciphertext.data() + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
+    auto* c = reinterpret_cast<unsigned char*>(ciphertext.data()) +
+              crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
     unsigned long long clen;
 
     crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -186,15 +185,15 @@ ustring ChannelEncryption::encrypt_xchacha20(
             nullptr,
             0,        // additional data
             nullptr,  // nsec (always unused)
-            ciphertext.data(),
+            reinterpret_cast<const unsigned char*>(ciphertext.data()),
             key.data());
     assert(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + clen <= ciphertext.size());
     ciphertext.resize(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + clen);
     return ciphertext;
 }
 
-ustring ChannelEncryption::decrypt_xchacha20(
-        ustring_view ciphertext, const x25519_pubkey& pubKey) const {
+ustring HopEncryption::decrypt_xchacha20(ustring ciphertext_, const x25519_pubkey& pubKey) const {
+    ustring_view ciphertext = {ciphertext_.data(), ciphertext_.size()};
 
     // Extract nonce from the beginning of the ciphertext:
     auto nonce = ciphertext.substr(0, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
@@ -206,7 +205,7 @@ ustring ChannelEncryption::decrypt_xchacha20(
 
     ustring plaintext;
     plaintext.resize(ciphertext.size() - crypto_aead_xchacha20poly1305_ietf_ABYTES);
-    auto* m = plaintext.data();
+    auto* m = reinterpret_cast<unsigned char*>(plaintext.data());
     unsigned long long mlen;
     if (0 != crypto_aead_xchacha20poly1305_ietf_decrypt(
                      m,

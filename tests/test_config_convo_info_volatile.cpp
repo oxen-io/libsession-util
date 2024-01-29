@@ -155,10 +155,19 @@ TEST_CASE("Conversations", "[config][conversations]") {
     CHECK(std::get<seqno_t>(convos.push()) == seqno);
 
     using session::config::convo::community;
+    using session::config::convo::group;
     using session::config::convo::legacy_group;
     using session::config::convo::one_to_one;
 
-    std::vector<std::string> seen;
+    std::vector<std::string> seen, expected;
+    for (const auto& e :
+         {"1-to-1: 051111111111111111111111111111111111111111111111111111111111111111",
+          "1-to-1: 055000000000000000000000000000000000000000000000000000000000000000",
+          "gr: 030111101001001000101010011011010010101010111010000110100001210000",
+          "comm: http://example.org:5678/r/sudokuroom",
+          "lgr: 05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"})
+        expected.emplace_back(e);
+
     for (auto* conv : {&convos, &convos2}) {
         // Iterate through and make sure we got everything we expected
         seen.clear();
@@ -166,26 +175,23 @@ TEST_CASE("Conversations", "[config][conversations]") {
         CHECK(conv->size_1to1() == 2);
         CHECK(conv->size_communities() == 1);
         CHECK(conv->size_legacy_groups() == 1);
+        CHECK(conv->size_groups() == 1);
         CHECK_FALSE(conv->empty());
         for (const auto& convo : *conv) {
             if (auto* c = std::get_if<one_to_one>(&convo))
                 seen.push_back("1-to-1: "s + c->session_id);
+            else if (auto* c = std::get_if<group>(&convo))
+                seen.push_back("gr: " + c->id);
             else if (auto* c = std::get_if<community>(&convo))
                 seen.push_back(
-                        "og: " + std::string{c->base_url()} + "/r/" + std::string{c->room()});
+                        "comm: " + std::string{c->base_url()} + "/r/" + std::string{c->room()});
             else if (auto* c = std::get_if<legacy_group>(&convo))
-                seen.push_back("cl: " + c->id);
+                seen.push_back("lgr: " + c->id);
+            else
+                seen.push_back("unknown convo type!");
         }
 
-        CHECK(seen == std::vector<std::string>{
-                              {"1-to-1: "
-                               "051111111111111111111111111111111111111111111111111111111111111111",
-                               "1-to-1: "
-                               "055000000000000000000000000000000000000000000000000000000000000000",
-                               "og: http://example.org:5678/r/sudokuroom",
-                               "cl: "
-                               "05ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-                               "c"}});
+        CHECK(seen == expected);
     }
 
     CHECK_FALSE(convos.needs_push());
@@ -362,8 +368,10 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     hash_data[0] = "hash123";
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
-    int accepted = config_merge(conf, hash_data, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    config_string_list* accepted = config_merge(conf, hash_data, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "hash123"sv);
+    free(accepted);
     config_confirm_pushed(conf2, seqno, "hash123");
     free(to_push);
 
@@ -386,9 +394,9 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
             if (convo_info_volatile_it_is_1to1(it, &c1)) {
                 seen.push_back("1-to-1: "s + c1.session_id);
             } else if (convo_info_volatile_it_is_community(it, &c2)) {
-                seen.push_back("og: "s + c2.base_url + "/r/" + c2.room);
+                seen.push_back("comm: "s + c2.base_url + "/r/" + c2.room);
             } else if (convo_info_volatile_it_is_legacy_group(it, &c3)) {
-                seen.push_back("cl: "s + c3.group_id);
+                seen.push_back("lgr: "s + c3.group_id);
             }
         }
         convo_info_volatile_iterator_free(it);
@@ -398,8 +406,8 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
                                "051111111111111111111111111111111111111111111111111111111111111111",
                                "1-to-1: "
                                "055000000000000000000000000000000000000000000000000000000000000000",
-                               "og: http://example.org:5678/r/sudokuroom",
-                               "cl: "
+                               "comm: http://example.org:5678/r/sudokuroom",
+                               "lgr: "
                                "05ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
                                "c"}});
     }
@@ -630,7 +638,10 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
 
-    config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "hash5235"sv);
+    free(accepted);
     free(to_push);
 
     CHECK(config_needs_push(conf2));
