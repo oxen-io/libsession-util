@@ -393,34 +393,51 @@ ConvoInfoVolatile::iterator::iterator(
     _load_val();
 }
 
+class val_loader {
+  public:
+    template <typename ConvoType>
+    static bool load(
+            std::shared_ptr<convo::any>& val,
+            std::optional<dict::const_iterator>& it,
+            std::optional<dict::const_iterator>& end,
+            char prefix) {
+        while (it) {
+            if (*it == *end) {
+                it.reset();
+                end.reset();
+                return false;
+            }
+
+            auto& [k, v] = **it;
+
+            if (k.size() == 33 && k[0] == prefix) {
+                if (auto* info_dict = std::get_if<dict>(&v)) {
+                    val = std::make_shared<convo::any>(ConvoType{oxenc::to_hex(k)});
+                    std::get<ConvoType>(*val).load(*info_dict);
+                    return true;
+                }
+            }
+            ++*it;
+        }
+        return false;
+    }
+};
+
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until we
-/// find one that is valid (or hit the end).  We also span across three different iterators: first
-/// we exhaust _it_11, then _it_comm, then _it_lgroup.
+/// find one that is valid (or hit the end).  We also span across four different iterators: we
+/// exhaust, in order: _it_11, _it_group, _it_comm, _it_lgroup.
 ///
 /// We *always* call this after incrementing the iterator (and after iterator initialization), and
-/// this is responsible for making sure that _it_11, _it_comm, etc. are only set to non-nullopt if
+/// this is responsible for making sure that _it_11, _it_group, etc. are only set to non-nullopt if
 /// the respective sub-iterator is *not* at the end (and resetting them when we hit the end).  Thus,
 /// after calling this, our "end" condition will be simply that all of the three iterators are
 /// nullopt.
 void ConvoInfoVolatile::iterator::_load_val() {
-    while (_it_11) {
-        if (*_it_11 == *_end_11) {
-            _it_11.reset();
-            _end_11.reset();
-            break;
-        }
+    if (val_loader::load<convo::one_to_one>(_val, _it_11, _end_11, 0x05))
+        return;
 
-        auto& [k, v] = **_it_11;
-
-        if (k.size() == 33 && k[0] == 0x05) {
-            if (auto* info_dict = std::get_if<dict>(&v)) {
-                _val = std::make_shared<convo::any>(convo::one_to_one{oxenc::to_hex(k)});
-                std::get<convo::one_to_one>(*_val).load(*info_dict);
-                return;
-            }
-        }
-        ++*_it_11;
-    }
+    if (val_loader::load<convo::group>(_val, _it_group, _end_group, 0x03))
+        return;
 
     if (_it_comm) {
         if (_it_comm->load<convo::community>(_val))
@@ -429,37 +446,24 @@ void ConvoInfoVolatile::iterator::_load_val() {
             _it_comm.reset();
     }
 
-    while (_it_lgroup) {
-        if (*_it_lgroup == *_end_lgroup) {
-            _it_lgroup.reset();
-            _end_lgroup.reset();
-            break;
-        }
-
-        auto& [k, v] = **_it_lgroup;
-
-        if (k.size() == 33 && k[0] == 0x05) {
-            if (auto* info_dict = std::get_if<dict>(&v)) {
-                _val = std::make_shared<convo::any>(convo::legacy_group{oxenc::to_hex(k)});
-                std::get<convo::legacy_group>(*_val).load(*info_dict);
-                return;
-            }
-        }
-        ++*_it_lgroup;
-    }
+    if (val_loader::load<convo::legacy_group>(_val, _it_lgroup, _end_lgroup, 0x05))
+        return;
 }
 
 bool ConvoInfoVolatile::iterator::operator==(const iterator& other) const {
-    return _it_11 == other._it_11 && _it_comm == other._it_comm && _it_lgroup == other._it_lgroup;
+    return _it_11 == other._it_11 && _it_group == other._it_group && _it_comm == other._it_comm &&
+           _it_lgroup == other._it_lgroup;
 }
 
 bool ConvoInfoVolatile::iterator::done() const {
-    return !_it_11 && (!_it_comm || _it_comm->done()) && !_it_lgroup;
+    return !_it_11 && !_it_group && (!_it_comm || _it_comm->done()) && !_it_lgroup;
 }
 
 ConvoInfoVolatile::iterator& ConvoInfoVolatile::iterator::operator++() {
     if (_it_11)
         ++*_it_11;
+    else if (_it_group)
+        ++*_it_group;
     else if (_it_comm && !_it_comm->done())
         _it_comm->advance();
     else {

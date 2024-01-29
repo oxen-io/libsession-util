@@ -159,10 +159,8 @@ TEST_CASE("XEd25519 signing (C wrapper)", "[xed25519][sign][c]") {
     const auto msg = view("hello world");
 
     std::array<unsigned char, 64> xed_sig1, xed_sig2;
-    rc = session_xed25519_sign(xed_sig1.data(), xsk1.data(), msg.data(), msg.size());
-    REQUIRE(rc == 0);
-    rc = session_xed25519_sign(xed_sig2.data(), xsk2.data(), msg.data(), msg.size());
-    REQUIRE(rc == 0);
+    REQUIRE(session_xed25519_sign(xed_sig1.data(), xsk1.data(), msg.data(), msg.size()));
+    REQUIRE(session_xed25519_sign(xed_sig2.data(), xsk2.data(), msg.data(), msg.size()));
 
     rc = crypto_sign_ed25519_verify_detached(xed_sig1.data(), msg.data(), msg.size(), pub1.data());
     REQUIRE(rc == 0);
@@ -186,13 +184,9 @@ TEST_CASE("XEd25519 verification (C wrapper)", "[xed25519][verify][c]") {
     const auto msg = view("hello world");
 
     std::array<unsigned char, 64> xed_sig1, xed_sig2;
-    rc = session_xed25519_sign(xed_sig1.data(), xsk1.data(), msg.data(), msg.size());
-    REQUIRE(rc == 0);
-    rc = session_xed25519_sign(xed_sig2.data(), xsk2.data(), msg.data(), msg.size());
-    REQUIRE(rc == 0);
+    REQUIRE(session_xed25519_sign(xed_sig1.data(), xsk1.data(), msg.data(), msg.size()));
+    REQUIRE(session_xed25519_sign(xed_sig2.data(), xsk2.data(), msg.data(), msg.size()));
 
-    rc = session_xed25519_verify(xed_sig1.data(), xpub1.data(), msg.data(), msg.size());
-    REQUIRE(rc == 0);
-    rc = session_xed25519_verify(xed_sig2.data(), xpub2.data(), msg.data(), msg.size());
-    REQUIRE(rc == 0);
+    REQUIRE(session_xed25519_verify(xed_sig1.data(), xpub1.data(), msg.data(), msg.size()));
+    REQUIRE(session_xed25519_verify(xed_sig2.data(), xpub2.data(), msg.data(), msg.size()));
 }
