@@ -199,7 +199,10 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK(seqno == seqno2 + 1);
     std::tie(seqno2, to_push2, obs2) = contacts2.push();
     CHECK(seqno == seqno2);
-    CHECK(to_push == to_push2);
+    // Disabled check for now: doesn't work with protobuf (because of the non-deterministic
+    // encryption in the middle of the protobuf wrapping).
+    // TODO: reenable once protobuf isn't always-on.
+    // CHECK(printable(to_push) == printable(to_push2));
     CHECK(as_set(obs) == make_set("fakehash3a"s, "fakehash3b"));
     CHECK(as_set(obs2) == make_set("fakehash3a"s, "fakehash3b"));
 
@@ -291,8 +294,10 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     merge_hash[0] = "fakehash1";
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
-    int accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash1"sv);
+    free(accepted);
 
     config_confirm_pushed(conf, to_push->seqno, "fakehash1");
     free(to_push);
@@ -325,7 +330,9 @@ TEST_CASE("Contacts (C API)", "[config][contacts][c]") {
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
     accepted = config_merge(conf, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    free(accepted);
 
     config_confirm_pushed(conf2, to_push->seqno, "fakehash2");
 
@@ -414,7 +421,7 @@ TEST_CASE("huge contacts compression", "[config][compression][contacts]") {
 
     auto [seqno, to_push, obs] = contacts.push();
     CHECK(seqno == 1);
-    CHECK(to_push.size() == 46'080);
+    CHECK(to_push.size() == 46'080 + 181);  // 181 == protobuf overhead
     auto dump = contacts.dump();
     // With tons of duplicate info the push should have been nicely compressible:
     CHECK(dump.size() > 1'320'000);

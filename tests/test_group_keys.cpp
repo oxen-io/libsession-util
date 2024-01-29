@@ -173,8 +173,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     for (auto& a : admins) {
         a.keys.load_key_message(
                 "keyhash1", new_keys_config1, get_timestamp_ms(), a.info, a.members);
-        CHECK(a.info.merge(info_configs) == 1);
-        CHECK(a.members.merge(mem_configs) == 1);
+        CHECK(a.info.merge(info_configs) == std::vector{{"fakehash1"s}});
+        CHECK(a.members.merge(mem_configs) == std::vector{{"fakehash1"s}});
         CHECK(a.members.size() == 1);
         CHECK(a.keys.current_hashes() == std::unordered_set{{"keyhash1"s}});
     }
@@ -218,8 +218,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     for (auto& a : admins) {
         a.keys.load_key_message(
                 "keyhash2", new_keys_config2, get_timestamp_ms(), a.info, a.members);
-        CHECK(a.info.merge(info_configs) == 1);
-        CHECK(a.members.merge(mem_configs) == 1);
+        CHECK(a.info.merge(info_configs) == std::vector{{"fakehash2"s}});
+        CHECK(a.members.merge(mem_configs) == std::vector{{"fakehash2"s}});
         CHECK(a.members.size() == 5);
         CHECK(a.keys.current_hashes() == std::unordered_set{{"keyhash1"s, "keyhash2"s}});
     }
@@ -227,8 +227,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     for (auto& m : members) {
         m.keys.load_key_message(
                 "keyhash2", new_keys_config2, get_timestamp_ms(), m.info, m.members);
-        CHECK(m.info.merge(info_configs) == 1);
-        CHECK(m.members.merge(mem_configs) == 1);
+        CHECK(m.info.merge(info_configs) == std::vector{{"fakehash2"s}});
+        CHECK(m.members.merge(mem_configs) == std::vector{{"fakehash2"s}});
         CHECK(m.members.size() == 5);
         CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash2"s}});
     }
@@ -238,6 +238,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
 
     // change group info, re-key, distribute
     admin1.info.set_name("tomatosauce"s);
+    admin1.info.set_description("this is where you go to play in the tomato sauce, I guess");
 
     CHECK(admin1.info.needs_push());
 
@@ -255,9 +256,11 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     for (auto& a : admins) {
         a.keys.load_key_message(
                 "keyhash3", new_keys_config3, get_timestamp_ms(), a.info, a.members);
-        CHECK(a.info.merge(info_configs) == 1);
-        CHECK(a.members.merge(mem_configs) == 1);
+        CHECK(a.info.merge(info_configs) == std::vector{{"fakehash3"s}});
+        CHECK(a.members.merge(mem_configs) == std::vector{{"fakehash3"s}});
         CHECK(a.info.get_name() == "tomatosauce"s);
+        CHECK(a.info.get_description() ==
+              "this is where you go to play in the tomato sauce, I guess"s);
         CHECK(a.keys.current_hashes() ==
               std::unordered_set{{"keyhash1"s, "keyhash2"s, "keyhash3"s}});
     }
@@ -265,9 +268,11 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     for (auto& m : members) {
         m.keys.load_key_message(
                 "keyhash3", new_keys_config3, get_timestamp_ms(), m.info, m.members);
-        CHECK(m.info.merge(info_configs) == 1);
-        CHECK(m.members.merge(mem_configs) == 1);
+        CHECK(m.info.merge(info_configs) == std::vector{{"fakehash3"s}});
+        CHECK(m.members.merge(mem_configs) == std::vector{{"fakehash3"s}});
         CHECK(m.info.get_name() == "tomatosauce"s);
+        CHECK(m.info.get_description() ==
+              "this is where you go to play in the tomato sauce, I guess"s);
         CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash2"s, "keyhash3"s}});
     }
 
@@ -299,8 +304,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
     for (auto& a : admins) {
         CHECK(a.keys.load_key_message(
                 "keyhash4", new_keys_config4, get_timestamp_ms(), a.info, a.members));
-        CHECK(a.info.merge(info_configs) == 1);
-        CHECK(a.members.merge(mem_configs) == 1);
+        CHECK(a.info.merge(info_configs) == std::vector{{"fakehash4"s}});
+        CHECK(a.members.merge(mem_configs) == std::vector{{"fakehash4"s}});
         CHECK(a.members.size() == 3);
         CHECK(a.keys.current_hashes() ==
               std::unordered_set{{"keyhash1"s, "keyhash2"s, "keyhash3"s, "keyhash4"s}});
@@ -315,13 +320,13 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
               std::unordered_set{{"keyhash2"s, "keyhash3"s, "keyhash4"s}});
         if (i < 2) {  // We should still be in the group
             CHECK(found_key);
-            CHECK(m.info.merge(info_configs) == 1);
-            CHECK(m.members.merge(mem_configs) == 1);
+            CHECK(m.info.merge(info_configs) == std::vector{{"fakehash4"s}});
+            CHECK(m.members.merge(mem_configs) == std::vector{{"fakehash4"s}});
             CHECK(m.members.size() == 3);
         } else {
             CHECK_FALSE(found_key);
-            CHECK(m.info.merge(info_configs) == 0);
-            CHECK(m.members.merge(mem_configs) == 0);
+            CHECK(m.info.merge(info_configs) == std::vector<std::string>{});
+            CHECK(m.members.merge(mem_configs) == std::vector<std::string>{});
             CHECK(m.members.size() == 5);
         }
     }
@@ -351,6 +356,7 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
 
         auto memb = admin1.members.get_or_construct(m.session_id);
         memb.set_invited();
+        memb.supplement = true;
         memb.name = i == 0 ? "fred" : "JOHN";
         admin1.members.set(memb);
 
@@ -400,8 +406,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             CHECK(m.keys.group_keys().size() == 4);
         }
 
-        CHECK(m.info.merge(info_configs) == 1);
-        CHECK(m.members.merge(mem_configs) == 1);
+        CHECK(m.info.merge(info_configs) == std::vector{{"fakehash4"s}});
+        CHECK(m.members.merge(mem_configs) == std::vector{{"fakehash5"s}});
         REQUIRE(m.info.get_name());
         CHECK(*m.info.get_name() == "tomatosauce"sv);
         CHECK(m.members.size() == 5);
@@ -466,8 +472,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
                 get_timestamp_ms() + 10LL * 86400 * 1000,
                 a.info,
                 a.members));
-        CHECK(a.info.merge(info_configs) == 1);
-        CHECK(a.members.merge(mem_configs) == 1);
+        CHECK(a.info.merge(info_configs) == std::vector{{"ifakehash6"s}});
+        CHECK(a.members.merge(mem_configs) == std::vector{{"mfakehash6"s}});
         CHECK(a.members.size() == 5);
         CHECK(a.keys.current_hashes() == std::unordered_set{
                                                  {"keyhash1"s,
@@ -497,8 +503,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
                 get_timestamp_ms() + 71LL * 86400 * 1000,
                 a.info,
                 a.members));
-        CHECK(a.info.merge(info_configs) == 2);
-        CHECK(a.members.merge(mem_configs) == 2);
+        CHECK(a.info.merge(info_configs) == std::vector{{"ifakehash6"s, "ifakehash7"s}});
+        CHECK(a.members.merge(mem_configs) == std::vector{{"mfakehash6"s, "mfakehash7"s}});
         CHECK(a.members.size() == 5);
         CHECK(a.keys.current_hashes() == std::unordered_set{{"keyhash6"s, "keyhash7"s}});
     }
@@ -517,8 +523,8 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
                 get_timestamp_ms() + 71LL * 86400 * 1000,
                 m.info,
                 m.members));
-        CHECK(m.info.merge(info_configs) == 2);
-        CHECK(m.members.merge(mem_configs) == 2);
+        CHECK(m.info.merge(info_configs) == std::vector{{"ifakehash6"s, "ifakehash7"s}});
+        CHECK(m.members.merge(mem_configs) == std::vector{{"mfakehash6"s, "mfakehash7"s}});
         CHECK(m.members.size() == 5);
         CHECK(m.keys.current_hashes() == std::unordered_set{{"keyhash6"s, "keyhash7"s}});
     }
@@ -532,12 +538,21 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             admin1.info.dump(),
             admin1.members.dump(),
             admin1.keys.dump()};
-    admin1b.info.set_name("Test New Name");
+    admin1b.info.set_name(
+            "Test New Name Really long "
+            "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");
+    admin1b.info.set_description(std::string(2050, 'z'));
     CHECK_NOTHROW(admin1b.info.push());
     admin1b.members.set(
             admin1b.members.get_or_construct("05124076571076017981235497801235098712093870981273590"
                                              "8746387172343"));
     CHECK_NOTHROW(admin1b.members.push());
+
+    // Test truncation
+    CHECK(admin1b.info.get_name() ==
+          "Test New Name Really long "
+          "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv");
+    CHECK(admin1b.info.get_description() == std::string(2000, 'z'));
 }
 
 TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
@@ -679,10 +694,15 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 get_timestamp_ms(),
                 a.info,
                 a.members));
-        REQUIRE(config_merge(a.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
+        config_string_list* hashes;
+        hashes = config_merge(a.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.info, new_info_config1->seqno, "fakehash1");
 
-        REQUIRE(config_merge(a.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
+        hashes = config_merge(a.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.members, new_mem_config1->seqno, "fakehash1");
 
         REQUIRE(groups_members_size(a.members) == 1);
@@ -702,8 +722,11 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 get_timestamp_ms(),
                 m.info,
                 m.members));
-        REQUIRE_THROWS(config_merge(m.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
-        REQUIRE_THROWS(config_merge(m.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
+        config_string_list* hashes;
+        REQUIRE_THROWS(
+                hashes = config_merge(m.info, merge_hash1, &merge_data1[0], &merge_size1[0], 1));
+        REQUIRE_THROWS(
+                hashes = config_merge(m.members, merge_hash1, &merge_data1[1], &merge_size1[1], 1));
 
         REQUIRE(groups_members_size(m.members) == 0);
     }
@@ -754,10 +777,14 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 get_timestamp_ms(),
                 a.info,
                 a.members));
-        REQUIRE(config_merge(a.info, merge_hash2, &merge_data2[0], &merge_size2[0], 1));
+        config_string_list* hashes;
+        hashes = config_merge(a.info, merge_hash2, &merge_data2[0], &merge_size2[0], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.info, new_info_config2->seqno, "fakehash2");
-
-        REQUIRE(config_merge(a.members, merge_hash2, &merge_data2[1], &merge_size2[1], 1));
+        hashes = config_merge(a.members, merge_hash2, &merge_data2[1], &merge_size2[1], 1);
+        REQUIRE(hashes->len);
+        free(hashes);
         config_confirm_pushed(a.members, new_mem_config2->seqno, "fakehash2");
 
         REQUIRE(groups_members_size(a.members) == 5);
@@ -859,4 +886,94 @@ TEST_CASE("Group Keys - swarm authentication", "[config][groups][keys][swarm]") 
                     member.info.id, to_usv(member.secret_key), auth_data2));
         }
     }
+}
+
+TEST_CASE("Group Keys promotion", "[config][groups][keys][promotion]") {
+
+    const ustring group_seed =
+            "0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210"_hexbytes;
+    const ustring admin1_seed =
+            "0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210"_hexbytes;
+    const ustring member1_seed =
+            "000111222333444555666777888999aaabbbcccdddeeefff0123456789abcdef"_hexbytes;
+
+    std::array<unsigned char, 32> group_pk;
+    std::array<unsigned char, 64> group_sk;
+
+    crypto_sign_ed25519_seed_keypair(group_pk.data(), group_sk.data(), group_seed.data());
+    REQUIRE(oxenc::to_hex(group_seed.begin(), group_seed.end()) ==
+            oxenc::to_hex(group_sk.begin(), group_sk.begin() + 32));
+
+    pseudo_client admin{admin1_seed, true, group_pk.data(), group_sk.data()};
+    pseudo_client member{member1_seed, false, group_pk.data(), std::nullopt};
+
+    std::vector<std::pair<std::string, ustring_view>> configs;
+    {
+        auto m = admin.members.get_or_construct(admin.session_id);
+        m.admin = true;
+        m.name = "Lrrr";
+        admin.members.set(m);
+    }
+    {
+        auto m = admin.members.get_or_construct(member.session_id);
+        m.admin = false;
+        m.name = "Nibbler";
+        admin.members.set(m);
+    }
+    admin.info.set_name("Omicron Persei 8");
+    auto [mseq, mdata, mobs] = admin.members.push();
+    admin.members.confirm_pushed(mseq, "mpush1");
+    auto [iseq, idata, iobs] = admin.info.push();
+    admin.info.confirm_pushed(mseq, "ipush1");
+
+    REQUIRE(admin.keys.pending_config());
+    member.keys.load_key_message(
+            "keyhash1",
+            *admin.keys.pending_config(),
+            get_timestamp_ms(),
+            member.info,
+            member.members);
+    admin.keys.load_key_message(
+            "keyhash1",
+            *admin.keys.pending_config(),
+            get_timestamp_ms(),
+            member.info,
+            member.members);
+
+    member.keys.load_key_message(
+            "keyhash2",
+            admin.keys.key_supplement(member.session_id),
+            get_timestamp_ms(),
+            member.info,
+            member.members);
+
+    configs.emplace_back("mpush1", mdata);
+    CHECK(member.members.merge(configs) == std::vector{{"mpush1"s}});
+
+    configs.clear();
+    configs.emplace_back("ipush1", idata);
+    CHECK(member.info.merge(configs) == std::vector{{"ipush1"s}});
+
+    REQUIRE(admin.keys.admin());
+    REQUIRE_FALSE(member.keys.admin());
+    REQUIRE(member.info.is_readonly());
+    REQUIRE(member.members.is_readonly());
+
+    member.keys.load_admin_key(to_usv(group_sk), member.info, member.members);
+
+    CHECK(member.keys.admin());
+    CHECK_FALSE(member.members.is_readonly());
+    CHECK_FALSE(member.info.is_readonly());
+
+    member.info.set_name("new name"s);
+
+    CHECK(member.info.needs_push());
+    auto [iseq2, idata2, iobs2] = member.info.push();
+
+    configs.clear();
+    configs.emplace_back("ihash2", idata2);
+
+    CHECK(admin.info.merge(configs) == std::vector{{"ihash2"s}});
+
+    CHECK(admin.info.get_name() == "new name");
 }
