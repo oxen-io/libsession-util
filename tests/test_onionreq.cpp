@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include <session/onionreq/channel_encryption.hpp>
+#include <session/onionreq/hop_encryption.hpp>
 #include <session/onionreq/parser.hpp>
 
 #include "utils.hpp"
@@ -33,7 +33,7 @@ TEST_CASE("Onion request encryption", "[encryption][onionreq]") {
             "9e1a3abe60eff3ea5c23556ccfe225b6f94355315f7281f66ecf4dbb06e7899a52b863e03cde3b28"
             "7d1638d765db75de02b032"_hexbytes;
 
-    ChannelEncryption e{x25519_seckey::from_bytes(b), x25519_pubkey::from_bytes(B), true};
+    HopEncryption e{x25519_seckey::from_bytes(b), x25519_pubkey::from_bytes(B), true};
 
     CHECK(from_unsigned_sv(e.decrypt_aesgcm(enc_gcm, x25519_pubkey::from_bytes(A))) ==
           "Hello world");
@@ -73,7 +73,7 @@ TEST_CASE("Onion request parser", "[onionreq][parser]") {
     auto aes_reply = parser_gcm.encrypt_reply(to_unsigned_sv("Goodbye world"));
     CHECK(aes_reply.size() == 12 + 13 + 16);
 
-    ChannelEncryption e{x25519_seckey::from_bytes(a), x25519_pubkey::from_bytes(A), false};
+    HopEncryption e{x25519_seckey::from_bytes(a), x25519_pubkey::from_bytes(A), false};
     CHECK(from_unsigned_sv(e.decrypt_aesgcm(aes_reply, x25519_pubkey::from_bytes(B))) ==
           "Goodbye world");
 
