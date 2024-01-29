@@ -67,7 +67,7 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
 
     std::vector<std::pair<std::string, ustring_view>> merge_configs;
     merge_configs.emplace_back("fakehash1", p1);
-    CHECK(ginfo2.merge(merge_configs) == 1);
+    CHECK(ginfo2.merge(merge_configs) == std::vector{{"fakehash1"s}});
     CHECK_FALSE(ginfo2.needs_push());
 
     CHECK(ginfo2.get_name() == "GROUP Name");
@@ -95,14 +95,14 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
     merge_configs.emplace_back("fakehash2", p2);
 
     // This fails because ginfo1 doesn't yet have the new key that ginfo2 used (bbb...)
-    CHECK(ginfo1.merge(merge_configs) == 0);
+    CHECK(ginfo1.merge(merge_configs) == std::vector<std::string>{});
 
     ginfo1.add_key("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hexbytes);
     ginfo1.add_key(
             "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hexbytes,
             /*prepend=*/false);
 
-    CHECK(ginfo1.merge(merge_configs) == 1);
+    CHECK(ginfo1.merge(merge_configs) == std::vector{{"fakehash2"s}});
 
     CHECK(ginfo1.needs_push());
     auto [s3, p3, o3] = ginfo1.push();
@@ -121,7 +121,7 @@ TEST_CASE("Group Info settings", "[config][groups][info]") {
 
     merge_configs.clear();
     merge_configs.emplace_back("fakehash3", p3);
-    CHECK(ginfo2.merge(merge_configs) == 1);
+    CHECK(ginfo2.merge(merge_configs) == std::vector{{"fakehash3"s}});
     CHECK(ginfo2.get_name() == "Better name!");
     CHECK(ginfo2.get_profile_pic().url == "http://example.com/12345");
     CHECK(ginfo2.get_profile_pic().key ==
@@ -188,7 +188,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
 
     std::vector<std::pair<std::string, ustring_view>> merge_configs;
     merge_configs.emplace_back("fakehash1", to_push);
-    CHECK(ginfo.merge(merge_configs) == 1);
+    CHECK(ginfo.merge(merge_configs) == std::vector{{"fakehash1"s}});
     CHECK_FALSE(ginfo.needs_push());
 
     groups::Info ginfo_rw2{to_usv(ed_pk), to_usv(ed_sk), std::nullopt};
@@ -196,7 +196,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo_rw2.add_key(k, false);
 
-    CHECK(ginfo_rw2.merge(merge_configs) == 1);
+    CHECK(ginfo_rw2.merge(merge_configs) == std::vector{{"fakehash1"s}});
     CHECK_FALSE(ginfo.needs_push());
 
     CHECK(ginfo.get_name() == "Super Group!!");
@@ -231,7 +231,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     merge_configs.clear();
     merge_configs.emplace_back("badhash1", p_bad);
 
-    CHECK(ginfo.merge(merge_configs) == 0);
+    CHECK(ginfo.merge(merge_configs) == std::vector<std::string>{});
     CHECK_FALSE(ginfo.needs_push());
 
     // Now let's get more complicated: we will have *two* valid signers who submit competing updates
@@ -250,15 +250,15 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     merge_configs.emplace_back("fakehash2", tp2);
     merge_configs.emplace_back("fakehash3", tp3);
 
-    CHECK(ginfo.merge(merge_configs) == 2);
+    CHECK(ginfo.merge(merge_configs) == std::vector{{"fakehash2"s, "fakehash3"s}});
     CHECK(ginfo.is_clean());
 
     CHECK(s2 == 2);
     CHECK(s3 == 2);
     CHECK_FALSE(ginfo.needs_push());
 
-    CHECK(ginfo_rw.merge(merge_configs) == 2);
-    CHECK(ginfo_rw2.merge(merge_configs) == 2);
+    CHECK(ginfo_rw.merge(merge_configs) == std::vector{{"fakehash2"s, "fakehash3"s}});
+    CHECK(ginfo_rw2.merge(merge_configs) == std::vector{{"fakehash2"s, "fakehash3"s}});
 
     CHECK(ginfo_rw.needs_push());
     CHECK(ginfo_rw2.needs_push());
@@ -276,9 +276,9 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     merge_configs.clear();
     merge_configs.emplace_back("fakehash23", t23);
 
-    CHECK(ginfo.merge(merge_configs) == 1);
-    CHECK(ginfo_rw.merge(merge_configs) == 1);
-    CHECK(ginfo_rw2.merge(merge_configs) == 1);
+    CHECK(ginfo.merge(merge_configs) == std::vector{{"fakehash23"s}});
+    CHECK(ginfo_rw.merge(merge_configs) == std::vector{{"fakehash23"s}});
+    CHECK(ginfo_rw2.merge(merge_configs) == std::vector{{"fakehash23"s}});
 
     CHECK_FALSE(ginfo.needs_push());
     CHECK_FALSE(ginfo_rw.needs_push());
@@ -324,7 +324,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     for (const auto& k : enc_keys2)  // Just for testing, as above.
         ginfo_rw3.add_key(k, false);
 
-    CHECK(ginfo_rw3.merge(merge_configs) == 1);
+    CHECK(ginfo_rw3.merge(merge_configs) == std::vector{{"fakehash23"s}});
     CHECK(ginfo_rw3.get_name() == "Super Group 2");
 
     auto [s6, t6, o6] = ginfo_rw3.push();
@@ -349,10 +349,10 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     merge_configs.clear();
     merge_configs.emplace_back("fakehash7", t7);
     // If we don't have the new "bbb" key loaded yet, this will fail:
-    CHECK(ginfo.merge(merge_configs) == 0);
+    CHECK(ginfo.merge(merge_configs) == std::vector<std::string>{});
 
     ginfo.add_key(enc_keys2.front());
-    CHECK(ginfo.merge(merge_configs) == 1);
+    CHECK(ginfo.merge(merge_configs) == std::vector{{"fakehash7"s}});
 
     auto pic = ginfo.get_profile_pic();
     CHECK_FALSE(pic.empty());
