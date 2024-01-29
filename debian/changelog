@@ -1,3 +1,96 @@
+libsession-util (1.2.0~pre20240129-1~deb11) bullseye; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Add (and test) missing member::set_name function
+  * Add wine to CI deps
+  * Turn on test timing reporting for ci test suite
+  * Disable -Werror for stringop-overflow
+
+  [ dr7ana ]
+  * Protobuf integration & config wrapping/unwrapping
+
+  [ Jason Rhinelander ]
+  * Small fixes/improvements
+  * Add session protocol encryption/decryption
+  * protobuf, v2
+  * Fix missing libsodium link for protobuf code
+  * Add deterministic session-encryption; use it for config protobuf
+  * Move session/protos.hpp -> session/config/protos.hpp
+  * Allow using system protobuf for shared lib builds
+  * Make the onionreq code optional; disable for ios.sh
+  * Also disable gmp/nettle in StaticBuild
+  * Set timestamp to 1 to pass old Session clients validity check
+  * Return good hashes from merge()
+  * Fix build host regex to recognize "ios13.0"
+  * Add macos-compatible nproc alternative
+  * Version bump for `dev`
+  * Format
+  * Return good hashes from merge()
+  * Properly free config_merge results in C API usage
+
+  [ Morgan Pretty ]
+  * Fixed incorrect lengths in subaccount_sign_binary
+  * Fixed an issue where the auth_data wasn't getting cleared correctly
+  * Added supplement flag to indicate invited member key rotation type
+
+  [ Jason Rhinelander ]
+  * Erase instead of clear when no supplemental data
+  * Add field comment; fix bool literals; reformat
+  * Add description to group info
+  * Add supplement tests; clear supplement flag for admins
+  * Switch to oxen-encoding's signature helpers
+
+  [ Morgan Pretty ]
+  * Added the `removed_status` value
+  * Fixed an value assignment
+  * Added a function to retrieve the current GROUP_KEYS generation
+  * Fixed a broken test
+
+  [ Jason Rhinelander ]
+  * Formatting
+  * Remove unnecessary try/catch
+  * Add group keys function for key promotion
+  * Add multi-encryption algorithm
+  * Change group keys encryption/decryption to use multi_encrypt
+  * Add "simple" interface to produce a binary blob
+  * Add C wrappers for encrypt/decrypt_for_multiple_simple
+  * Formatting
+
+  [ Morgan Pretty ]
+  * Working on exposing onion request encryption functions
+  * Progressed the onion request prepare and decrypt functions
+  * Got the onion requests working via the C interface
+  * Updated the onion request interface to be builder-based
+  * Exposed required crypto functions, started on SessionBlindingProtocol
+  * Got SessionBlindingProtocol for blind15 working, blind25 still WIP
+  * Exposed hash & random generation, ONS, PN & blind25 message decryption
+  * Added some error checking to the hash generation
+  * Fixed mistake with sessionId to blindedId comparison, tweaks to docs
+  * Fixed some bugs and started working on unit tests
+  * Fixed the broken tests
+  * Started adding unit tests for new crypto functions
+  * Added more unit tests
+  * Added some missing includes and fixed a build error
+  * More import fixes
+  * Formatting
+
+  [ Jason Rhinelander ]
+  * 25 blinding fixes and improvements
+
+  [ Morgan Pretty ]
+  * Updated decrypt_from_blinded_recipient to support outbox messages
+  * Updated comment and formatting
+
+  [ Jason Rhinelander ]
+  * ConvoInfoVolatile: fix new group iteration
+  * Fix Android build logic
+
+  [ Morgan Pretty ]
+  * Fixed a ResponseParser bug and fallback to AES_GCM for legacy PN server
+  * Formatting
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 29 Jan 2024 14:23:11 -0400
+
 libsession-util (1.1.0~pre20231002-2~deb11) bullseye; urgency=medium
 
   * Overload blind25_id with byte-accepting version
