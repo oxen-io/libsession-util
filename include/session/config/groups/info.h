@@ -8,6 +8,9 @@ extern "C" {
 #include "../profile_pic.h"
 #include "../util.h"
 
+LIBSESSION_EXPORT extern const size_t GROUP_INFO_NAME_MAX_LENGTH;
+LIBSESSION_EXPORT extern const size_t GROUP_INFO_DESCRIPTION_MAX_LENGTH;
+
 /// API: groups/groups_info_init
 ///
 /// Constructs a group info config object and sets a pointer to it in `conf`.
@@ -56,6 +59,9 @@ LIBSESSION_EXPORT const char* groups_info_get_name(const config_object* conf);
 /// Sets the group's name to the null-terminated C string.  Returns 0 on success, non-zero on
 /// error (and sets the config_object's error string).
 ///
+/// If the given name is longer than GROUP_INFO_NAME_MAX_LENGTH (100) bytes then it will be
+/// truncated.
+///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
 /// - `name` -- [in] Pointer to the name as a null-terminated C string
@@ -63,6 +69,36 @@ LIBSESSION_EXPORT const char* groups_info_get_name(const config_object* conf);
 /// Outputs:
 /// - `int` -- Returns 0 on success, non-zero on error
 LIBSESSION_EXPORT int groups_info_set_name(config_object* conf, const char* name);
+
+/// API: groups_info/groups_info_get_description
+///
+/// Returns a pointer to the currently-set description (null-terminated), or NULL if there is no
+/// description at all.  Should be copied right away as the pointer may not remain valid beyond
+/// other API calls.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+///
+/// Outputs:
+/// - `char*` -- Pointer to the currently-set description as a null-terminated string, or NULL if
+///   there is no description
+LIBSESSION_EXPORT const char* groups_info_get_description(const config_object* conf);
+
+/// API: groups_info/groups_info_set_description
+///
+/// Sets the group's description to the null-terminated C string.  Returns 0 on success, non-zero on
+/// error (and sets the config_object's error string).
+///
+/// If the given description is longer than GROUP_INFO_DESCRIPTION_MAX_LENGTH (2000) bytes then it
+/// will be truncated.
+///
+/// Inputs:
+/// - `conf` -- [in] Pointer to the config object
+/// - `description` -- [in] Pointer to the description as a null-terminated C string
+///
+/// Outputs:
+/// - `int` -- Returns 0 on success, non-zero on error
+LIBSESSION_EXPORT int groups_info_set_description(config_object* conf, const char* description);
 
 /// API: groups_info/groups_info_get_pic
 ///
