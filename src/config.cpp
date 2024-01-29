@@ -436,41 +436,24 @@ void verify_config_sig(
         std::optional<std::array<unsigned char, 64>>* verified_signature,
         bool trust_signature) {
     ustring_view to_verify, sig;
-    dict.skip_until("~");
-    if (!dict.is_finished() && dict.key() == "~") {
-        // We get the key string_view here because it points into the buffer that we need.
-        // Currently it will be pointing at the "~", i.e.:
-        //
-        //    [...previousdata...]1:~64:[sigdata]
-        //                          ^-- here
-        //
-        // but what we need is the data up to the end of `]`, so we subtract 2 off that to
-        // figure out the range of the full serialized data that should have been signed:
-
-        auto key = dict.key();
-        assert(to_unsigned(key.data()) > config_msg.data() &&
-               to_unsigned(key.data()) < config_msg.data() + config_msg.size());
-        to_verify = config_msg.substr(0, to_unsigned(key.data()) - config_msg.data() - 2);
-        sig = to_unsigned_sv(dict.consume_string_view());
+    if (dict.skip_until("~")) {
+        dict.consume_signature([&](ustring_view to_verify, ustring_view sig) {
+            if (sig.size() != 64)
+                throw signature_error{"Config signature is invalid (not 64B)"};
+            if (verifier && !verifier(to_verify, sig))
+                throw signature_error{"Config signature failed verification"};
+            if (verified_signature && (verifier || trust_signature)) {
+                if (!*verified_signature)
+                    verified_signature->emplace();
+                std::memcpy((*verified_signature)->data(), sig.data(), 64);
+            }
+        });
+    } else if (verifier) {
+        throw missing_signature{"Config signature is missing"};
     }
 
     if (!dict.is_finished())
         throw config_parse_error{"Invalid config: dict has invalid key(s) after \"~\""};
-
-    if (verifier || trust_signature) {
-        if (sig.empty()) {
-            if (!trust_signature)
-                throw missing_signature{"Config signature is missing"};
-        } else if (sig.size() != 64)
-            throw signature_error{"Config signature is invalid (not 64B)"};
-        else if (verifier && !verifier(to_verify, sig))
-            throw signature_error{"Config signature failed verification"};
-        else if (verified_signature) {
-            if (!*verified_signature)
-                verified_signature->emplace();
-            std::memcpy((*verified_signature)->data(), sig.data(), 64);
-        }
-    }
 }
 
 bool MutableConfigMessage::prune() {
@@ -792,15 +775,13 @@ ustring ConfigMessage::serialize_impl(const oxenc::bt_dict& curr_diff, bool enab
                         reinterpret_cast<const char*>(verified_signature_->data()),
                         verified_signature_->size()});
     } else if (signer && enable_signing) {
-        auto to_sign = to_unsigned_sv(outer.view());
-        // The view contains the trailing "e", but we don't sign it (we are going to append the
-        // signature there instead):
-        to_sign.remove_suffix(1);
-        auto sig = signer(to_sign);
-        if (sig.size() != 64)
-            throw std::logic_error{"Invalid signature: signing function did not return 64 bytes"};
-
-        outer.append("~", from_unsigned_sv(sig));
+        outer.append_signature("~", [this](ustring_view to_sign) {
+            auto sig = signer(to_sign);
+            if (sig.size() != 64)
+                throw std::logic_error{
+                        "Invalid signature: signing function did not return 64 bytes"};
+            return sig;
+        });
     }
     return ustring{to_unsigned_sv(outer.view())};
 }

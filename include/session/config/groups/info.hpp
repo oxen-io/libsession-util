@@ -21,13 +21,19 @@ using namespace std::literals;
 /// D - delete attachments before - same as above, but specific to attachments.
 /// E - disappearing message timer (seconds) if the delete-after-send disappearing messages mode is
 ///     enabled for the group.  Omitted if disappearing messages is disabled.
-/// n - utf8 group name (human-readable)
+/// n - utf8 group name (human-readable); may not contain nulls, max length 100.
+/// o - utf8 group description (human-readable); may not contain nulls, max length 2000.
 /// p - group profile url
 /// q - group profile decryption key (binary)
 
 class Info final : public ConfigBase {
 
   public:
+    /// Limits for the name & description strings, in bytes.  If longer, we truncate to these
+    /// lengths:
+    static constexpr size_t NAME_MAX_LENGTH = 100;  // same as base_group_info::NAME_MAX_LENGTH
+    static constexpr size_t DESCRIPTION_MAX_LENGTH = 2000;
+
     // No default constructor
     Info() = delete;
 
@@ -98,14 +104,33 @@ class Info final : public ConfigBase {
     ///
     /// Sets the group name; if given an empty string then the name is removed.
     ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_name(std::string_view new_name);
-    /// ```
+    /// If given a name longer than `Info::NAME_MAX_LENGTH` (100) bytes it will be truncated.
     ///
     /// Inputs:
     /// - `new_name` -- The name to be put into the group Info
     void set_name(std::string_view new_name);
+
+    /// API: groups/Info::get_description
+    ///
+    /// Returns the group description, or std::nullopt if there is no group description set.
+    ///
+    /// If given a description longer than `Info::DESCRIPTION_MAX_LENGTH` (2000) bytes it will be
+    /// truncated.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::optional<std::string_view>` - Returns the group description if it is set
+    std::optional<std::string_view> get_description() const;
+
+    /// API: groups/Info::set_description
+    ///
+    /// Sets the optional group description; if given an empty string then an existing description
+    /// is removed.
+    ///
+    /// Inputs:
+    /// - `new_desc` -- The new description to be put into the group Info
+    void set_description(std::string_view new_desc);
 
     /// API: groups/Info::get_profile_pic
     ///

@@ -103,7 +103,7 @@ if(CMAKE_CROSSCOMPILING)
 endif()
 
 
-system_or_submodule(OXENC oxenc liboxenc>=1.0.8 oxen-encoding)
+system_or_submodule(OXENC oxenc liboxenc>=1.0.10 oxen-encoding)
 
 
 if(CMAKE_C_COMPILER_LAUNCHER)

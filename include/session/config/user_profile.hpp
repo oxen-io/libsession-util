@@ -187,6 +187,8 @@ class UserProfile final : public ConfigBase {
     ///   not, and `std::nullopt` to drop the setting from the config (and thus use the client's
     ///   default).
     void set_blinded_msgreqs(std::optional<bool> enabled);
+
+    bool accepts_protobuf() const override { return true; }
 };
 
 }  // namespace session::config

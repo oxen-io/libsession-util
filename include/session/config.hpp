@@ -371,9 +371,10 @@ class MutableConfigMessage : public ConfigMessage {
 /// - `verified_signature` is a pointer to a std::optional array of signature data; if this is
 ///   specified and not nullptr then the optional with be emplaced with the signature bytes if the
 ///   signature successfully validates.
-/// - `trust_signature` bypasses the verification and signature requirements, blinding trusting a
-///   signature if present.  This is intended for use when restoring from a dump (along with a
-///   nullptr verifier).
+/// - `trust_signature` allows setting `verified_signature` when a signature is present but no
+///   verifier is provided to verify it.  Without specifying this, `verified_signature` will only be
+///   set when the signature actually validates via a `verifier` call.  This is primarily used
+///   during restoring config dumps.
 ///
 /// Outputs:
 /// - returns with no value on success
