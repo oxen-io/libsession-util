@@ -21,6 +21,7 @@ struct convo_info_volatile_legacy_group;
 namespace session::config {
 
 class ConvoInfoVolatile;
+class val_loader;
 
 /// keys used in this config, either currently or in the past (so that we don't reuse):
 ///
@@ -63,6 +64,8 @@ namespace convo {
 
       protected:
         void load(const dict& info_dict);
+        friend class session::config::val_loader;
+        friend class session::config::ConvoInfoVolatile;
     };
 
     struct one_to_one : base {
@@ -87,8 +90,6 @@ namespace convo {
         // Internal ctor/method for C API implementations:
         one_to_one(const struct convo_info_volatile_1to1& c);  // From c struct
         void into(convo_info_volatile_1to1& c) const;          // Into c struct
-
-        friend class session::config::ConvoInfoVolatile;
     };
 
     struct community : config::community, base {
@@ -123,9 +124,6 @@ namespace convo {
         // Internal ctor/method for C API implementations:
         group(const struct convo_info_volatile_group& c);  // From c struct
         void into(convo_info_volatile_group& c) const;     // Into c struct
-
-      private:
-        friend class session::config::ConvoInfoVolatile;
     };
 
     struct legacy_group : base {
@@ -149,9 +147,6 @@ namespace convo {
         // Internal ctor/method for C API implementations:
         legacy_group(const struct convo_info_volatile_legacy_group& c);  // From c struct
         void into(convo_info_volatile_legacy_group& c) const;            // Into c struct
-
-      private:
-        friend class session::config::ConvoInfoVolatile;
     };
 
     using any = std::variant<one_to_one, community, group, legacy_group>;
@@ -528,6 +523,8 @@ class ConvoInfoVolatile : public ConfigBase {
     /// Outputs:
     /// - `bool` -- Returns true if the convesation list is empty
     bool empty() const { return size() == 0; }
+
+    bool accepts_protobuf() const override { return true; }
 
     struct iterator;
     /// API: convo_info_volatile/ConvoInfoVolatile::begin

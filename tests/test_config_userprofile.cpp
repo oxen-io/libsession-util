@@ -58,23 +58,26 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     config_push_data* to_push = config_push(conf);
     REQUIRE(to_push);
     CHECK(to_push->seqno == 0);
-    CHECK(to_push->config_len == 256);
+    CHECK(to_push->config_len == 256 + 176);  // 176 = protobuf overhead
     const char* enc_domain = "UserProfile";
     REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
-    size_t to_push_decr_size;
-    unsigned char* to_push_decrypted = config_decrypt(
-            to_push->config, to_push->config_len, ed_sk.data(), enc_domain, &to_push_decr_size);
-    REQUIRE(to_push_decrypted);
-    CHECK(to_push_decr_size == 216);  // 256 - 40 overhead
-    CHECK(printable(to_push_decrypted, to_push_decr_size) ==
-          printable(
-                  ustring(193, '\0') +             // null prefix padding
-                  "d1:#i0e1:&de1:<le1:=dee"_bytes  // "compressed", but since this example is so
-                  )                                // small zstd doesn't actually compress anything.
-    );
+
+    // There's nothing particularly profound about this value (it is multiple layers of nested
+    // protobuf with some encryption and padding halfway through); this test is just here to ensure
+    // that our pushed messages are deterministic:
+    CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
+          "080112ab030a0012001aa20308062801429b0326ec9746282053eb119228e6c36012966e7d2642163169ba39"
+          "98af44ca65f967768dd78ee80fffab6f809f6cef49c73a36c82a89622ff0de2ceee06b8c638e2c876fa9047f"
+          "449dbe24b1fc89281a264fe90abdeffcdd44f797bd4572a6c5ae8d88bf372c3c717943ebd570222206fabf0e"
+          "e9f3c6756f5d71a32616b1df53d12887961f5c129207a79622ccc1a4bba976886d9a6ddf0fe5d570e5075d01"
+          "ecd627f656e95f27b4c40d5661b5664cedd3e568206effa1308b0ccd663ca61a6d39c0731891804a8cf5edcf"
+          "8b98eaa5580c3d436e22156e38455e403869700956c3c1dd0b4470b663e75c98c5b859b53ccef6559215d804"
+          "9f755be9c2d6b3f4a310f97c496fc392f65b6431dd87788ac61074fd8cd409702e1b839b3f774d38cf8b28f0"
+          "226c4efa5220ac6ae060793e36e7ef278d42d042f15b21291f3bb29e3158f09d154b93f83fd8a319811a26cb"
+          "5240d90cbb360fafec0b7eff4c676ae598540813d062dc9468365c73b4cfa2ffd02d48cdcd8f0c71324c6d0a"
+          "60346a7a0e50af3be64684b37f9e6c831115bf112ddd18acde08eaec376f0872a3952000");
 
     free(to_push);
-    free(to_push_decrypted);
 
     // These should also be unset:
     auto pic = user_profile_get_pic(conf);
@@ -146,16 +149,6 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
             "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
 
-    CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
-          to_hex(exp_push1_encrypted));
-
-    // Raw decryption doesn't unpad (i.e. the padding is part of the encrypted data)
-    to_push_decrypted = config_decrypt(
-            to_push->config, to_push->config_len, ed_sk.data(), enc_domain, &to_push_decr_size);
-    CHECK(to_push_decr_size == 256 - 40);
-    CHECK(printable(to_push_decrypted, to_push_decr_size) ==
-          printable(ustring(256 - 40 - exp_push1_decrypted.size(), '\0') + exp_push1_decrypted));
-
     // Copy this out; we need to hold onto it to do the confirmation later on
     seqno_t seqno = to_push->seqno;
 
@@ -223,8 +216,10 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     merge_hash[0] = "fakehash1";
     merge_data[0] = exp_push1_encrypted.data();
     merge_size[0] = exp_push1_encrypted.size();
-    int accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted == 1);
+    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash1"sv);
+    free(accepted);
 
     // Our state has changed, so we need to dump:
     CHECK(config_needs_dump(conf2));
@@ -291,12 +286,18 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
     merge_hash[0] = "fakehash2";
     merge_data[0] = to_push->config;
     merge_size[0] = to_push->config_len;
-    config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
     free(to_push);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    free(accepted);
     merge_hash[0] = "fakehash3";
     merge_data[0] = to_push2->config;
     merge_size[0] = to_push2->config_len;
-    config_merge(conf, merge_hash, merge_data, merge_size, 1);
+    accepted = config_merge(conf, merge_hash, merge_data, merge_size, 1);
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash3"sv);
+    free(accepted);
     free(to_push2);
 
     // Now after the merge we *will* want to push from both client, since both will have generated a

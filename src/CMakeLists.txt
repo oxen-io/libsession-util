@@ -6,7 +6,17 @@ target_link_libraries(common INTERFACE
 target_include_directories(common INTERFACE ../include)
 if(WARNINGS_AS_ERRORS)
     target_compile_options(common INTERFACE -Werror)
+    message(STATUS "Compiling with fatal warnings (-Werror)")
+    if (CMAKE_CXX_COMPILER_ID STREQUAL GNU AND
+            CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11 AND
+            CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+        # -Wstringop-overflow triggers (falsely) in protobuf in GCC 11/12/13 so disable it there
+        # (fingers crossed for 14).
+        message(STATUS "Disabling -Werror for buggy GCC stringop-overflow")
+        target_compile_options(common INTERFACE -Wno-error=stringop-overflow)
+    endif()
 endif()
+
 
 set(export_targets)
 macro(add_libsession_util_library name)
@@ -37,6 +47,13 @@ endif()
 
 add_libsession_util_library(crypto
     blinding.cpp
+    curve25519.cpp
+    ed25519.cpp
+    hash.cpp
+    multi_encrypt.cpp
+    random.cpp
+    session_encrypt.cpp
+    util.cpp
     xed25519.cpp
 )
 
@@ -50,20 +67,15 @@ add_libsession_util_library(config
     config/encrypt.cpp
     config/error.c
     config/groups/info.cpp
-    config/groups/members.cpp
     config/groups/keys.cpp
+    config/groups/members.cpp
     config/internal.cpp
+    config/protos.cpp
     config/user_groups.cpp
     config/user_profile.cpp
     fields.cpp
-    util.cpp
 )
 
-add_libsession_util_library(onionreq
-    onionreq/channel_encryption.cpp
-    onionreq/key_types.cpp
-    onionreq/parser.cpp
-)
 
 
 target_link_libraries(crypto
@@ -72,24 +84,36 @@ target_link_libraries(crypto
     PRIVATE
     libsodium::sodium-internal
 )
+
 target_link_libraries(config
     PUBLIC
     crypto
     common
+    libsession::protos
     PRIVATE
     libsodium::sodium-internal
     libzstd::static
 )
 
-target_link_libraries(onionreq
-    PUBLIC
-    crypto
-    common
-    PRIVATE
-    nlohmann_json::nlohmann_json
-    libsodium::sodium-internal
-    nettle
-)
+if(ENABLE_ONIONREQ)
+    add_libsession_util_library(onionreq
+        onionreq/builder.cpp
+        onionreq/hop_encryption.cpp
+        onionreq/key_types.cpp
+        onionreq/parser.cpp
+        onionreq/response_parser.cpp
+    )
+
+    target_link_libraries(onionreq
+        PUBLIC
+        crypto
+        common
+        PRIVATE
+        nlohmann_json::nlohmann_json
+        libsodium::sodium-internal
+        nettle
+    )
+endif()
 
 
 if(WARNINGS_AS_ERRORS AND NOT USE_LTO AND CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION MATCHES "^11\\.")
@@ -137,7 +161,8 @@ endforeach()
 export(
     TARGETS ${export_targets} common version
     NAMESPACE libsession::
-    FILE libsessionTargets.cmake
+    APPEND FILE libsessionTargets.cmake
 )
 
-set(libsession_export_targets "${export_targets}" PARENT_SCOPE)
+list(APPEND libsession_export_targets ${export_targets})
+set(libsession_export_targets "${libsession_export_targets}" PARENT_SCOPE)

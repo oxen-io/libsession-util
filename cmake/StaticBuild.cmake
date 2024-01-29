@@ -32,12 +32,6 @@ target_include_directories(libsession-external-libs SYSTEM BEFORE INTERFACE ${DE
 
 set(deps_cc "${CMAKE_C_COMPILER}")
 set(deps_cxx "${CMAKE_CXX_COMPILER}")
-if(CMAKE_C_COMPILER_LAUNCHER)
-  set(deps_cc "${CMAKE_C_COMPILER_LAUNCHER} ${deps_cc}")
-endif()
-if(CMAKE_CXX_COMPILER_LAUNCHER)
-  set(deps_cxx "${CMAKE_CXX_COMPILER_LAUNCHER} ${deps_cxx}")
-endif()
 
 
 function(expand_urls output source_file)
@@ -76,47 +70,50 @@ if(CMAKE_CROSSCOMPILING)
 endif()
 if(ANDROID)
   set(android_toolchain_suffix linux-android)
-  set(android_compiler_suffix linux-android23)
+  set(android_compiler_suffix linux-android${ANDROID_PLATFORM_LEVEL})
   if(CMAKE_ANDROID_ARCH_ABI MATCHES x86_64)
-    set(android_machine x86_64)
     set(cross_host "--host=x86_64-linux-android")
     set(android_compiler_prefix x86_64)
-    set(android_compiler_suffix linux-android23)
+    set(android_compiler_suffix linux-android${ANDROID_PLATFORM_LEVEL})
     set(android_toolchain_prefix x86_64)
     set(android_toolchain_suffix linux-android)
   elseif(CMAKE_ANDROID_ARCH_ABI MATCHES x86)
-    set(android_machine x86)
     set(cross_host "--host=i686-linux-android")
     set(android_compiler_prefix i686)
-    set(android_compiler_suffix linux-android23)
+    set(android_compiler_suffix linux-android${ANDROID_PLATFORM_LEVEL})
     set(android_toolchain_prefix i686)
     set(android_toolchain_suffix linux-android)
   elseif(CMAKE_ANDROID_ARCH_ABI MATCHES armeabi-v7a)
-    set(android_machine arm)
     set(cross_host "--host=armv7a-linux-androideabi")
     set(android_compiler_prefix armv7a)
-    set(android_compiler_suffix linux-androideabi23)
+    set(android_compiler_suffix linux-androideabi${ANDROID_PLATFORM_LEVEL})
     set(android_toolchain_prefix arm)
     set(android_toolchain_suffix linux-androideabi)
   elseif(CMAKE_ANDROID_ARCH_ABI MATCHES arm64-v8a)
-    set(android_machine arm64)
     set(cross_host "--host=aarch64-linux-android")
     set(android_compiler_prefix aarch64)
-    set(android_compiler_suffix linux-android23)
+    set(android_compiler_suffix linux-android${ANDROID_PLATFORM_LEVEL})
     set(android_toolchain_prefix aarch64)
     set(android_toolchain_suffix linux-android)
   else()
     message(FATAL_ERROR "unknown android arch: ${CMAKE_ANDROID_ARCH_ABI}")
   endif()
-  set(deps_cc "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_compiler_prefix}-${android_compiler_suffix}-clang")
-  set(deps_cxx "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_compiler_prefix}-${android_compiler_suffix}-clang++")
-  set(deps_ld "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_compiler_prefix}-${android_toolchain_suffix}-ld")
-  set(deps_ranlib "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_toolchain_prefix}-${android_toolchain_suffix}-ranlib")
-  set(deps_ar "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_toolchain_prefix}-${android_toolchain_suffix}-ar")
+  set(deps_cc "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_compiler_prefix}-${android_compiler_suffix}-clang")
+  set(deps_cxx "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_compiler_prefix}-${android_compiler_suffix}-clang++")
+  set(deps_ld "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_compiler_prefix}-${android_toolchain_suffix}-ld")
+  set(deps_ranlib "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_toolchain_prefix}-${android_toolchain_suffix}-ranlib")
+  set(deps_ar "${ANDROID_TOOLCHAIN_ROOT}/bin/${android_toolchain_prefix}-${android_toolchain_suffix}-ar")
 endif()
 
 set(deps_CFLAGS "-O2")
 set(deps_CXXFLAGS "-O2")
+
+if(CMAKE_C_COMPILER_LAUNCHER)
+  set(deps_cc "${CMAKE_C_COMPILER_LAUNCHER} ${deps_cc}")
+endif()
+if(CMAKE_CXX_COMPILER_LAUNCHER)
+  set(deps_cxx "${CMAKE_CXX_COMPILER_LAUNCHER} ${deps_cxx}")
+endif()
 
 if(WITH_LTO)
   set(deps_CFLAGS "${deps_CFLAGS} -flto")
@@ -197,7 +194,7 @@ set(apple_cxxflags_arch)
 set(apple_ldflags_arch)
 set(gmp_build_host "${cross_host}")
 if(APPLE AND CMAKE_CROSSCOMPILING)
-    if(gmp_build_host MATCHES "^(.*-.*-)ios([0-9]+)(-.*)?$")
+    if(gmp_build_host MATCHES "^(.*-.*-)ios([0-9.]+)(-.*)?$")
         set(gmp_build_host "${CMAKE_MATCH_1}darwin${CMAKE_MATCH_2}${CMAKE_MATCH_3}")
     endif()
     if(gmp_build_host MATCHES "^(.*-.*-.*)-simulator$")
@@ -233,29 +230,31 @@ elseif(gmp_build_host STREQUAL "")
     set(gmp_build_host "--build=${CMAKE_LIBRARY_ARCHITECTURE}")
 endif()
 
-build_external(gmp
-    CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --with-pic
-        "CC=${deps_cc}" "CXX=${deps_cxx}" "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
-        "LDFLAGS=${apple_ldflags_arch}" ${cross_rc} CC_FOR_BUILD=cc CPP_FOR_BUILD=cpp
-)
-add_static_target(gmp gmp_external libgmp.a)
+if(ENABLE_ONIONREQ)
+    build_external(gmp
+        CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --with-pic
+            "CC=${deps_cc}" "CXX=${deps_cxx}" "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
+            "LDFLAGS=${apple_ldflags_arch}" ${cross_rc} CC_FOR_BUILD=cc CPP_FOR_BUILD=cpp
+    )
+    add_static_target(gmp gmp_external libgmp.a)
 
-build_external(nettle
-    CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib
-        --with-pic --disable-openssl
-        "CC=${deps_cc}" "CXX=${deps_cxx}"
-        "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
-        "CPPFLAGS=-I${DEPS_DESTDIR}/include"
-        "LDFLAGS=-L${DEPS_DESTDIR}/lib${apple_ldflags_arch}"
+    build_external(nettle
+        CONFIGURE_COMMAND ./configure ${gmp_build_host} --disable-shared --prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib
+            --with-pic --disable-openssl
+            "CC=${deps_cc}" "CXX=${deps_cxx}"
+            "CFLAGS=${deps_CFLAGS}${apple_cflags_arch}" "CXXFLAGS=${deps_CXXFLAGS}${apple_cxxflags_arch}"
+            "CPPFLAGS=-I${DEPS_DESTDIR}/include"
+            "LDFLAGS=-L${DEPS_DESTDIR}/lib${apple_ldflags_arch}"
 
-    DEPENDS gmp_external
-    BUILD_BYPRODUCTS
-    ${DEPS_DESTDIR}/lib/libnettle.a
-    ${DEPS_DESTDIR}/lib/libhogweed.a
-    ${DEPS_DESTDIR}/include/nettle/version.h
-)
-add_static_target(nettle nettle_external libnettle.a gmp)
-add_static_target(hogweed nettle_external libhogweed.a nettle)
+        DEPENDS gmp_external
+        BUILD_BYPRODUCTS
+        ${DEPS_DESTDIR}/lib/libnettle.a
+        ${DEPS_DESTDIR}/lib/libhogweed.a
+        ${DEPS_DESTDIR}/include/nettle/version.h
+    )
+    add_static_target(nettle nettle_external libnettle.a gmp)
+    add_static_target(hogweed nettle_external libhogweed.a nettle)
+endif()
 
 link_libraries(-static-libstdc++)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
