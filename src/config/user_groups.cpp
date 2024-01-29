@@ -432,6 +432,8 @@ void UserGroups::set(const group_info& g) {
         info["K"] = ustring_view{};
         if (g.auth_data.size() == 100)
             info["s"] = g.auth_data;
+        else
+            info["s"].erase();
     }
 }
 

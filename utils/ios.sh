@@ -106,7 +106,8 @@ for i in "${!TARGET_ARCHS[@]}"; do
         -DCMAKE_TOOLCHAIN_FILE="${projdir}/external/ios-cmake/ios.toolchain.cmake" \
         -DPLATFORM=$platform \
         -DDEPLOYMENT_TARGET=$IPHONEOS_DEPLOYMENT_TARGET \
-        -DENABLE_BITCODE=$ENABLE_BITCODE
+        -DENABLE_BITCODE=$ENABLE_BITCODE \
+        -DENABLE_ONIONREQ=OFF  # Temporary until we figure out why ios builds hate gmp
 done
 
 # If needed combine simulator builds into a multi-arch lib

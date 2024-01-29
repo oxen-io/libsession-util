@@ -561,6 +561,8 @@ class UserGroups : public ConfigBase {
     /// - `bool` - Returns true if the contact list is empty
     bool empty() const { return size() == 0; }
 
+    bool accepts_protobuf() const override { return true; }
+
     struct iterator;
     /// API: user_groups/UserGroups::begin
     ///
