@@ -29,7 +29,7 @@ namespace session::config {
 ///
 /// Inputs:
 /// - `message` -- message to encrypt
-/// - `key_base` -- Fixed key that all clients, must be 32 bytes.
+/// - `key_base` -- Fixed key that all clients can calculate independently, must be 32 bytes.
 /// - `domain` -- short string for the keyed hash
 ///
 /// Outputs:
@@ -43,7 +43,7 @@ ustring encrypt(ustring_view message, ustring_view key_base, std::string_view do
 ///
 /// Inputs:
 /// - `message` -- message to encrypt
-/// - `key_base` -- Fixed key that all clients, must be 32 bytes.
+/// - `key_base` -- Fixed key that all clients can calculate independently, must be 32 bytes.
 /// - `domain` -- short string for the keyed hash
 void encrypt_inplace(ustring& message, ustring_view key_base, std::string_view domain);
 

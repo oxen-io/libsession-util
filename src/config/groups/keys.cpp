@@ -189,7 +189,7 @@ size_t Keys::size() const {
 
 std::vector<ustring_view> Keys::group_keys() const {
     std::vector<ustring_view> ret;
-    ret.reserve(size());
+    ret.reserve(size() + !pending_key_config_.empty());
 
     if (!pending_key_config_.empty())
         ret.emplace_back(pending_key_.data(), 32);
@@ -422,6 +422,9 @@ ustring Keys::sign(ustring_view data) const {
     return sig;
 }
 
+static constexpr auto nonce_seed_hash_key = "SessionGroupNonceSeed"sv;
+static const ustring_view nonce_hash_key = to_unsigned_sv("SessionGroupNonceGen"sv);
+
 ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     if (!admin())
         throw std::logic_error{
@@ -448,12 +451,13 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     // H1(member0 || member1 || ... || memberN || keysdata || H2(group_secret_key))
     //
     // where:
-    // - H1(.) = 24-byte BLAKE2b keyed hash with key "SessionGroupKeyGen"
+    // - H1(.) = 24-byte BLAKE2b keyed hash with key "SessionGroupNonceGen"
     // - memberI is the full session ID of each member included in this key update, expressed in hex
     //   (66 chars), in sorted order.
     // - keysdata is the unencrypted inner value that we are encrypting for each supplemental member
     // - H2(.) = 32-byte BLAKE2b keyed hash of the sodium group secret key seed (just the 32 byte,
-    //           not the full 64 byte with the pubkey in the second half), key "SessionGroupKeySeed"
+    //           not the full 64 byte with the pubkey in the second half), key
+    //           "SessionGroupNonceSeed"
 
     std::string supp_keys;
     {
@@ -475,15 +479,14 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
     crypto_generichash_blake2b_state st;
 
-    crypto_generichash_blake2b_init(
-            &st, enc_key_hash_key.data(), enc_key_hash_key.size(), h1.size());
+    crypto_generichash_blake2b_init(&st, nonce_hash_key.data(), nonce_hash_key.size(), h1.size());
 
     for (const auto& sid : sids)
         crypto_generichash_blake2b_update(&st, to_unsigned(sid.data()), sid.size());
 
     crypto_generichash_blake2b_update(&st, to_unsigned(supp_keys.data()), supp_keys.size());
 
-    std::array<unsigned char, 32> h2 = seed_hash(seed_hash_key);
+    std::array<unsigned char, 32> h2 = seed_hash(nonce_seed_hash_key);
     crypto_generichash_blake2b_update(&st, h2.data(), h2.size());
 
     crypto_generichash_blake2b_final(&st, h1.data(), h1.size());
@@ -531,19 +534,21 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
 
     d.append("G", keys_.back().generation);
 
-    // Finally we sign the message at put it as the ~ key (which is 0x7e, and thus comes later than
-    // any other printable ascii key).
+    // Finally we sign the message and put the signature as the ~ key (which is 0x7e, and thus comes
+    // later than any other printable ascii key).
     d.append_signature("~", [this](ustring_view to_sign) { return sign(to_sign); });
 
     return ustring{to_unsigned_sv(d.view())};
 }
+
+static constexpr auto subaccount_mask_hash_key = "SessionGroupSubaccountMask"sv;
 
 // Blinding factor for subaccounts: H(sessionid || groupid) mod L, where H is 64-byte blake2b, using
 // a hash key derived from the group's seed.
 std::array<unsigned char, 32> Keys::subaccount_blind_factor(
         const std::array<unsigned char, 32>& session_xpk) const {
 
-    auto mask = seed_hash("SessionGroupSubaccountMask");
+    auto mask = seed_hash(subaccount_mask_hash_key);
     static_assert(mask.size() == crypto_generichash_blake2b_KEYBYTES);
 
     std::array<unsigned char, 64> h;
@@ -562,7 +567,7 @@ std::array<unsigned char, 32> Keys::subaccount_blind_factor(
 
 namespace {
 
-    // These constants are defined and explains in more detail in oxen-storage-server
+    // These constants are defined and explained in more detail in oxen-storage-server
     constexpr unsigned char SUBACC_FLAG_READ = 0b0001;
     constexpr unsigned char SUBACC_FLAG_WRITE = 0b0010;
     constexpr unsigned char SUBACC_FLAG_DEL = 0b0100;
@@ -655,6 +660,9 @@ ustring Keys::swarm_subaccount_token(std::string_view session_id, bool write, bo
     return out;
 }
 
+static constexpr auto subaccount_seed_hash_key = "SubaccountSeed"sv;
+static constexpr auto r_hash_key = "SubaccountSig"sv;
+
 Keys::swarm_auth Keys::swarm_subaccount_sign(
         ustring_view msg, ustring_view sign_val, bool binary) const {
     if (sign_val.size() != 100)
@@ -686,7 +694,8 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     // token is now set: flags || kT
     ustring_view kT{to_unsigned(token.data() + 4), 32};
 
-    // sub_sig is just the admin's signature, sitting at the end of sign_val (after 4f || k):
+    // sub_sig is just the admin's signature, sitting at the end of sign_val (after p || f || 0 || 0
+    // || k):
     sub_sig = from_unsigned_sv(sign_val.substr(36));
 
     // Our signing private scalar is kt, where t = ±s according to whether we had to negate S to
@@ -701,7 +710,7 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     std::array<unsigned char, 32> kt;
     crypto_core_ed25519_scalar_mul(kt.data(), k.data(), t.data());
 
-    // We now have kt, kT, our privkey/public.  (Note that kt is a scalar, not a seed).
+    // We now have kt, kT, our private/public keypair.  (Note that kt is a scalar, not a seed).
 
     // We're going to get *close* to standard Ed25519 here, except:
     //
@@ -723,16 +732,14 @@ Keys::swarm_auth Keys::swarm_subaccount_sign(
     //
     // (using the standard Ed25519 SHA-512 here for H)
 
-    constexpr auto seed_hash_key = "SubaccountSeed"sv;
-    constexpr auto r_hash_key = "SubaccountSig"sv;
     std::array<unsigned char, 32> hseed;
     crypto_generichash_blake2b(
             hseed.data(),
             hseed.size(),
             user_ed25519_sk.data(),
             32,
-            to_unsigned(seed_hash_key.data()),
-            seed_hash_key.size());
+            to_unsigned(subaccount_seed_hash_key.data()),
+            subaccount_seed_hash_key.size());
 
     std::array<unsigned char, 64> tmp;
     crypto_generichash_blake2b_state st;
@@ -951,7 +958,7 @@ bool Keys::load_key_message(
                 // and t are 0 for some reason) of:
                 // d            --   1
                 //   1:k 32:... -- +38
-                //   1:g i1e    -- + 6
+                //   1:g iXe    -- + 6
                 //   1:t iXe    -- + 6
                 // e               + 1
                 //                 ---
@@ -1168,9 +1175,9 @@ void Keys::remove_expired() {
         active_msgs_.erase(
                 active_msgs_.begin(), active_msgs_.lower_bound(keys_.front().generation));
     else
-        // Keys is empty, which means we aren't keep *any* keys around (or they are all invalid or
-        // something) and so it isn't really up to us to keep them alive, since that's a history of
-        // the group we apparently don't have access to.
+        // Keys is empty, which means we aren't keeping *any* keys around (or they are all invalid
+        // or something) and so it isn't really up to us to keep them alive, since that's a history
+        // of the group we apparently don't have access to.
         active_msgs_.clear();
 }
 
@@ -1274,8 +1281,8 @@ std::pair<std::string, ustring> Keys::decrypt_message(ustring_view ciphertext) c
         pending && try_decrypting(plain.data(), ciphertext, nonce, *pending)) {
         decrypt_success = true;
     } else {
-        for (auto& k : keys_) {
-            if (try_decrypting(plain.data(), ciphertext, nonce, k.key)) {
+        for (auto it = keys_.rbegin(); it != keys_.rend(); ++it) {
+            if (try_decrypting(plain.data(), ciphertext, nonce, it->key)) {
                 decrypt_success = true;
                 break;
             }
@@ -1438,7 +1445,7 @@ LIBSESSION_C_API size_t groups_keys_size(const config_group_keys* conf) {
     return unbox(conf).size();
 }
 
-LIBSESSION_C_API const unsigned char* group_keys_get_key(const config_group_keys* conf, size_t N) {
+LIBSESSION_C_API const unsigned char* groups_keys_get_key(const config_group_keys* conf, size_t N) {
     auto keys = unbox(conf).group_keys();
     if (N >= keys.size())
         return nullptr;
@@ -1656,10 +1663,14 @@ LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount(
         const char* group_id,
         const unsigned char* session_ed25519_secretkey,
         const unsigned char* signing_value) {
-    return groups::Keys::swarm_verify_subaccount(
-            group_id,
-            ustring_view{session_ed25519_secretkey, 64},
-            ustring_view{signing_value, 100});
+    try {
+        return groups::Keys::swarm_verify_subaccount(
+                group_id,
+                ustring_view{session_ed25519_secretkey, 64},
+                ustring_view{signing_value, 100});
+    } catch (...) {
+        return false;
+    }
 }
 
 LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign(

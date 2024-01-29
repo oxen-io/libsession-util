@@ -36,7 +36,7 @@ namespace {
     // secret key) we instead calculate `r = H(a || M || Z) mod L`.
     //
     // This deviates from Signal's XEd25519 specified derivation of r in that we use a personalized
-    // Black2b hash (for better performance and cryptographic properties), rather than a
+    // Blake2b hash (for better performance and cryptographic properties), rather than a
     // custom-prefixed SHA-512 hash.
     bytes<32> xed25519_compute_r(const bytes<32>& a, ustring_view msg) {
         bytes<64> random;
@@ -98,8 +98,8 @@ bytes<64> sign(ustring_view curve25519_privkey, ustring_view msg) {
     crypto_core_ed25519_scalar_negate(neg_a.data(), a.data());
     constant_time_conditional_assign(a, neg_a, negative);
 
-    // We now have our a, A privkey/public.  (Note that a is just the private key scalar, *not* the
-    // ed25519 secret key).
+    // We now have our a, A private/public keypair.  (Note that a is just the private key scalar,
+    // *not* the ed25519 secret key).
 
     bytes<32> r = xed25519_compute_r(a, msg);
     bytes<64> signature;  // R || S
@@ -152,7 +152,7 @@ std::string pubkey(std::string_view curve25519_pubkey) {
 
 }  // namespace session::xed25519
 
-using session::xed25519::ustring_view;
+using session::ustring_view;
 
 extern "C" {
 

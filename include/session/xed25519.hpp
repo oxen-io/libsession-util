@@ -3,9 +3,9 @@
 #include <string>
 #include <string_view>
 
-namespace session::xed25519 {
+#include "session/types.hpp"
 
-using ustring_view = std::basic_string_view<unsigned char>;
+namespace session::xed25519 {
 
 /// XEd25519-signs a message given the curve25519 privkey and message.
 std::array<unsigned char, 64> sign(

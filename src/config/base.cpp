@@ -331,7 +331,6 @@ ustring ConfigBase::dump() {
 ustring ConfigBase::make_dump() const {
     auto data = _config->serialize(false /* disable signing for local storage */);
     auto data_sv = from_unsigned_sv(data);
-    oxenc::bt_list old_hashes;
 
     oxenc::bt_dict_producer d;
     d.append("!", static_cast<int>(_state));
