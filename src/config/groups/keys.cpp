@@ -22,6 +22,7 @@
 #include "session/config/groups/keys.h"
 #include "session/config/groups/members.hpp"
 #include "session/multi_encrypt.hpp"
+#include "session/state.hpp"
 #include "session/xed25519.hpp"
 
 using namespace std::literals;
@@ -30,6 +31,13 @@ namespace session::config::groups {
 
 static auto sys_time_from_ms(int64_t milliseconds_since_epoch) {
     return std::chrono::system_clock::time_point{milliseconds_since_epoch * 1ms};
+}
+
+void Keys::set_needs_dump(bool updated_needs_dump) {
+    needs_dump_ = updated_needs_dump;
+
+    if (updated_needs_dump && _parent_state && _sign_pk)
+        (*_parent_state)->config_changed("03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end()));
 }
 
 Keys::Keys(
@@ -75,7 +83,7 @@ bool Keys::needs_dump() const {
 ustring Keys::dump() {
     auto dumped = make_dump();
 
-    needs_dump_ = false;
+    set_needs_dump(false);
     return dumped;
 }
 
@@ -414,7 +422,7 @@ ustring_view Keys::rekey(Info& info, Members& members) {
     members.replace_keys(new_key_list, /*dirty=*/true);
     info.replace_keys(new_key_list, /*dirty=*/true);
 
-    needs_dump_ = true;
+    set_needs_dump(true);
 
     return ustring_view{pending_key_config_.data(), pending_key_config_.size()};
 }
@@ -868,7 +876,7 @@ void Keys::insert_key(std::string_view msg_hash, key_info&& new_key) {
     active_msgs_[new_key.generation].emplace(msg_hash);
     keys_.insert(it, std::move(new_key));
     remove_expired();
-    needs_dump_ = true;
+    set_needs_dump(true);
 }
 
 // Attempts xchacha20 decryption.
@@ -1103,7 +1111,7 @@ bool Keys::load_key_message(
     if (admin() && !new_keys.empty() && !pending_key_config_.empty() &&
         (new_keys[0].generation > pending_gen_ || new_keys[0].key == pending_key_)) {
         pending_key_config_.clear();
-        needs_dump_ = true;
+        set_needs_dump(true);
     }
 
     if (!new_keys.empty()) {
@@ -1117,7 +1125,7 @@ bool Keys::load_key_message(
     } else if (max_gen) {
         active_msgs_[*max_gen].emplace(hash);
         remove_expired();
-        needs_dump_ = true;
+        set_needs_dump(true);
     }
 
     return false;

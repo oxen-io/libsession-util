@@ -106,6 +106,10 @@ class Keys final : public ConfigSig {
 
     bool needs_dump_ = false;
 
+    // Updates the `needs_dump_` value, should always be called instead of setting directly as there
+    // are side effects we want to trigger when the value changes.
+    void set_needs_dump(bool updated_needs_dump);
+
     ConfigMessage::verify_callable verifier_;
     ConfigMessage::sign_callable signer_;
 

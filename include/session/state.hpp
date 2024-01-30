@@ -1,7 +1,5 @@
 #pragma once
 
-#include <session/util.hpp>
-
 #include "config/contacts.hpp"
 #include "config/convo_info_volatile.hpp"
 #include "config/groups/info.hpp"
@@ -11,14 +9,12 @@
 #include "config/user_groups.hpp"
 #include "config/user_profile.hpp"
 #include "ed25519.hpp"
+#include "session/util.hpp"
 
 namespace session::state {
 
-// Levels for the logging callback
-enum class LogLevel { debug = 0, info, warning, error };
-
 using Ed25519PubKey = std::array<unsigned char, 32>;
-using Ed25519Secret = sodium_array<unsigned char>;
+using Ed25519Secret = std::array<unsigned char, 64>;
 
 /// Struct containing group configs.
 class GroupConfigs {
@@ -33,6 +29,24 @@ class GroupConfigs {
     std::unique_ptr<session::config::groups::Info> config_info;
     std::unique_ptr<session::config::groups::Members> config_members;
     std::unique_ptr<session::config::groups::Keys> config_keys;
+};
+
+struct namespaced_dump {
+    config::Namespace namespace_;
+    std::optional<std::string_view> pubkey_hex;
+    ustring data;
+
+    namespaced_dump(
+            config::Namespace namespace_,
+            std::optional<std::string_view> pubkey_hex,
+            ustring data) :
+            namespace_{namespace_}, pubkey_hex{pubkey_hex}, data{data} {};
+
+    namespaced_dump() = delete;
+    namespaced_dump(namespaced_dump&&) = default;
+    namespaced_dump(const namespaced_dump&) = default;
+    namespaced_dump& operator=(namespaced_dump&&) = default;
+    namespaced_dump& operator=(const namespaced_dump&) = default;
 };
 
 struct config_message {
@@ -68,14 +82,25 @@ struct config_message {
 
 class State {
   private:
+    // Storage of pubkeys which are currently being suppressed, the value specifies whether the
+    // `send` or `store` hook is suppressed.
+    std::map<std::string_view, std::pair<bool, bool>> _open_suppressions = {};
     std::map<std::string_view, std::unique_ptr<GroupConfigs>> _config_groups;
 
   protected:
     Ed25519PubKey _user_pk;
     Ed25519Secret _user_sk;
 
+    std::function<void(
+            config::Namespace namespace_,
+            std::string prefixed_pubkey,
+            uint64_t timestamp_ms,
+            ustring data)>
+            _store;
+    std::function<void(std::string pubkey, std::vector<seqno_t> seqnos, ustring data)> _send;
+
     // Invokes the `logger` callback if set, does nothing if there is no logger.
-    void log(LogLevel lvl, std::string msg) {
+    void log(session::config::LogLevel lvl, std::string msg) {
         if (logger)
             logger(lvl, std::move(msg));
     }
@@ -91,11 +116,11 @@ class State {
     GroupConfigs* group_config(std::string_view pubkey_hex);
 
     // Constructs a state with a secretkey that will be used for signing.
-    State(ustring_view ed25519_secretkey);
+    State(ustring_view ed25519_secretkey, std::vector<namespaced_dump> dumps);
 
     // Constructs a new state, this will generate a random secretkey and should only be used for
     // creating a new account.
-    State() : State(to_unsigned_sv(session::ed25519::ed25519_key_pair().second)){};
+    State() : State(to_unsigned_sv(session::ed25519::ed25519_key_pair().second), {}){};
 
     // Object is non-movable and non-copyable; you need to hold it in a smart pointer if it needs to
     // be managed.
@@ -105,18 +130,56 @@ class State {
     State& operator=(const State&) = delete;
 
     // If set then we log things by calling this callback
-    std::function<void(LogLevel lvl, std::string msg)> logger;
+    std::function<void(session::config::LogLevel lvl, std::string msg)> logger;
+
+    // Hook which will be called whenever config dumps need to be saved to persistent storage. The
+    // hook will immediately be called upon assignment if the state needs to be stored.
+    void onStore(std::function<
+                 void(config::Namespace namespace_,
+                      std::string prefixed_pubkey,
+                      uint64_t timestamp_ms,
+                      ustring data)> hook) {
+        _store = hook;
+
+        if (!hook)
+            return;
+
+        _open_suppressions[""] = {false, true};
+        suppress_hooks_stop();  // Trigger config change hooks
+        _open_suppressions.erase("");
+    };
+
+    /// Hook which will be called whenever config messages need to be sent via the API. The hook
+    /// will immediately be called upon assignment if the state needs to be pushed.
+    ///
+    /// Parameters:
+    /// - `pubkey` -- the pubkey (in hex) for the swarm where the data should be sent.
+    /// - `seqnos` -- a vector of the seqnos for the each updated config message included in the
+    /// payload.
+    /// - `data` -- payload which should be sent to the API.
+    void onSend(std::function<void(std::string pubkey, std::vector<seqno_t> seqnos, ustring data)>
+                        hook) {
+        _send = hook;
+
+        if (!hook)
+            return;
+
+        _open_suppressions[""] = {true, false};
+        suppress_hooks_stop();  // Trigger config change hooks
+        _open_suppressions.erase("");
+    };
 
     /// API: state/State::load
     ///
     /// Loads a dump into the state. Calling this will replace the current config instance with
-    /// with a new instance initialised with the provided dump. The USER_GROUPS config must be
-    /// loaded before any GROUPS config dumps are loaded or an exception will be thrown.
+    /// with a new instance initialised with the provided dump. The configs must be loaded according
+    /// to the order 'namespace_load_order' in 'namespaces.hpp' or an exception will be thrown.
     ///
     /// Inputs:
     /// - `namespace` -- the namespace where config messages for this dump are stored.
-    /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex). Required for group
-    /// dumps.
+    /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex, with prefix - 66
+    /// bytes).
+    ///    Required for group dumps.
     /// - `dump` --  binary state data that was previously dumped by calling `dump()`.
     ///
     /// Outputs: None
@@ -125,39 +188,76 @@ class State {
             std::optional<std::string_view> pubkey_hex,
             ustring_view dump);
 
-    /// API: base/ConfigBase::merge
+    /// API: state/State::config_changed
+    ///
+    /// This is called internally whenever a config gets dirtied. This function then validates the
+    /// state of all config objects associated to the `pubkey_hex` and triggers the `store` and
+    /// `send` hooks if needed. If there is an open suppression then the suppressed hook(s) will not
+    /// be called.
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex, with prefix - 66
+    /// bytes). Required for group changes.
+    ///
+    /// Outputs: None
+    void config_changed(std::optional<std::string_view> pubkey_hex = std::nullopt);
+
+    /// API: state/State::suppress_hooks_start
+    ///
+    /// This will suppress the `send` and `store` hooks until `suppress_hooks_stop` is called and
+    /// should be used when making multiple config changes to avoid sending and storing unnecessary
+    /// partial changes.
+    ///
+    /// Inputs:
+    /// - `send` -- controls whether the `send` hook should be suppressed.
+    /// - `store` -- controls whether the `store` hook should be suppressed.
+    /// - `pubkey_hex` -- pubkey to suppress changes for (in hex, with prefix - 66
+    /// bytes). If none is provided then all changes for all configs will be supressed.
+    ///
+    /// Outputs: None
+    void suppress_hooks_start(
+            bool send = true, bool store = true, std::string_view pubkey_hex = "");
+
+    /// API: state/State::suppress_hooks_stop
+    ///
+    /// This will stop suppressing the `send` and `store` hooks. When this is called, if there are
+    /// any pending changes, the `send` and `store` hooks will immediately be called.
+    ///
+    /// Inputs:
+    /// - `send` -- controls whether the `send` hook should no longer be suppressed.
+    /// - `store` -- controls whether the `store` hook should no longer be suppressed.
+    /// - `pubkey_hex` -- pubkey to stop suppressing changes for (in hex, with prefix - 66 bytes).
+    /// If the value provided doesn't match a entry created by `suppress_hooks_start` those
+    /// changes will continue to be suppressed. If none is provided then the hooks for all configs
+    /// with pending changes will be triggered.
+    ///
+    /// Outputs: None
+    void suppress_hooks_stop(bool send = true, bool store = true, std::string_view pubkey_hex = "");
+
+    /// API: state/State::merge
     ///
     /// This takes all of the messages pulled down from the server and does whatever is necessary to
     /// merge (or replace) the current values.
     ///
     /// Values are pairs of the message hash (as provided by the server) and the raw message body.
     ///
-    /// For backwards compatibility, for certain message types (ones that have a
-    /// `accepts_protobuf()` override returning true) optional protobuf unwrapping of the incoming
-    /// message is performed; if successful then the unwrapped raw value is used; if the protobuf
-    /// unwrapping fails, the value is used directly as a raw value.
+    /// During this call the `send` and `store` callbacks will be triggered at the appropriate times
+    /// to correctly update the dump data and push any data to the server again if needed (for
+    /// example, because the data contained conflicts that required another update to resolve).
     ///
-    /// After this call the caller should check `needs_push()` to see if the data on hand was
-    /// updated and needs to be pushed to the server again (for example, because the data contained
-    /// conflicts that required another update to resolve).
-    ///
-    /// Returns the number of the given config messages that were successfully parsed.
+    /// Returns a vector of successfully merged hashes.
     ///
     /// Will throw on serious error (i.e. if neither the current nor any of the given configs are
     /// parseable).  This should not happen (the current config, at least, should always be
     /// re-parseable).
     ///
-    /// Declaration:
-    /// ```cpp
-    /// std::vector<std::string> merge(
-    ///     const std::vector<std::pair<std::string, ustring_view>>& configs);
-    /// std::vector<std::string> merge(
-    ///     const std::vector<std::pair<std::string, ustring>>& configs);
-    /// ```
     ///
     /// Inputs:
-    /// - `configs` -- vector of pairs containing the message hash and the raw message body (or
-    ///   protobuf-wrapped raw message for certain config types).
+    /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex, with prefix - 66
+    /// bytes).
+    ///    Required for group dumps.
+    /// - `configs` -- vector of `config_message` types which include the data needed to properly
+    /// merge.
     ///
     /// Outputs:
     /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
@@ -166,10 +266,6 @@ class State {
     ///   to be included).  The hashes will be in the same order as in the input vector.
     std::vector<std::string> merge(
             std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs);
-
-    std::function<void(std::string pubkey, ustring data)> send;
-
-    void config_changed(std::optional<std::string_view> pubkey_hex = std::nullopt);
 
     /// API: state/State::dump
     ///
@@ -195,8 +291,8 @@ class State {
     ///
     /// Inputs:
     /// - `namespace` -- the namespace where config messages of the desired dump are stored.
-    /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex). Required for group
-    /// dumps.
+    /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex, with prefix - 66
+    /// bytes). Required for group dumps.
     ///
     /// Outputs:
     /// - `ustring` -- Returns binary data of the state dump
@@ -204,101 +300,22 @@ class State {
             config::Namespace namespace_,
             std::optional<std::string_view> pubkey_hex = std::nullopt);
 
-  public:
-    void set_service_node_timestamp(std::chrono::milliseconds timestamp) {
-        network_offset =
-                (timestamp - std::chrono::duration_cast<std::chrono::milliseconds>(
-                                     std::chrono::system_clock::now().time_since_epoch()));
-    };
-
-    // User Profile functions
-  public:
-    /// API: state/State::get_profile_name
+    /// API: state/State::received_send_response
     ///
-    /// Returns the user profile name, or std::nullopt if there is no profile name set.
-    ///
-    /// Inputs: None
-    ///
-    /// Outputs:
-    /// - `std::optional<std::string>` - Returns the user profile name if it exists
-    std::optional<std::string_view> get_profile_name() const {
-        return config_user_profile->get_name();
-    };
-
-    /// API: state/State::set_profile_name
-    ///
-    /// Sets the user profile name; if given an empty string then the name is removed.
+    /// Takes the network response from sending the data from the `send` hook and confirms the
+    /// configs were successfully pushed.
     ///
     /// Inputs:
-    /// - `new_name` -- The name to be put into the user profile
-    void set_profile_name(std::string_view new_name) { config_user_profile->set_name(new_name); };
-
-    /// API: user_profile/UserProfile::get_profile_pic
-    ///
-    /// Gets the user's current profile pic URL and decryption key.  The returned object will
-    /// evaluate as false if the URL and/or key are not set.
-    ///
-    /// Inputs: None
-    ///
-    /// Outputs:
-    /// - `profile_pic` - Returns the profile pic
-    config::profile_pic get_profile_pic() const { return config_user_profile->get_profile_pic(); };
-
-    /// API: state/State::set_profile_pic
-    ///
-    /// Sets the user's current profile pic to a new URL and decryption key.  Clears both if either
-    /// one is empty.
-    ///
-    /// Declaration:
-    /// ```cpp
-    /// void set_profile_pic(std::string_view url, ustring_view key);
-    /// void set_profile_pic(profile_pic pic);
-    /// ```
-    ///
-    /// Inputs:
-    /// - First function:
-    ///    - `url` -- URL pointing to the profile pic
-    ///    - `key` -- Decryption key
-    /// - Second function:
-    ///    - `pic` -- Profile pic object
-    void set_profile_pic(std::string_view url, ustring_view key) {
-        config_user_profile->set_profile_pic(url, key);
-    };
-    void set_profile_pic(config::profile_pic pic) { config_user_profile->set_profile_pic(pic); };
-
-    /// API: state/State::get_profile_blinded_msgreqs
-    ///
-    /// Accesses whether or not blinded message requests are enabled for the client.  Can have three
-    /// values:
-    ///
-    /// - std::nullopt -- the value has not been given an explicit value so the client should use
-    ///   its default.
-    /// - true -- the value is explicitly enabled (i.e. user wants blinded message requests)
-    /// - false -- the value is explicitly disabled (i.e. user disabled blinded message requests)
-    ///
-    /// Inputs: None
-    ///
-    /// Outputs:
-    /// - `std::optional<bool>` - true/false if blinded message requests are enabled or disabled;
-    ///   `std::nullopt` if the option has not been set either way.
-    std::optional<bool> get_profile_blinded_msgreqs() const {
-        return config_user_profile->get_blinded_msgreqs();
-    };
-
-    /// API: state/State::set_profile_blinded_msgreqs
-    ///
-    /// Sets whether blinded message requests (i.e. from SOGS servers you are connected to) should
-    /// be enabled or not.  This is typically invoked with either `true` or `false`, but can also be
-    /// called with `std::nullopt` to explicitly clear the value.
-    ///
-    /// Inputs:
-    /// - `enabled` -- true if blinded message requests should be retrieved, false if they should
-    ///   not, and `std::nullopt` to drop the setting from the config (and thus use the client's
-    ///   default).
-    void set_profile_blinded_msgreqs(std::optional<bool> enabled) {
-        config_user_profile->set_blinded_msgreqs(enabled);
-    };
+    /// - `pubkey` -- the pubkey (in hex, with prefix - 66 bytes) for the swarm where the data was
+    /// sent.
+    /// - `seqnos` -- the seqnos for each config messages included in the payload.
+    /// - `payload_data` -- payload which was sent to the swarm.
+    /// - `response_data` -- response that was returned from the swarm.
+    void received_send_response(
+            std::string pubkey,
+            std::vector<seqno_t> seqnos,
+            ustring payload_data,
+            ustring response_data);
 };
 
-}  // namespace session::state
-
+};  // namespace session::state

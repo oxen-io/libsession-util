@@ -34,15 +34,29 @@ void ConfigBase::set_state(ConfigState s) {
     }
     _state = s;
     _needs_dump = true;
-    
-    if (_parent_state && _sign_pk)
-        (*_parent_state)->config_changed("03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end()));
+}
+
+void ConfigBase::log(LogLevel lvl, std::string msg) {
+    if (logger)
+        logger(lvl, std::move(msg));
+    else if (_parent_state && (*_parent_state)->logger)
+        (*_parent_state)->logger(lvl, msg);
 }
 
 MutableConfigMessage& ConfigBase::dirty() {
     if (_state != ConfigState::Dirty) {
         set_state(ConfigState::Dirty);
         _config = std::make_unique<MutableConfigMessage>(*_config, increment_seqno);
+    }
+
+    // If there is a parent state then notify it about the config change
+    if (_parent_state) {
+        std::optional<std::string_view> pubkey_hex;
+
+        if (_sign_pk)
+            pubkey_hex = "03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end());
+
+        (*_parent_state)->config_changed(pubkey_hex);
     }
 
     if (auto* mut = dynamic_cast<MutableConfigMessage*>(_config.get()))

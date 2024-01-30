@@ -1,6 +1,8 @@
+#pragma once
+
 #include <string>
 
-#include "session/onionreq/hop_encryption.hpp"
+#include "hop_encryption.hpp"
 #include "session/types.hpp"
 
 namespace session::onionreq {

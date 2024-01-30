@@ -78,6 +78,7 @@ add_libsession_util_library(config
 
 add_libsession_util_library(state
     state.cpp
+    state_c_wrapper.cpp
 )
 
 

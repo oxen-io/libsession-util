@@ -20,6 +20,18 @@ enum class Namespace : std::int16_t {
 };
 
 namespace {
+    /// Returns a number indicating the order that the config dumps should be loaded in, we need to
+    /// load the `UserGroups` config before any group configs (due to how the configs are stored)
+    /// and the `GroupKeys` config _after_ the `GroupInfo` and `GroupMembers` configs as it requires
+    /// those to be passed as arguments
+    int namespace_load_order(const Namespace& n) {
+        if (n == Namespace::GroupInfo || n == Namespace::GroupMembers)
+            return 1;
+        if (n == Namespace::GroupKeys)
+            return 2;
+        return 0;
+    }
+
     /// Returns a number indicating the order that messages from the specified namespace should be
     /// merged in (lower numbers shold be merged first),
     /// by merging in a specific order we can prevent certain edge-cases where data/logic between

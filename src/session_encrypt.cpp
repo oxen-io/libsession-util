@@ -561,6 +561,8 @@ ustring decrypt_push_notification(ustring_view payload, ustring_view enc_key) {
 
 using namespace session;
 
+extern "C" {
+
 LIBSESSION_C_API bool session_encrypt_for_recipient_deterministic(
         const unsigned char* plaintext_in,
         size_t plaintext_len,
@@ -721,3 +723,5 @@ LIBSESSION_C_API bool session_decrypt_push_notification(
         return false;
     }
 }
+
+}  // extern "C"

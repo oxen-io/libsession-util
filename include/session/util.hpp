@@ -73,6 +73,10 @@ inline uint64_t get_timestamp() {
     return std::chrono::steady_clock::now().time_since_epoch().count();
 }
 
+inline std::string bool_to_string(bool v) {
+    return (v ? "true" : "false");
+}
+
 /// Returns true if the first string is equal to the second string, compared case-insensitively.
 inline bool string_iequal(std::string_view s1, std::string_view s2) {
     return std::equal(s1.begin(), s1.end(), s2.begin(), s2.end(), [](char a, char b) {
