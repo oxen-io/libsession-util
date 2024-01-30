@@ -140,6 +140,13 @@ TEST_CASE("Session protocol deterministic encryption", "[session-protocol][encry
     CHECK(from_unsigned_sv(msg) == "hello");
 }
 
+static std::array<unsigned char, 33> prefixed(unsigned char prefix, const session::uc32& pubkey) {
+    std::array<unsigned char, 33> result;
+    result[0] = prefix;
+    std::memcpy(result.data() + 1, pubkey.data(), 32);
+    return result;
+}
+
 TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][encrypt]") {
 
     using namespace session;
@@ -163,11 +170,8 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
             "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72"_hexbytes);
     auto [blind15_pk, blind15_sk] = blind15_key_pair(to_sv(ed_sk), to_unsigned_sv(server_pk));
     auto [blind25_pk, blind25_sk] = blind25_key_pair(to_sv(ed_sk), to_unsigned_sv(server_pk));
-    std::array<unsigned char, 33> blind15_pk_prefixed, blind25_pk_prefixed;
-    blind15_pk_prefixed[0] = 0x15;
-    blind25_pk_prefixed[0] = 0x25;
-    memcpy(blind15_pk_prefixed.data() + 1, blind15_pk.data(), 32);
-    memcpy(blind25_pk_prefixed.data() + 1, blind25_pk.data(), 32);
+    auto blind15_pk_prefixed = prefixed(0x15, blind15_pk);
+    auto blind25_pk_prefixed = prefixed(0x25, blind25_pk);
 
     const auto seed2 = "00112233445566778899aabbccddeeff00000000000000000000000000000000"_hexbytes;
     std::array<unsigned char, 32> ed_pk2, curve_pk2;
@@ -186,11 +190,8 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
             "05aa654f00fc39fc69fd0db829410ca38177d7732a8d2f0934ab3872ac56d5aa74"_hexbytes);
     auto [blind15_pk2, blind15_sk2] = blind15_key_pair(to_sv(ed_sk2), to_unsigned_sv(server_pk));
     auto [blind25_pk2, blind25_sk2] = blind25_key_pair(to_sv(ed_sk2), to_unsigned_sv(server_pk));
-    std::array<unsigned char, 33> blind15_pk2_prefixed, blind25_pk2_prefixed;
-    blind15_pk2_prefixed[0] = 0x15;
-    blind25_pk2_prefixed[0] = 0x25;
-    memcpy(blind15_pk2_prefixed.data() + 1, blind15_pk2.data(), 32);
-    memcpy(blind25_pk2_prefixed.data() + 1, blind25_pk2.data(), 32);
+    auto blind15_pk2_prefixed = prefixed(0x15, blind15_pk2);
+    auto blind25_pk2_prefixed = prefixed(0x25, blind25_pk2);
 
     SECTION("blind15, full secret, recipient decrypt") {
         auto enc = encrypt_for_blinded_recipient(
@@ -203,14 +204,14 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
         CHECK_THROWS(decrypt_from_blinded_recipient(
                 to_sv(ed_sk2),
                 to_unsigned_sv(server_pk),
-                blind15_pk,
+                to_sv(blind15_pk),
                 {blind15_pk2_prefixed.data(), 33},
                 enc));
         CHECK_THROWS(decrypt_from_blinded_recipient(
                 to_sv(ed_sk2),
                 to_unsigned_sv(server_pk),
                 {blind15_pk_prefixed.data(), 33},
-                blind15_pk2,
+                to_sv(blind15_pk2),
                 enc));
 
         auto [msg, sender] = decrypt_from_blinded_recipient(
@@ -231,40 +232,34 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
                 {blind15_pk2_prefixed.data(), 33},
                 broken));
     }
-    SECTION("blind15, full secret, sender decrypt") {
+    SECTION("blind15, only seed, sender decrypt") {
+        constexpr auto lorem_ipsum =
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
+                "incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis "
+                "nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. "
+                "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu "
+                "fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
+                "culpa qui officia deserunt mollit anim id est laborum."sv;
         auto enc = encrypt_for_blinded_recipient(
-                to_sv(ed_sk),
+                {to_sv(ed_sk).data(), 32},
                 to_unsigned_sv(server_pk),
                 {blind15_pk2_prefixed.data(), 33},
-                to_unsigned_sv("hello"));
-        CHECK(from_unsigned_sv(enc) != "hello");
-
-        CHECK_THROWS(decrypt_from_blinded_recipient(
-                to_sv(ed_sk),
-                to_unsigned_sv(server_pk),
-                blind15_pk,
-                {blind15_pk2_prefixed.data(), 33},
-                enc));
-        CHECK_THROWS(decrypt_from_blinded_recipient(
-                to_sv(ed_sk),
-                to_unsigned_sv(server_pk),
-                {blind15_pk_prefixed.data(), 33},
-                blind15_pk2,
-                enc));
+                to_unsigned_sv(lorem_ipsum));
+        CHECK(enc.find(to_unsigned("dolore magna")) == std::string::npos);
 
         auto [msg, sender] = decrypt_from_blinded_recipient(
-                to_sv(ed_sk),
+                {to_sv(ed_sk).data(), 32},
                 to_unsigned_sv(server_pk),
                 {blind15_pk_prefixed.data(), 33},
                 {blind15_pk2_prefixed.data(), 33},
                 enc);
         CHECK(sender == sid);
-        CHECK(from_unsigned_sv(msg) == "hello");
+        CHECK(from_unsigned_sv(msg) == lorem_ipsum);
 
         auto broken = enc;
-        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
+        broken[463] ^= 0x80;  // 1 + 445 + 16 = 462 is the start of the nonce
         CHECK_THROWS(decrypt_from_blinded_recipient(
-                to_sv(ed_sk),
+                {to_sv(ed_sk).data(), 32},
                 to_unsigned_sv(server_pk),
                 {blind15_pk_prefixed.data(), 33},
                 {blind15_pk2_prefixed.data(), 33},
@@ -303,45 +298,6 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
                 {blind15_pk2_prefixed.data(), 33},
                 broken));
     }
-    SECTION("blind25, full secret, recipient decrypt") {
-        auto enc = encrypt_for_blinded_recipient(
-                to_sv(ed_sk),
-                to_unsigned_sv(server_pk),
-                {blind25_pk2_prefixed.data(), 33},
-                to_unsigned_sv("hello"));
-        CHECK(from_unsigned_sv(enc) != "hello");
-
-        CHECK_THROWS(decrypt_from_blinded_recipient(
-                to_sv(ed_sk2),
-                to_unsigned_sv(server_pk),
-                blind25_pk,
-                {blind25_pk2_prefixed.data(), 33},
-                enc));
-        CHECK_THROWS(decrypt_from_blinded_recipient(
-                to_sv(ed_sk2),
-                to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33},
-                blind25_pk2,
-                enc));
-
-        auto [msg, sender] = decrypt_from_blinded_recipient(
-                to_sv(ed_sk2),
-                to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33},
-                {blind25_pk2_prefixed.data(), 33},
-                enc);
-        CHECK(sender == sid);
-        CHECK(from_unsigned_sv(msg) == "hello");
-
-        auto broken = enc;
-        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
-        CHECK_THROWS(decrypt_from_blinded_recipient(
-                to_sv(ed_sk2),
-                to_unsigned_sv(server_pk),
-                {blind25_pk_prefixed.data(), 33},
-                {blind25_pk2_prefixed.data(), 33},
-                broken));
-    }
     SECTION("blind25, full secret, sender decrypt") {
         auto enc = encrypt_for_blinded_recipient(
                 to_sv(ed_sk),
@@ -353,14 +309,14 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
         CHECK_THROWS(decrypt_from_blinded_recipient(
                 to_sv(ed_sk),
                 to_unsigned_sv(server_pk),
-                blind25_pk,
+                to_sv(blind25_pk),
                 {blind25_pk2_prefixed.data(), 33},
                 enc));
         CHECK_THROWS(decrypt_from_blinded_recipient(
                 to_sv(ed_sk),
                 to_unsigned_sv(server_pk),
                 {blind25_pk_prefixed.data(), 33},
-                blind25_pk2,
+                to_sv(blind25_pk2),
                 enc));
 
         auto [msg, sender] = decrypt_from_blinded_recipient(
@@ -376,6 +332,45 @@ TEST_CASE("Session blinding protocol encryption", "[session-blinding-protocol][e
         broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
         CHECK_THROWS(decrypt_from_blinded_recipient(
                 to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                broken));
+    }
+    SECTION("blind25, full secret, recipient decrypt") {
+        auto enc = encrypt_for_blinded_recipient(
+                to_sv(ed_sk),
+                to_unsigned_sv(server_pk),
+                {blind25_pk2_prefixed.data(), 33},
+                to_unsigned_sv("hello"));
+        CHECK(from_unsigned_sv(enc) != "hello");
+
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                to_sv(blind25_pk),
+                {blind25_pk2_prefixed.data(), 33},
+                enc));
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                to_sv(blind25_pk2),
+                enc));
+
+        auto [msg, sender] = decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
+                to_unsigned_sv(server_pk),
+                {blind25_pk_prefixed.data(), 33},
+                {blind25_pk2_prefixed.data(), 33},
+                enc);
+        CHECK(sender == sid);
+        CHECK(from_unsigned_sv(msg) == "hello");
+
+        auto broken = enc;
+        broken[23] ^= 0x80;  // 1 + 5 + 16 = 22 is the start of the nonce
+        CHECK_THROWS(decrypt_from_blinded_recipient(
+                to_sv(ed_sk2),
                 to_unsigned_sv(server_pk),
                 {blind25_pk_prefixed.data(), 33},
                 {blind25_pk2_prefixed.data(), 33},
