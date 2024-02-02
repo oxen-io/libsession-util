@@ -97,13 +97,7 @@ class State {
             uint64_t timestamp_ms,
             ustring data)>
             _store;
-    std::function<void(std::string pubkey, std::vector<seqno_t> seqnos, ustring data)> _send;
-
-    // Invokes the `logger` callback if set, does nothing if there is no logger.
-    void log(session::config::LogLevel lvl, std::string msg) {
-        if (logger)
-            logger(lvl, std::move(msg));
-    }
+    std::function<void(std::string pubkey, ustring payload, ustring ctx)> _send;
 
   public:
     std::unique_ptr<session::config::Contacts> config_contacts;
@@ -132,6 +126,12 @@ class State {
     // If set then we log things by calling this callback
     std::function<void(session::config::LogLevel lvl, std::string msg)> logger;
 
+    // Invokes the `logger` callback if set, does nothing if there is no logger.
+    void log(session::config::LogLevel lvl, std::string msg) {
+        if (logger)
+            logger(lvl, std::move(msg));
+    }
+
     // Hook which will be called whenever config dumps need to be saved to persistent storage. The
     // hook will immediately be called upon assignment if the state needs to be stored.
     void onStore(std::function<
@@ -154,11 +154,9 @@ class State {
     ///
     /// Parameters:
     /// - `pubkey` -- the pubkey (in hex) for the swarm where the data should be sent.
-    /// - `seqnos` -- a vector of the seqnos for the each updated config message included in the
-    /// payload.
-    /// - `data` -- payload which should be sent to the API.
-    void onSend(std::function<void(std::string pubkey, std::vector<seqno_t> seqnos, ustring data)>
-                        hook) {
+    /// - `payload` -- payload which should be sent to the API.
+    /// - `ctx` -- contextual data which should be used when processing the response.
+    void onSend(std::function<void(std::string pubkey, ustring payload, ustring ctx)> hook) {
         _send = hook;
 
         if (!hook)
@@ -267,6 +265,20 @@ class State {
     std::vector<std::string> merge(
             std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs);
 
+    /// API: state/State::current_hashes
+    ///
+    /// The current config hashes; this can be empty if the current hashes are unknown or the
+    /// current state is not clean (i.e. a push is needed or pending).
+    ///
+    /// Inputs:
+    /// - `pubkey_hex` -- optional pubkey to retrieve the hashes for (in hex, with prefix - 66
+    /// bytes). Required for group hashes.
+    ///
+    /// Outputs:
+    /// - `std::vector<std::string>` -- Returns current config hashes
+    std::vector<std::string> current_hashes(
+            std::optional<std::string_view> pubkey_hex = std::nullopt);
+
     /// API: state/State::dump
     ///
     /// Returns a bt-encoded dict containing the dumps of each of the current config states for
@@ -308,14 +320,12 @@ class State {
     /// Inputs:
     /// - `pubkey` -- the pubkey (in hex, with prefix - 66 bytes) for the swarm where the data was
     /// sent.
-    /// - `seqnos` -- the seqnos for each config messages included in the payload.
-    /// - `payload_data` -- payload which was sent to the swarm.
     /// - `response_data` -- response that was returned from the swarm.
-    void received_send_response(
-            std::string pubkey,
-            std::vector<seqno_t> seqnos,
-            ustring payload_data,
-            ustring response_data);
+    /// - `ctx` -- the contextual data provided by the onSend hook.
+    void received_send_response(std::string pubkey, ustring response_data, ustring ctx);
+
+  private:
+    void handle_config_push_response(std::string pubkey, ustring response, ustring ctx);
 };
 
 };  // namespace session::state

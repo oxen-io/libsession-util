@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace session::config {
 
@@ -17,9 +18,30 @@ enum class Namespace : std::int16_t {
     GroupKeys = 12,
     GroupInfo = 13,
     GroupMembers = 14,
+
+    // Messages sent to an updated group which should be able to be retrieved by revoked members are
+    // stored in this namespace
+    RevokedRetrievableGroupMessages = -11,
 };
 
 namespace {
+    std::string namespace_name(const Namespace& n) {
+        switch (n) {
+            case Namespace::UserProfile: return "USER_PROFILE";
+            case Namespace::Contacts: return "CONTACTS";
+            case Namespace::ConvoInfoVolatile: return "CONVO_INFO_VOLATILE";
+            case Namespace::UserGroups: return "USER_GROUPS";
+
+            case Namespace::GroupMessages: return "GroupMessages";
+            case Namespace::GroupKeys: return "GROUP_KEYS";
+            case Namespace::GroupInfo: return "GROUP_INFO";
+            case Namespace::GroupMembers: return "GROUP_MEMBERS";
+
+            case Namespace::RevokedRetrievableGroupMessages:
+                return "RevokedRetrievableGroupMessages";
+        }
+    }
+
     /// Returns a number indicating the order that the config dumps should be loaded in, we need to
     /// load the `UserGroups` config before any group configs (due to how the configs are stored)
     /// and the `GroupKeys` config _after_ the `GroupInfo` and `GroupMembers` configs as it requires

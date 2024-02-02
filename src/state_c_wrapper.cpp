@@ -151,7 +151,8 @@ LIBSESSION_C_API void state_set_logger(
 
 LIBSESSION_C_API bool state_set_send_callback(
         state_object* state,
-        void (*callback)(const char*, const seqno_t*, size_t, const unsigned char*, size_t, void*),
+        void (*callback)(
+                const char*, const unsigned char*, size_t, const unsigned char*, size_t, void*),
         void* ctx) {
     try {
         if (!callback)
@@ -159,13 +160,13 @@ LIBSESSION_C_API bool state_set_send_callback(
         else {
             // Setting this can result in the callback being immediately triggered which could throw
             unbox(state).onSend(
-                    [callback, ctx](std::string pubkey, std::vector<seqno_t> seqnos, ustring data) {
+                    [callback, ctx](std::string pubkey, ustring data, ustring request_ctx) {
                         callback(
                                 pubkey.c_str(),
-                                seqnos.data(),
-                                seqnos.size(),
                                 data.data(),
                                 data.size(),
+                                request_ctx.data(),
+                                request_ctx.size(),
                                 ctx);
                     });
         }
@@ -264,8 +265,23 @@ LIBSESSION_C_API bool state_merge(
                     ustring{configs[i].data, configs[i].datalen});
 
         auto result = unbox(state).merge(pubkey_hex, confs);
-        unbox(state).logger(LogLevel::info, "Merged " + std::to_string(result.size()));
+        unbox(state).log(LogLevel::info, "Merged " + std::to_string(result.size()));
         *successful_hashes = make_string_list(result);
+        return true;
+    } catch (const std::exception& e) {
+        return set_error(state, e.what());
+    }
+}
+
+LIBSESSION_C_API bool state_current_hashes(
+        state_object* state, const char* pubkey_hex_, config_string_list** current_hashes) {
+    try {
+        std::optional<std::string_view> pubkey_hex;
+        if (pubkey_hex_)
+            pubkey_hex.emplace(pubkey_hex_, 66);
+
+        auto result = unbox(state).current_hashes(pubkey_hex);
+        *current_hashes = make_string_list(result);
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
@@ -313,24 +329,15 @@ LIBSESSION_C_API bool state_dump_namespace(
 LIBSESSION_C_API bool state_received_send_response(
         state_object* state,
         const char* pubkey_hex,
-        const seqno_t* seqnos_,
-        size_t seqnos_len,
-        unsigned char* payload_data,
-        size_t payload_data_len,
         unsigned char* response_data,
-        size_t response_data_len) {
+        size_t response_data_len,
+        unsigned char* request_ctx,
+        size_t request_ctx_len) {
     try {
-        std::vector<seqno_t> seqnos;
-        seqnos.reserve(seqnos_len);
-
-        for (size_t i = 0; i < seqnos_len; i++)
-            seqnos.emplace_back(seqnos_[i]);
-
         unbox(state).received_send_response(
                 {pubkey_hex, 66},
-                seqnos,
-                {payload_data, payload_data_len},
-                {response_data, response_data_len});
+                {response_data, response_data_len},
+                {request_ctx, request_ctx_len});
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
@@ -345,15 +352,8 @@ LIBSESSION_C_API const char* state_get_profile_name(const state_object* state) {
     return nullptr;
 }
 
-LIBSESSION_C_API bool state_set_profile_name(state_object* state, const char* name) {
-    try {
-        unbox(state).logger(LogLevel::info, "state_set_profile_name: called");
-        unbox(state).config_user_profile->set_name(name);
-        unbox(state).logger(LogLevel::info, "state_set_profile_name: done");
-        return true;
-    } catch (const std::exception& e) {
-        return set_error(state, e.what());
-    }
+LIBSESSION_C_API void state_set_profile_name(state_object* state, const char* name) {
+    unbox(state).config_user_profile->set_name(name);
 }
 
 LIBSESSION_C_API user_profile_pic state_get_profile_pic(const state_object* state) {
@@ -367,20 +367,13 @@ LIBSESSION_C_API user_profile_pic state_get_profile_pic(const state_object* stat
     return p;
 }
 
-LIBSESSION_C_API bool state_set_profile_pic(state_object* state, user_profile_pic pic) {
+LIBSESSION_C_API void state_set_profile_pic(state_object* state, user_profile_pic pic) {
     std::string_view url{pic.url};
     ustring_view key;
     if (!url.empty())
         key = {pic.key, 32};
 
-    try {
-        unbox(state).logger(LogLevel::info, "state_set_profile_pic: called");
-        unbox(state).config_user_profile->set_profile_pic(url, key);
-        unbox(state).logger(LogLevel::info, "state_set_profile_pic: done");
-        return true;
-    } catch (const std::exception& e) {
-        return set_error(state, e.what());
-    }
+    unbox(state).config_user_profile->set_profile_pic(url, key);
 }
 
 LIBSESSION_C_API int state_get_profile_blinded_msgreqs(const state_object* state) {

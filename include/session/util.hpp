@@ -27,6 +27,9 @@ inline const unsigned char* to_unsigned(const std::byte* x) {
 inline unsigned char* to_unsigned(std::byte* x) {
     return reinterpret_cast<unsigned char*>(x);
 }
+inline ustring to_unsigned(std::string x) {
+    return {to_unsigned(x.data()), x.size()};
+}
 // These do nothing, but having them makes template metaprogramming easier:
 inline const unsigned char* to_unsigned(const unsigned char* x) {
     return x;

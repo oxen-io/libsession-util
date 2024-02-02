@@ -146,7 +146,7 @@ LIBSESSION_EXPORT void state_set_logger(
 ///
 /// The function must have signature:
 ///
-/// void callback(const char*, const seqno_t*, size_t, const unsigned char*, size_t, void*);
+/// void callback(const char*, const unsigned char*, size_t, const unsigned char*, size_t, void*);
 ///
 /// Can be called with callback set to NULL to clear an existing hook.
 ///
@@ -156,7 +156,8 @@ LIBSESSION_EXPORT void state_set_logger(
 /// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 LIBSESSION_EXPORT bool state_set_send_callback(
         state_object* state,
-        void (*callback)(const char*, const seqno_t*, size_t, const unsigned char*, size_t, void*),
+        void (*callback)(
+                const char*, const unsigned char*, size_t, const unsigned char*, size_t, void*),
         void* ctx);
 
 /// API: state/state_set_store_callback
@@ -253,6 +254,19 @@ LIBSESSION_EXPORT bool state_merge(
         size_t count,
         config_string_list** successful_hashes);
 
+/// API: state/state_current_hashes
+///
+/// The current config hashes; this can be empty if the current hashes are unknown or the current
+/// state is not clean (i.e. a push is needed or pending).
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to state_object object
+/// - `pubkey_hex` -- [in] optional pubkey to retrieve the hashes for (in hex, with prefix - 66
+/// bytes). Required for group hashes.
+/// - `current_hashes` -- [out] Pointer to an array of the current config hashes
+LIBSESSION_EXPORT bool state_current_hashes(
+        state_object* state, const char* pubkey_hex_, config_string_list** current_hashes);
+
 /// API: state/state_dump
 ///
 /// Returns a bt-encoded dict containing the dumps of each of the current config states for
@@ -304,34 +318,26 @@ LIBSESSION_EXPORT bool state_dump_namespace(
 
 /// API: state/state_received_send_response
 ///
-/// Takes the network response from sending the data from the `send` hook and confirms the configs
-/// were successfully pushed.
+/// Takes the network respons and request context from sending the data from the `send` hook and
+/// processes the response updating the state as needed.
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to state_object object
 /// - `pubkey_hex` -- [in] optional pubkey the dump is associated to (in hex, with prefix - 66
 /// bytes). Required for group dumps.
-/// - `seqnos` -- [in] Pointer to an array of sequence numbers for each config which was sent. Must
-/// be in the same order the push data was in. Can just pass the pointer which was provided from the
-/// `send` hook.
-/// - `seqnos_len` -- [in] Number of items in `seqnos`.
-/// - `payload_data` -- [in] Pointer to the push data payload that resulted in this response. Can
-/// just pass the pointer which was provided from the `send` hook.
-/// - `payload_data_len` -- [in] Length of the `payload_data`.
 /// - `response_data` -- [in] Pointer to the response from the swarm after sending the
 /// `payload_data`.
 /// - `response_data_len` -- [in] Length of the `response_data`.
-/// - `out` -- [out] Pointer to the output location
-/// - `outlen` -- [out] Length of output
+/// - `request_ctx` -- [in] Pointer to the request context data which was provided by the `send`
+/// hook.
+/// - `request_ctx_len` -- [in] Length of the `request_ctx`.
 LIBSESSION_EXPORT bool state_received_send_response(
         state_object* state,
         const char* pubkey_hex,
-        const seqno_t* seqnos,
-        size_t seqnos_len,
-        unsigned char* payload_data,
-        size_t payload_data_len,
         unsigned char* response_data,
-        size_t response_data_len);
+        size_t response_data_len,
+        unsigned char* request_ctx,
+        size_t request_ctx_len);
 
 /// User Profile functions
 
@@ -356,10 +362,7 @@ LIBSESSION_EXPORT const char* state_get_profile_name(const state_object* state);
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
 /// - `name` -- [in] Pointer to the name as a null-terminated C string
-///
-/// Outputs:
-/// - `bool` -- Returns true on success, false on error
-LIBSESSION_EXPORT bool state_set_profile_name(state_object* state, const char* name);
+LIBSESSION_EXPORT void state_set_profile_name(state_object* state, const char* name);
 
 /// API: state/state_get_profile_pic
 ///
@@ -381,10 +384,7 @@ LIBSESSION_EXPORT user_profile_pic state_get_profile_pic(const state_object* sta
 /// Inputs:
 /// - `state` -- [in] Pointer to the satet object
 /// - `pic` -- [in] Pointer to the pic
-///
-/// Outputs:
-/// - `bool` -- Returns true on success, false on error
-LIBSESSION_EXPORT bool state_set_profile_pic(state_object* state, user_profile_pic pic);
+LIBSESSION_EXPORT void state_set_profile_pic(state_object* state, user_profile_pic pic);
 
 /// API: state/state_get_profile_blinded_msgreqs
 ///
