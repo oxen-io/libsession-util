@@ -1,6 +1,7 @@
 #include <oxenc/hex.h>
+#include <session/config/user_profile.hpp>
 #include <session/config/encrypt.h>
-#include <session/config/user_profile.h>
+#include <session/util.hpp>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -12,17 +13,17 @@
 using namespace std::literals;
 using namespace oxenc::literals;
 
-void log_msg(config_log_level lvl, const char* msg, void*) {
-    INFO((lvl == LOG_LEVEL_ERROR     ? "ERROR"
-          : lvl == LOG_LEVEL_WARNING ? "Warning"
-          : lvl == LOG_LEVEL_INFO    ? "Info"
+void log_msg(session::config::LogLevel lvl, std::string msg) {
+    INFO((lvl == session::config::LogLevel::error     ? "ERROR"
+          : lvl == session::config::LogLevel::warning ? "Warning"
+          : lvl == session::config::LogLevel::info    ? "Info"
                                      : "debug")
          << ": " << msg);
 }
 
-TEST_CASE("user profile C API", "[config][user_profile][c]") {
+TEST_CASE("user profile", "[config][user_profile]") {
 
-    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hex;
+    const auto seed = "0123456789abcdef0123456789abcdef00000000000000000000000000000000"_hexbytes;
     std::array<unsigned char, 32> ed_pk, curve_pk;
     std::array<unsigned char, 64> ed_sk;
     crypto_sign_ed25519_seed_keypair(
@@ -36,36 +37,29 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
     CHECK(oxenc::to_hex(seed) == oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
-    // Initialize a brand new, empty config because we have no dump data to deal with.
-    char err[256];
-    config_object* conf;
-    rc = user_profile_init(&conf, ed_sk.data(), NULL, 0, err);
-    REQUIRE(rc == 0);
-
-    config_set_logger(conf, log_msg, NULL);
+    session::config::UserProfile conf{ustring_view{seed}, std::nullopt};
+    conf.logger = log_msg;
 
     // We don't need to push anything, since this is an empty config
-    CHECK_FALSE(config_needs_push(conf));
+    CHECK_FALSE(conf.needs_push());
     // And we haven't changed anything so don't need to dump to db
-    CHECK_FALSE(config_needs_dump(conf));
+    CHECK_FALSE(conf.needs_dump());
 
     // Since it's empty there shouldn't be a name.
-    const char* name = user_profile_get_name(conf);
-    CHECK(name == nullptr);  // (should be NULL instead of nullptr in C)
+    auto name = conf.get_name();
+    CHECK(name == std::nullopt);
 
     // We don't need to push since we haven't changed anything, so this call is mainly just for
     // testing:
-    config_push_data* to_push = config_push(conf);
-    REQUIRE(to_push);
-    CHECK(to_push->seqno == 0);
-    CHECK(to_push->config_len == 256 + 176);  // 176 = protobuf overhead
-    const char* enc_domain = "UserProfile";
-    REQUIRE(config_encryption_domain(conf) == std::string_view{enc_domain});
+    auto [seqno, to_push, obs] = conf.push();
+    CHECK(seqno == 0);
+    CHECK(to_push.size() == 256 + 176);  // 176 = protobuf overhead
+    REQUIRE(conf.encryption_domain() == "UserProfile"sv);
 
     // There's nothing particularly profound about this value (it is multiple layers of nested
     // protobuf with some encryption and padding halfway through); this test is just here to ensure
     // that our pushed messages are deterministic:
-    CHECK(oxenc::to_hex(to_push->config, to_push->config + to_push->config_len) ==
+    CHECK(oxenc::to_hex(to_push.begin(), to_push.end()) ==
           "080112ab030a0012001aa20308062801429b0326ec9746282053eb119228e6c36012966e7d2642163169ba39"
           "98af44ca65f967768dd78ee80fffab6f809f6cef49c73a36c82a89622ff0de2ceee06b8c638e2c876fa9047f"
           "449dbe24b1fc89281a264fe90abdeffcdd44f797bd4572a6c5ae8d88bf372c3c717943ebd570222206fabf0e"
@@ -77,42 +71,45 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
           "5240d90cbb360fafec0b7eff4c676ae598540813d062dc9468365c73b4cfa2ffd02d48cdcd8f0c71324c6d0a"
           "60346a7a0e50af3be64684b37f9e6c831115bf112ddd18acde08eaec376f0872a3952000");
 
-    free(to_push);
-
     // These should also be unset:
-    auto pic = user_profile_get_pic(conf);
-    CHECK(strlen(pic.url) == 0);
-    CHECK(user_profile_get_nts_priority(conf) == 0);
-    CHECK(user_profile_get_nts_expiry(conf) == 0);
+    auto pic = conf.get_profile_pic();
+    CHECK(pic.url.size() == 0);
+    CHECK(conf.get_nts_priority() == 0);
+    CHECK(conf.get_nts_expiry() == std::nullopt);
 
     // Now let's go set them:
-    CHECK(0 == user_profile_set_name(conf, "Kallie"));
-    user_profile_pic p;
-    strcpy(p.url, "http://example.org/omg-pic-123.bmp");  // NB: length must be < sizeof(p.url)!
-    memcpy(p.key, "secret78901234567890123456789012", 32);
-    CHECK(0 == user_profile_set_pic(conf, p));
-    user_profile_set_nts_priority(conf, 9);
+    conf.set_name("Kallie");
+    session::config::profile_pic p;
+    {
+        // These don't stay alive, so we use set_key/set_url to make a local copy:
+        ustring key = "secret78901234567890123456789012"_bytes;
+        std::string url = "http://example.org/omg-pic-123.bmp";  // NB: length must be < sizeof(p.url)!
+        p.set_key(std::move(key));
+        p.url = std::move(url);
+    }
+    conf.set_profile_pic(p);
+    conf.set_nts_priority(9);
 
     // Retrieve them just to make sure they set properly:
-    name = user_profile_get_name(conf);
-    REQUIRE(name != nullptr);  // (should be NULL instead of nullptr in C)
+    name = conf.get_name();
+    REQUIRE(name != std::nullopt);
     CHECK(name == "Kallie"sv);
 
-    pic = user_profile_get_pic(conf);
-    REQUIRE(pic.url);
-    REQUIRE(pic.key);
-    CHECK(pic.url == "http://example.org/omg-pic-123.bmp"sv);
-    CHECK(ustring_view{pic.key, 32} == "secret78901234567890123456789012"_bytes);
+    pic = conf.get_profile_pic();
+    REQUIRE(pic.url.size() > 0);
+    REQUIRE(pic.key.size() > 0);
+    CHECK(pic.url == "http://example.org/omg-pic-123.bmp");
+    CHECK(pic.key == "secret78901234567890123456789012"_bytes);
 
-    CHECK(user_profile_get_nts_priority(conf) == 9);
+    CHECK(conf.get_nts_priority() == 9);
 
     // Since we've made changes, we should need to push new config to the swarm, *and* should need
     // to dump the updated state:
 
-    CHECK(config_needs_push(conf));
-    CHECK(config_needs_dump(conf));
-    to_push = config_push(conf);
-    CHECK(to_push->seqno == 1);  // incremented since we made changes (this only increments once
+    CHECK(conf.needs_push());
+    CHECK(conf.needs_dump());
+    std::tie(seqno, to_push, obs) = conf.push();
+    CHECK(seqno == 1);           // incremented since we made changes (this only increments once
                                  // between dumps; even though we changed two fields here).
 
     // The hash of a completely empty, initial seqno=0 message:
@@ -149,27 +146,18 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
             "056009a9ebf58d45d7d696b74e0c7ff0499c4d23204976f19561dc0dba6dc53a2497d28ce03498ea"
             "49bf122762d7bc1d6d9c02f6d54f8384"_hexbytes;
 
-    // Copy this out; we need to hold onto it to do the confirmation later on
-    seqno_t seqno = to_push->seqno;
-
-    // config_push gives us back a buffer that we are required to free when done.  (Without this
-    // we'd leak memory!)
-    free(to_push);
-
     // We haven't dumped, so still need to dump:
-    CHECK(config_needs_dump(conf));
+    CHECK(conf.needs_dump());
     // We did call push, but we haven't confirmed it as stored yet, so this will still return true:
-    CHECK(config_needs_push(conf));
-    unsigned char* dump1;
-    size_t dump1len;
-
-    config_dump(conf, &dump1, &dump1len);
+    CHECK(conf.needs_push());
+    
+    auto dump1 = conf.dump();
     // (in a real client we'd now store this to disk)
 
-    CHECK_FALSE(config_needs_dump(conf));
+    CHECK_FALSE(conf.needs_dump());
 
     // clang-format off
-    CHECK(printable(dump1, dump1len) == printable(
+    CHECK(printable({dump1.data(), dump1.size()}) == printable(
         "d"
           "1:!" "i2e"
           "1:$" + std::to_string(exp_push1_decrypted.size()) + ":" + std::string{to_sv(exp_push1_decrypted)} + ""
@@ -177,18 +165,17 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
           "1:)" "le"
         "e"));
     // clang-format on
-    free(dump1);  // done with the dump; don't leak!
 
     // So now imagine we got back confirmation from the swarm that the push has been stored:
-    config_confirm_pushed(conf, seqno, "fakehash1");
+    conf.confirm_pushed(seqno, "fakehash1");
 
-    CHECK_FALSE(config_needs_push(conf));
-    CHECK(config_needs_dump(conf));  // The confirmation changes state, so this makes us need a dump
-                                     // again.
-    config_dump(conf, &dump1, &dump1len);
+    CHECK_FALSE(conf.needs_push());
+    CHECK(conf.needs_dump());          // The confirmation changes state, so this makes us need a dump
+                                       // again.
+    dump1 = conf.dump();
 
     // clang-format off
-    CHECK(printable(dump1, dump1len) == printable(
+    CHECK(printable({dump1.data(), dump1.size()}) == printable(
         "d"
           "1:!" "i0e"
           "1:$" + std::to_string(exp_push1_decrypted.size()) + ":" + std::string{to_sv(exp_push1_decrypted)} + ""
@@ -196,159 +183,136 @@ TEST_CASE("user profile C API", "[config][user_profile][c]") {
           "1:)" "le"
         "e"));
     // clang-format on
-    free(dump1);
 
-    CHECK_FALSE(config_needs_dump(conf));
+    CHECK_FALSE(conf.needs_dump());
 
     // Now we're going to set up a second, competing config object (in the real world this would be
     // another Session client somewhere).
 
     // Start with an empty config, as above:
-    config_object* conf2;
-    REQUIRE(user_profile_init(&conf2, ed_sk.data(), NULL, 0, err) == 0);
-    config_set_logger(conf2, log_msg, NULL);
-    CHECK_FALSE(config_needs_dump(conf2));
+    session::config::UserProfile conf2{ustring_view{seed}, std::nullopt};
+    conf2.logger = log_msg;
+    CHECK_FALSE(conf2.needs_dump());
 
     // Now imagine we just pulled down the encrypted string from the swarm; we merge it into conf2:
-    const unsigned char* merge_data[1];
-    const char* merge_hash[1];
-    size_t merge_size[1];
-    merge_hash[0] = "fakehash1";
-    merge_data[0] = exp_push1_encrypted.data();
-    merge_size[0] = exp_push1_encrypted.size();
-    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted->len == 1);
-    CHECK(accepted->value[0] == "fakehash1"sv);
-    free(accepted);
+    std::vector<std::pair<std::string, ustring_view>> merge_configs;
+    merge_configs.emplace_back("fakehash1", exp_push1_encrypted);
+    auto accepted = conf2.merge(merge_configs);
+    REQUIRE(accepted.size() == 1);
+    CHECK(accepted[0] == "fakehash1"sv);
 
     // Our state has changed, so we need to dump:
-    CHECK(config_needs_dump(conf2));
-    unsigned char* dump2;
-    size_t dump2len;
-    config_dump(conf2, &dump2, &dump2len);
+    CHECK(conf2.needs_dump());
+    auto dump2 = conf2.dump();
     // (store in db)
-    free(dump2);
-    CHECK_FALSE(config_needs_dump(conf2));
+    CHECK_FALSE(conf2.needs_dump());
 
     // We *don't* need to push: even though we updated, all we did is update to the merged data (and
     // didn't have any sort of merge conflict needed):
-    REQUIRE_FALSE(config_needs_push(conf2));
+    REQUIRE_FALSE(conf2.needs_push());
 
     // Now let's create a conflicting update:
 
     // Change the name on both clients:
-    user_profile_set_name(conf, "Nibbler");
-    user_profile_set_name(conf2, "Raz");
+    conf.set_name("Nibbler");
+    conf2.set_name("Raz");
 
     // And, on conf2, we're also going to change some other things:
-    strcpy(p.url, "http://new.example.com/pic");
-    memcpy(p.key, "qwert\0yuio1234567890123456789012", 32);
-    user_profile_set_pic(conf2, p);
+    ustring key2 = "qwert\0yuio1234567890123456789012"_bytes;
+    std::string url2 = "http://new.example.com/pic";
+    p.set_key(std::move(key2));
+    p.url = std::move(url2);
+    conf2.set_profile_pic(p);
 
-    user_profile_set_nts_expiry(conf2, 86400);
-    CHECK(user_profile_get_nts_expiry(conf2) == 86400);
+    conf2.set_nts_expiry(86400s);
+    CHECK(conf2.get_nts_expiry() == 86400s);
 
-    CHECK(user_profile_get_blinded_msgreqs(conf2) == -1);
-    user_profile_set_blinded_msgreqs(conf2, 0);
-    CHECK(user_profile_get_blinded_msgreqs(conf2) == 0);
-    user_profile_set_blinded_msgreqs(conf2, -1);
-    CHECK(user_profile_get_blinded_msgreqs(conf2) == -1);
-    user_profile_set_blinded_msgreqs(conf2, 1);
-    CHECK(user_profile_get_blinded_msgreqs(conf2) == 1);
+    CHECK(conf2.get_blinded_msgreqs() == std::nullopt);
+    conf2.set_blinded_msgreqs(false);
+    CHECK(conf2.get_blinded_msgreqs() == false);
+    conf2.set_blinded_msgreqs(std::nullopt);
+    CHECK(conf2.get_blinded_msgreqs() == std::nullopt);
+    conf2.set_blinded_msgreqs(true);
+    CHECK(conf2.get_blinded_msgreqs() == true);
 
     // Both have changes, so push need a push
-    CHECK(config_needs_push(conf));
-    CHECK(config_needs_push(conf2));
-    to_push = config_push(conf);
-    CHECK(to_push->seqno == 2);  // incremented, since we made a field change
-    config_confirm_pushed(conf2, to_push->seqno, "fakehash2");
+    CHECK(conf.needs_push());
+    CHECK(conf2.needs_push());
+    std::tie(seqno, to_push, obs) = conf.push();
+    CHECK(seqno == 2);  // incremented, since we made a field change
+    conf.confirm_pushed(seqno, "fakehash2");
 
-    config_push_data* to_push2 = config_push(conf2);
-    CHECK(to_push2->seqno == 2);  // incremented, since we made a field change
-    config_confirm_pushed(conf2, to_push2->seqno, "fakehash3");
+    auto [seqno2, to_push2, obs2] = conf2.push();
+    CHECK(seqno2 == 2);  // incremented, since we made a field change
+    conf2.confirm_pushed(seqno2, "fakehash3");
 
-    config_dump(conf, &dump1, &dump1len);
-    config_dump(conf2, &dump2, &dump2len);
+    dump1 = conf.dump();
+    dump2 = conf2.dump();
     // (store in db)
-    free(dump1);
-    free(dump2);
 
     // Since we set different things, we're going to get back different serialized data to be
     // pushed:
-    CHECK(printable(to_push->config, to_push->config_len) !=
-          printable(to_push2->config, to_push2->config_len));
+    CHECK(printable({to_push.data(), to_push.size()}) !=
+          printable({to_push2.data(), to_push2.size()}));
 
     // Now imagine that each client pushed its `seqno=2` config to the swarm, but then each client
     // also fetches new messages and pulls down the other client's `seqno=2` value.
 
     // Feed the new config into each other.  (This array could hold multiple configs if we pulled
     // down more than one).
-    merge_hash[0] = "fakehash2";
-    merge_data[0] = to_push->config;
-    merge_size[0] = to_push->config_len;
-    accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
-    free(to_push);
-    REQUIRE(accepted->len == 1);
-    CHECK(accepted->value[0] == "fakehash2"sv);
-    free(accepted);
-    merge_hash[0] = "fakehash3";
-    merge_data[0] = to_push2->config;
-    merge_size[0] = to_push2->config_len;
-    accepted = config_merge(conf, merge_hash, merge_data, merge_size, 1);
-    REQUIRE(accepted->len == 1);
-    CHECK(accepted->value[0] == "fakehash3"sv);
-    free(accepted);
-    free(to_push2);
+    merge_configs[0] = {"fakehash2", to_push};
+    accepted = conf2.merge(merge_configs);
+    REQUIRE(accepted.size() == 1);
+    CHECK(accepted[0] == "fakehash2"sv);
+
+    merge_configs[0] = {"fakehash3", to_push2};
+    accepted = conf.merge(merge_configs);
+    REQUIRE(accepted.size() == 1);
+    CHECK(accepted[0] == "fakehash3"sv);
 
     // Now after the merge we *will* want to push from both client, since both will have generated a
     // merge conflict update (with seqno = 3).
-    to_push = config_push(conf);
-    to_push2 = config_push(conf2);
+    std::tie(seqno, to_push, obs) = conf.push();
+    std::tie(seqno2, to_push2, obs2) = conf2.push();
 
-    REQUIRE(to_push->seqno == 3);
-    REQUIRE(to_push2->seqno == 3);
-    REQUIRE(config_needs_push(conf));
-    REQUIRE(config_needs_push(conf2));
+    REQUIRE(seqno == 3);
+    REQUIRE(seqno2 == 3);
+    REQUIRE(conf.needs_push());
+    REQUIRE(conf2.needs_push());
 
     // They should have resolved the conflict to the same thing:
-    CHECK(user_profile_get_name(conf) == "Nibbler"sv);
-    CHECK(user_profile_get_name(conf2) == "Nibbler"sv);
+    CHECK(conf.get_name() == "Nibbler"sv);
+    CHECK(conf2.get_name() == "Nibbler"sv);
     // (Note that they could have also both resolved to "Raz" here, but the hash of the serialized
     // message just happens to have a higher hash -- and thus gets priority -- for this particular
     // test).
 
     // Since only one of them set a profile pic there should be no conflict there:
-    pic = user_profile_get_pic(conf);
-    REQUIRE(pic.url);
+    pic = conf.get_profile_pic();
     CHECK(pic.url == "http://new.example.com/pic"sv);
-    REQUIRE(pic.key);
-    CHECK(to_hex(ustring_view{pic.key, 32}) ==
+    CHECK(oxenc::to_hex(pic.key.begin(), pic.key.end()) ==
           "7177657274007975696f31323334353637383930313233343536373839303132");
-    pic = user_profile_get_pic(conf2);
-    REQUIRE(pic.url);
+    pic = conf2.get_profile_pic();
     CHECK(pic.url == "http://new.example.com/pic"sv);
-    REQUIRE(pic.key);
-    CHECK(to_hex(ustring_view{pic.key, 32}) ==
+    CHECK(oxenc::to_hex(pic.key.begin(), pic.key.end()) ==
           "7177657274007975696f31323334353637383930313233343536373839303132");
 
-    CHECK(user_profile_get_nts_priority(conf) == 9);
-    CHECK(user_profile_get_nts_priority(conf2) == 9);
-    CHECK(user_profile_get_nts_expiry(conf) == 86400);
-    CHECK(user_profile_get_nts_expiry(conf2) == 86400);
-    CHECK(user_profile_get_blinded_msgreqs(conf) == 1);
-    CHECK(user_profile_get_blinded_msgreqs(conf2) == 1);
+    CHECK(conf.get_nts_priority() == 9);
+    CHECK(conf2.get_nts_priority() == 9);
+    CHECK(conf.get_nts_expiry() == 86400s);
+    CHECK(conf2.get_nts_expiry() == 86400s);
+    CHECK(conf.get_blinded_msgreqs() == true);
+    CHECK(conf2.get_blinded_msgreqs() == true);
 
-    config_confirm_pushed(conf, to_push->seqno, "fakehash4");
-    config_confirm_pushed(conf2, to_push2->seqno, "fakehash4");
+    conf.confirm_pushed(seqno, "fakehash4");
+    conf2.confirm_pushed(seqno2, "fakehash4");
 
-    config_dump(conf, &dump1, &dump1len);
-    config_dump(conf2, &dump2, &dump2len);
+    dump1 = conf.dump();
+    dump2 = conf2.dump();
     // (store in db)
-    free(dump1);
-    free(dump2);
 
-    CHECK_FALSE(config_needs_dump(conf));
-    CHECK_FALSE(config_needs_dump(conf2));
-    CHECK_FALSE(config_needs_push(conf));
-    CHECK_FALSE(config_needs_push(conf2));
+    CHECK_FALSE(conf.needs_dump());
+    CHECK_FALSE(conf2.needs_dump());
+    CHECK_FALSE(conf.needs_push());
+    CHECK_FALSE(conf2.needs_push());
 }

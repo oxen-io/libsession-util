@@ -26,6 +26,8 @@ using namespace session;
 using namespace session::config;
 using namespace session::state;
 
+LIBSESSION_C_API const size_t PROFILE_PIC_MAX_URL_LENGTH = profile_pic::MAX_URL_LENGTH;
+
 namespace {
 State& unbox(state_object* state) {
     assert(state && state->internals);
@@ -374,6 +376,22 @@ LIBSESSION_C_API void state_set_profile_pic(state_object* state, user_profile_pi
         key = {pic.key, 32};
 
     unbox(state).config_user_profile->set_profile_pic(url, key);
+}
+
+LIBSESSION_C_API int state_get_profile_nts_priority(const state_object* state) {
+    return unbox(state).config_user_profile->get_nts_priority();
+}
+
+LIBSESSION_C_API void state_set_profile_nts_priority(state_object* state, int priority) {
+    unbox(state).config_user_profile->set_nts_priority(priority);
+}
+
+LIBSESSION_C_API int state_get_profile_nts_expiry(const state_object* state) {
+    return unbox(state).config_user_profile->get_nts_expiry().value_or(0s).count();
+}
+
+LIBSESSION_C_API void state_set_profile_nts_expiry(state_object* state, int expiry) {
+    unbox(state).config_user_profile->set_nts_expiry(std::max(0, expiry) * 1s);
 }
 
 LIBSESSION_C_API int state_get_profile_blinded_msgreqs(const state_object* state) {

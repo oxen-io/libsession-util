@@ -1,7 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "session/config/namespaces.hpp"
-#include "session/config/user_profile.h"
 #include "session/config/user_profile.hpp"
 #include "session/state.h"
 #include "session/state.hpp"

@@ -386,6 +386,49 @@ LIBSESSION_EXPORT user_profile_pic state_get_profile_pic(const state_object* sta
 /// - `pic` -- [in] Pointer to the pic
 LIBSESSION_EXPORT void state_set_profile_pic(state_object* state, user_profile_pic pic);
 
+/// API: state/state_get_profile_nts_priority
+///
+/// Gets the current note-to-self priority level. Will be negative for hidden, 0 for unpinned, and >
+/// 0 for pinned (with higher value = higher priority).
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to the state object
+///
+/// Outputs:
+/// - `int` -- Returns the priority level
+LIBSESSION_EXPORT int state_get_profile_nts_priority(const state_object* state);
+
+/// API: state/state_set_profile_nts_priority
+///
+/// Sets the current note-to-self priority level. Set to -1 for hidden; 0 for unpinned, and > 0 for
+/// higher priority in the conversation list.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to the state object
+/// - `priority` -- [in] Integer of the priority
+LIBSESSION_EXPORT void state_set_profile_nts_priority(state_object* state, int priority);
+
+/// API: state/state_get_profile_nts_expiry
+///
+/// Gets the Note-to-self message expiry timer (seconds).  Returns 0 if not set.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to the state object
+///
+/// Outputs:
+/// - `int` -- Returns the expiry timer in seconds. Returns 0 if not set
+LIBSESSION_EXPORT int state_get_profile_nts_expiry(const state_object* state);
+
+/// API: state/state_set_profile_nts_expiry
+///
+/// Sets the Note-to-self message expiry timer (seconds).  Setting 0 (or negative) will clear the
+/// current timer.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to the state object
+/// - `expiry` -- [in] Integer of the expiry timer in seconds
+LIBSESSION_EXPORT void state_set_profile_nts_expiry(state_object* state, int expiry);
+
 /// API: state/state_get_profile_blinded_msgreqs
 ///
 /// Returns true if blinded message requests should be retrieved (from SOGS servers), false if they
