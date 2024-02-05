@@ -10,6 +10,7 @@
 
 #include "config/internal.hpp"
 #include "session/config/base.hpp"
+#include "session/config/contacts.h"
 #include "session/config/contacts.hpp"
 #include "session/config/convo_info_volatile.hpp"
 #include "session/config/namespaces.h"
@@ -49,6 +50,14 @@ bool set_error(state_object* state, std::string_view e) {
 }  // namespace
 
 extern "C" {
+
+// Util Functions
+
+LIBSESSION_C_API bool session_id_is_valid(const char* session_id) {
+    return std::strlen(session_id) == 66 && oxenc::is_hex(session_id, session_id + 66);
+}
+
+// State Functions
 
 LIBSESSION_EXPORT void state_free(state_object* state) {
     delete state;
@@ -232,13 +241,13 @@ LIBSESSION_C_API bool state_suppress_hooks_start(
 }
 
 LIBSESSION_C_API bool state_suppress_hooks_stop(
-        state_object* state, bool send, bool store, const char* pubkey_hex_) {
+        state_object* state, bool send, bool store, bool force, const char* pubkey_hex_) {
     try {
         std::string_view pubkey_hex = "";
         if (pubkey_hex_)
             pubkey_hex = {pubkey_hex_, 66};
 
-        unbox(state).suppress_hooks_stop(send, store, pubkey_hex);
+        unbox(state).suppress_hooks_stop(send, store, force, pubkey_hex);
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
@@ -405,6 +414,54 @@ LIBSESSION_C_API void state_set_profile_blinded_msgreqs(state_object* state, int
     if (enabled >= 0)
         val = static_cast<bool>(enabled);
     unbox(state).config_user_profile->set_blinded_msgreqs(std::move(val));
+}
+
+// Contact Functions
+
+LIBSESSION_C_API bool state_get_contacts(
+        state_object* state, contacts_contact* contact, const char* session_id) {
+    try {
+        if (auto c = unbox(state).config_contacts->get(session_id)) {
+            c->into(*contact);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        set_error(state, e.what());
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool state_get_or_construct_contacts(
+        state_object* state, contacts_contact* contact, const char* session_id) {
+    try {
+        unbox(state).config_contacts->get_or_construct(session_id).into(*contact);
+        return true;
+    } catch (const std::exception& e) {
+        return set_error(state, e.what());
+    }
+}
+
+LIBSESSION_C_API void state_set_contacts(state_object* state, const contacts_contact* contact) {
+    unbox(state).config_contacts->set(contact_info{*contact});
+}
+
+LIBSESSION_C_API bool state_erase_contacts(state_object* state, const char* session_id) {
+    try {
+        return unbox(state).config_contacts->erase(session_id);
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API size_t state_size_contacts(const state_object* state) {
+    return unbox(state).config_contacts->size();
+}
+
+LIBSESSION_C_API contacts_iterator* state_new_iterator_contacts(const state_object* state) {
+    auto* it = new contacts_iterator{};
+    auto it2 = unbox(state).config_contacts->begin();
+    it->_internals = new Contacts::iterator{unbox(state).config_contacts->begin()};
+    return it;
 }
 
 }  // extern "C"

@@ -48,8 +48,17 @@ State::State(ustring_view ed25519_secretkey, std::vector<namespaced_dump> dumps)
     if (ed25519_secretkey.size() != 64)
         throw std::invalid_argument{"Invalid ed25519_secretkey: expected 64 bytes"};
 
+    // Setup the keys
+    std::array<unsigned char, 32> user_x_pk;
     std::memcpy(_user_sk.data(), ed25519_secretkey.data(), ed25519_secretkey.size());
     crypto_sign_ed25519_sk_to_pk(_user_pk.data(), _user_sk.data());
+
+    if (0 != crypto_sign_ed25519_pk_to_curve25519(user_x_pk.data(), _user_pk.data()))
+        throw std::runtime_error{"Ed25519 pubkey to x25519 pubkey conversion failed"};
+
+    _user_x_pk_hex.reserve(66);
+    _user_x_pk_hex += "05";
+    oxenc::to_hex(user_x_pk.begin(), user_x_pk.end(), std::back_inserter(_user_x_pk_hex));
 
     // Load in the dumps
     auto sorted_dumps = dumps;
@@ -180,61 +189,74 @@ void State::suppress_hooks_start(bool send, bool store, std::string_view pubkey_
     log(LogLevel::debug,
         "suppress_hooks_start: " + std::string(pubkey_hex) + "(send: " + bool_to_string(send) +
                 ", store: " + bool_to_string(store) + ")");
-    _open_suppressions[pubkey_hex] = {send, store};
+    _open_suppressions[pubkey_hex] = {
+            _open_suppressions[pubkey_hex].first + (send ? 1 : 0),
+            _open_suppressions[pubkey_hex].second + (store ? 1 : 0)};
 }
 
-void State::suppress_hooks_stop(bool send, bool store, std::string_view pubkey_hex) {
+void State::suppress_hooks_stop(bool send, bool store, bool force, std::string_view pubkey_hex) {
     log(LogLevel::debug,
-        "suppress_hooks_stop: " + std::string(pubkey_hex) + "(send: " + bool_to_string(send) +
-                ", store: " + bool_to_string(store) + ")");
+        "suppress_hooks_stop: '" + std::string(pubkey_hex) + "' (send: " + bool_to_string(send) +
+                ", store: " + bool_to_string(store) + ", force: " + bool_to_string(force) + ")");
 
-    // If `_open_suppressions` doesn't contain a value it'll default to {false, false}
-    if ((send && store) || (send && !_open_suppressions[pubkey_hex].second) ||
-        (store && !_open_suppressions[pubkey_hex].first))
+    // If `_open_suppressions` doesn't contain a value it'll default to {0, 0}
+    auto final_send = (send && force ? 0 : _open_suppressions[pubkey_hex].first);
+    auto final_store = (store && force ? 0 : _open_suppressions[pubkey_hex].second);
+
+    if (!force) {
+        final_send =
+                (send ? std::max(0, _open_suppressions[pubkey_hex].first - 1)
+                      : _open_suppressions[pubkey_hex].first);
+        final_store =
+                (store ? std::max(0, _open_suppressions[pubkey_hex].second - 1)
+                       : _open_suppressions[pubkey_hex].second);
+    }
+
+    if (final_send == 0 && final_store == 0)
         _open_suppressions.erase(pubkey_hex);
-    else if (send)
-        _open_suppressions[pubkey_hex] = {false, _open_suppressions[pubkey_hex].second};
-    else if (store)
-        _open_suppressions[pubkey_hex] = {_open_suppressions[pubkey_hex].first, false};
+    else
+        _open_suppressions[pubkey_hex] = {final_send, final_store};
 
-    // Trigger the config change hooks if needed with the relevant pubkey information
-    if (pubkey_hex.substr(0, 2) == "05")
-        config_changed(std::nullopt);  // User config storage
-    else if (pubkey_hex.empty()) {
-        // Update all configs (as it's possible this change affected multiple configs)
-        config_changed(std::nullopt);  // User config storage
+    // If the hooks are still suppressed then don't trigger the 'config_changed' call
+    if (final_send > 0 && final_store > 0)
+        return;
 
-        for (auto& [key, val] : _config_groups) {
-            config_changed(key);  // Group config storage
-        }
-    } else
-        config_changed(pubkey_hex);  // Key-specific configs
+    // Trigger the config change hooks if needed for the specified config
+    config_changed(pubkey_hex);
+
+    // If no pubkey was provided then we want to check for changes across all configs, the
+    // above line will have defaulted to checking the user configs so we now need to check
+    // all group configs
+    if (pubkey_hex.empty())
+        for (auto& [key, val] : _config_groups)
+            config_changed(key);
+}
+
+void State::perform_while_suppressing_hooks(
+        session::config::ConfigSig* conf, std::function<void()> changes) {
+    std::string target_pubkey_hex = _user_x_pk_hex;
+    auto sign_pk = conf->get_sig_pubkey();
+
+    // If we have a signature pubkey then assume it's a group config, use the `03` prefix with that
+    // instead of the user x_pk
+    if (sign_pk)
+        target_pubkey_hex = "03" + oxenc::to_hex(sign_pk->begin(), sign_pk->end());
+
+    suppress_hooks_start(true, true, target_pubkey_hex);
+    changes();
+    suppress_hooks_stop(true, true, false, target_pubkey_hex);
 }
 
 void State::config_changed(std::optional<std::string_view> pubkey_hex) {
-    std::string target_pubkey_hex;
-
-    if (!pubkey_hex || pubkey_hex->substr(0, 2) == "05") {
-        // Convert the _user_pk to the user's session ID
-        std::array<unsigned char, 32> user_x_pk;
-
-        if (0 != crypto_sign_ed25519_pk_to_curve25519(user_x_pk.data(), _user_pk.data()))
-            throw std::runtime_error{"Sender ed25519 pubkey to x25519 pubkey conversion failed"};
-
-        // Everything is good, so just drop A and Y off the message and prepend the '05' prefix to
-        // the sender session ID
-        target_pubkey_hex.reserve(66);
-        target_pubkey_hex += "05";
-        oxenc::to_hex(user_x_pk.begin(), user_x_pk.end(), std::back_inserter(target_pubkey_hex));
-    } else
-        target_pubkey_hex = *pubkey_hex;
+    auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
+    std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
 
     // Check if there both `send` and `store` hooks are suppressed (and if so ignore this change)
-    std::pair<bool, bool> suppressions =
+    std::pair<int, int> suppressions =
             (_open_suppressions.count(target_pubkey_hex) ? _open_suppressions[target_pubkey_hex]
                                                          : _open_suppressions[""]);
 
-    if (suppressions.first && suppressions.second) {
+    if (suppressions.first > 0 && suppressions.second > 0) {
         log(LogLevel::debug, "config_changed: Ignoring due to hooks being suppressed");
         return;
     }
@@ -248,13 +270,13 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
                      std::chrono::system_clock::now().time_since_epoch()) +
              network_offset);
 
-    if (!pubkey_hex || pubkey_hex->substr(0, 2) == "05") {
+    if (!is_group_pubkey) {
         needs_push =
-                (!suppressions.first &&
+                (suppressions.first == 0 &&
                  (config_contacts->needs_push() || config_convo_info_volatile->needs_push() ||
                   config_user_groups->needs_push() || config_user_profile->needs_push()));
         needs_dump =
-                (!suppressions.second &&
+                (suppressions.second == 0 &&
                  (config_contacts->needs_dump() || config_convo_info_volatile->needs_dump() ||
                   config_user_groups->needs_dump() || config_user_profile->needs_dump()));
         configs = {
@@ -264,14 +286,12 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
                 config_user_profile.get()};
     } else {
         // Other namespaces are unique for a given pubkey_hex_
-        if (!pubkey_hex)
-            throw std::invalid_argument{
-                    "config_changed: Invalid pubkey_hex - required for group config changes"};
         if (target_pubkey_hex.size() != 66)
             throw std::invalid_argument{"config_changed: Invalid pubkey_hex - expected 66 bytes"};
         if (!_config_groups.count(target_pubkey_hex))
             throw std::runtime_error{
-                    "config_changed: Change trigger in group configs with no state"};
+                    "config_changed: Change trigger in group configs with no state: " +
+                    target_pubkey_hex};
 
         // Ensure we have the admin key for the group
         auto user_group_info = config_user_groups->get_group(target_pubkey_hex);
@@ -283,12 +303,12 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
 
         // Only group admins can push group config changes
         needs_push =
-                (!suppressions.first && !user_group_info->secretkey.empty() &&
+                (suppressions.first == 0 && !user_group_info->secretkey.empty() &&
                  (_config_groups[target_pubkey_hex]->config_info->needs_push() ||
                   _config_groups[target_pubkey_hex]->config_members->needs_push() ||
                   _config_groups[target_pubkey_hex]->config_keys->pending_config()));
         needs_dump =
-                (!suppressions.second &&
+                (suppressions.second == 0 &&
                  (_config_groups[target_pubkey_hex]->config_info->needs_dump() ||
                   _config_groups[target_pubkey_hex]->config_members->needs_dump() ||
                   _config_groups[target_pubkey_hex]->config_keys->needs_dump()));
@@ -299,16 +319,16 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
     }
 
     std::string send_info =
-            (suppressions.first ? "send suppressed"
-                                : ("needs send: " + bool_to_string(needs_push)));
+            (suppressions.first > 0 ? "send suppressed"
+                                    : ("needs send: " + bool_to_string(needs_push)));
     std::string store_info =
-            (suppressions.second ? "store suppressed"
-                                 : ("needs store: " + bool_to_string(needs_dump)));
+            (suppressions.second > 0 ? "store suppressed"
+                                     : ("needs store: " + bool_to_string(needs_dump)));
     log(LogLevel::debug,
         "config_changed: " + info_title + " (" + send_info + ", " + store_info + ")");
 
     // Call the hook to store the dump if needed
-    if (_store && needs_dump && !suppressions.second) {
+    if (_store && needs_dump && suppressions.second == 0) {
         for (auto& config : configs) {
             if (!config->needs_dump())
                 continue;
@@ -321,7 +341,7 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
         }
 
         // GroupKeys needs special handling as it's not a `ConfigBase`
-        if (pubkey_hex && _config_groups[target_pubkey_hex]->config_keys->needs_dump()) {
+        if (is_group_pubkey && _config_groups[target_pubkey_hex]->config_keys->needs_dump()) {
             log(LogLevel::debug,
                 "config_changed: Group Keys config for " + target_pubkey_hex + " needs_dump");
             auto keys_config = _config_groups[target_pubkey_hex]->config_keys.get();
@@ -334,7 +354,7 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
     }
 
     // Call the hook to perform a push if needed
-    if (_send && needs_push && !suppressions.first) {
+    if (_send && needs_push && suppressions.first == 0) {
         std::vector<nlohmann::json> requests;
         std::vector<std::string> obsolete_hashes;
 
@@ -388,7 +408,7 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
         }
 
         // GroupKeys needs special handling as it's not a `ConfigBase`
-        if (pubkey_hex) {
+        if (is_group_pubkey) {
             auto config = _config_groups[target_pubkey_hex]->config_keys.get();
             auto pending = config->pending_config();
 
@@ -512,23 +532,8 @@ std::vector<std::string> State::merge(
     bool is_group_merge = false;
     std::vector<std::string> good_hashes;
     std::vector<std::pair<std::string, ustring_view>> pending_configs;
-    std::string target_pubkey_hex;
-
-    if (!pubkey_hex || pubkey_hex->substr(0, 2) == "05") {
-        // Convert the _user_pk to the user's session ID
-        std::array<unsigned char, 32> user_x_pk;
-
-        if (0 != crypto_sign_ed25519_pk_to_curve25519(user_x_pk.data(), _user_pk.data()))
-            throw std::runtime_error{
-                    "merge: Sender ed25519 pubkey to x25519 pubkey conversion failed"};
-
-        // Everything is good, so just drop A and Y off the message and prepend the '05' prefix to
-        // the sender session ID
-        target_pubkey_hex.reserve(66);
-        target_pubkey_hex += "05";
-        oxenc::to_hex(user_x_pk.begin(), user_x_pk.end(), std::back_inserter(target_pubkey_hex));
-    } else
-        target_pubkey_hex = *pubkey_hex;
+    auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
+    std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
 
     // Suppress triggering the `send` hook until the merge is complete
     suppress_hooks_start(true, false, target_pubkey_hex);
@@ -612,7 +617,7 @@ std::vector<std::string> State::merge(
 
     // Now that all of the merges have been completed we stop suppressing the `send` hook which
     // will be triggered if there is a pending push
-    suppress_hooks_stop(true, false, target_pubkey_hex);
+    suppress_hooks_stop(true, false, false, target_pubkey_hex);
 
     log(LogLevel::debug, "merge: Complete");
     return good_hashes;
@@ -621,7 +626,7 @@ std::vector<std::string> State::merge(
 std::vector<std::string> State::current_hashes(std::optional<std::string_view> pubkey_hex) {
     std::vector<std::string> result;
 
-    if (!pubkey_hex || pubkey_hex->substr(0, 2) == "05") {
+    if (!pubkey_hex || pubkey_hex->empty() || pubkey_hex->substr(0, 2) == "05") {
         auto contact_hashes = config_contacts->current_hashes();
         auto convo_info_volatile_hashes = config_convo_info_volatile->current_hashes();
         auto user_group_hashes = config_user_groups->current_hashes();

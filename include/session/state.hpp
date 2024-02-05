@@ -82,14 +82,15 @@ struct config_message {
 
 class State {
   private:
-    // Storage of pubkeys which are currently being suppressed, the value specifies whether the
-    // `send` or `store` hook is suppressed.
-    std::map<std::string_view, std::pair<bool, bool>> _open_suppressions = {};
+    // Storage of pubkeys which are currently being suppressed, the value specifies how many active
+    // suppressions the `send` or `store` hooks have.
+    std::map<std::string_view, std::pair<int, int>> _open_suppressions = {};
     std::map<std::string_view, std::unique_ptr<GroupConfigs>> _config_groups;
 
   protected:
     Ed25519PubKey _user_pk;
     Ed25519Secret _user_sk;
+    std::string _user_x_pk_hex;
 
     std::function<void(
             config::Namespace namespace_,
@@ -206,6 +207,10 @@ class State {
     /// should be used when making multiple config changes to avoid sending and storing unnecessary
     /// partial changes.
     ///
+    /// Calling this function multiple times will result in multiple suppressions
+    /// for the specified hook, `suppress_hooks_stop` will need to be called multiple times (or with
+    /// `force = true`) in order for the hooks to start being triggered again.
+    ///
     /// Inputs:
     /// - `send` -- controls whether the `send` hook should be suppressed.
     /// - `store` -- controls whether the `store` hook should be suppressed.
@@ -218,19 +223,43 @@ class State {
 
     /// API: state/State::suppress_hooks_stop
     ///
-    /// This will stop suppressing the `send` and `store` hooks. When this is called, if there are
-    /// any pending changes, the `send` and `store` hooks will immediately be called.
+    /// This will remove a single supression for the `send` and `store` hooks. When this is called,
+    /// if there are are no more supresssions and any pending changes, the `send` and `store` hooks
+    /// will immediately be called.
+    ///
+    /// Calling this function with `force = true` will result in all supressions being removed.
     ///
     /// Inputs:
     /// - `send` -- controls whether the `send` hook should no longer be suppressed.
     /// - `store` -- controls whether the `store` hook should no longer be suppressed.
+    /// - `force` -- controls whether we should clear out multiple suppressions for the specified
+    /// hooks or just a single suppression.
     /// - `pubkey_hex` -- pubkey to stop suppressing changes for (in hex, with prefix - 66 bytes).
     /// If the value provided doesn't match a entry created by `suppress_hooks_start` those
     /// changes will continue to be suppressed. If none is provided then the hooks for all configs
     /// with pending changes will be triggered.
     ///
     /// Outputs: None
-    void suppress_hooks_stop(bool send = true, bool store = true, std::string_view pubkey_hex = "");
+    void suppress_hooks_stop(
+            bool send = true,
+            bool store = true,
+            bool force = false,
+            std::string_view pubkey_hex = "");
+
+    /// API: state/State::perform_while_suppressing_hooks
+    ///
+    /// This will prevent the `send` and `store` hooks from being called while the `changes`
+    /// function is running. Upon completion of `changes` the hooks will be triggered if there are
+    /// any pending changes.
+    ///
+    /// Inputs:
+    /// - `conf` -- a pointer to the config which the changes are occurring on (this will be used to
+    /// extract the target pubkey).
+    /// - `changes` -- a function encapsulating the desired changes.
+    ///
+    /// Outputs: None
+    void perform_while_suppressing_hooks(
+            session::config::ConfigSig* conf, std::function<void()> changes);
 
     /// API: state/State::merge
     ///

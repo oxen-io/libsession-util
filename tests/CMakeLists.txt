@@ -31,6 +31,7 @@ target_link_libraries(testAll PRIVATE
     libsession::onionreq
     libsession::state
     libsodium::sodium-internal
+    nlohmann_json::nlohmann_json
     Catch2::Catch2WithMain)
 
 add_custom_target(check COMMAND testAll)

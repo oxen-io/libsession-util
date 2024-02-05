@@ -1,11 +1,11 @@
 #include <oxenc/hex.h>
-#include <session/config/user_profile.hpp>
 #include <session/config/encrypt.h>
-#include <session/util.hpp>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstring>
+#include <session/config/user_profile.hpp>
+#include <session/util.hpp>
 #include <string_view>
 
 #include "utils.hpp"
@@ -17,7 +17,7 @@ void log_msg(session::config::LogLevel lvl, std::string msg) {
     INFO((lvl == session::config::LogLevel::error     ? "ERROR"
           : lvl == session::config::LogLevel::warning ? "Warning"
           : lvl == session::config::LogLevel::info    ? "Info"
-                                     : "debug")
+                                                      : "debug")
          << ": " << msg);
 }
 
@@ -83,7 +83,8 @@ TEST_CASE("user profile", "[config][user_profile]") {
     {
         // These don't stay alive, so we use set_key/set_url to make a local copy:
         ustring key = "secret78901234567890123456789012"_bytes;
-        std::string url = "http://example.org/omg-pic-123.bmp";  // NB: length must be < sizeof(p.url)!
+        std::string url =
+                "http://example.org/omg-pic-123.bmp";  // NB: length must be < sizeof(p.url)!
         p.set_key(std::move(key));
         p.url = std::move(url);
     }
@@ -109,8 +110,8 @@ TEST_CASE("user profile", "[config][user_profile]") {
     CHECK(conf.needs_push());
     CHECK(conf.needs_dump());
     std::tie(seqno, to_push, obs) = conf.push();
-    CHECK(seqno == 1);           // incremented since we made changes (this only increments once
-                                 // between dumps; even though we changed two fields here).
+    CHECK(seqno == 1);  // incremented since we made changes (this only increments once
+                        // between dumps; even though we changed two fields here).
 
     // The hash of a completely empty, initial seqno=0 message:
     auto exp_hash0 = "ea173b57beca8af18c3519a7bbf69c3e7a05d1c049fa9558341d8ebb48b0c965"_hexbytes;
@@ -150,7 +151,7 @@ TEST_CASE("user profile", "[config][user_profile]") {
     CHECK(conf.needs_dump());
     // We did call push, but we haven't confirmed it as stored yet, so this will still return true:
     CHECK(conf.needs_push());
-    
+
     auto dump1 = conf.dump();
     // (in a real client we'd now store this to disk)
 
@@ -170,8 +171,8 @@ TEST_CASE("user profile", "[config][user_profile]") {
     conf.confirm_pushed(seqno, "fakehash1");
 
     CHECK_FALSE(conf.needs_push());
-    CHECK(conf.needs_dump());          // The confirmation changes state, so this makes us need a dump
-                                       // again.
+    CHECK(conf.needs_dump());  // The confirmation changes state, so this makes us need a dump
+                               // again.
     dump1 = conf.dump();
 
     // clang-format off

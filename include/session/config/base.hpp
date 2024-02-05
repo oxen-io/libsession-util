@@ -142,10 +142,6 @@ class ConfigSig {
 /// sub-types.
 class ConfigBase : public ConfigSig {
   private:
-    // The parent state which owns this config object. By providing a pointer to the parent state
-    // we can inform the parent when changes occur.
-    std::optional<session::state::State*> _parent_state;
-
     // The object (either base config message or MutableConfigMessage) that stores the current
     // config message.  Subclasses do not directly access this: instead they call `dirty()` if they
     // intend to make changes, or the `set_config_field` wrapper.
@@ -174,6 +170,10 @@ class ConfigBase : public ConfigSig {
     std::unordered_set<std::string> _old_hashes;
 
   protected:
+    // The parent state which owns this config object. By providing a pointer to the parent state
+    // we can inform the parent when changes occur.
+    std::optional<session::state::State*> _parent_state;
+
     // Constructs a base config by loading the data from a dump as produced by `dump()`.  If the
     // dump is nullopt then an empty base config is constructed with no config settings and seqno
     // set to 0.
