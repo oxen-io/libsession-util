@@ -19,9 +19,8 @@ namespace session::config::groups {
 Info::Info(
         ustring_view ed25519_pubkey,
         std::optional<ustring_view> ed25519_secretkey,
-        std::optional<ustring_view> dumped,
-        std::optional<session::state::State*> parent_state) :
-        ConfigBase{parent_state, dumped, ed25519_pubkey, ed25519_secretkey},
+        std::optional<ustring_view> dumped) :
+        ConfigBase{dumped, ed25519_pubkey, ed25519_secretkey},
         id{"03" + oxenc::to_hex(ed25519_pubkey.begin(), ed25519_pubkey.end())} {}
 
 std::optional<std::string_view> Info::get_name() const {

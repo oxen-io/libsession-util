@@ -32,11 +32,10 @@ enum class RequestType : std::uint8_t {
 };
 
 GroupConfigs::GroupConfigs(ustring_view pubkey, ustring_view user_sk) {
-    auto info = std::make_unique<groups::Info>(pubkey, std::nullopt, std::nullopt, std::nullopt);
-    auto members =
-            std::make_unique<groups::Members>(pubkey, std::nullopt, std::nullopt, std::nullopt);
+    auto info = std::make_unique<groups::Info>(pubkey, std::nullopt, std::nullopt);
+    auto members = std::make_unique<groups::Members>(pubkey, std::nullopt, std::nullopt);
     auto keys = std::make_unique<groups::Keys>(
-            user_sk, pubkey, std::nullopt, std::nullopt, *info, *members, std::nullopt);
+            user_sk, pubkey, std::nullopt, std::nullopt, *info, *members);
     config_info = std::move(info);
     config_members = std::move(members);
     config_keys = std::move(keys);
@@ -71,46 +70,53 @@ State::State(ustring_view ed25519_secretkey, std::vector<namespaced_dump> dumps)
     }
 
     // Initialise empty config states for any missing required config types
-    std::optional<session::state::State*> parent = this;
+    if (!config_contacts) {
+        config_contacts = std::make_unique<Contacts>(ed25519_secretkey, std::nullopt);
+        add_child_logger(config_contacts);
+    }
 
-    if (!config_contacts)
-        config_contacts = std::make_unique<Contacts>(ed25519_secretkey, std::nullopt, parent);
-
-    if (!config_convo_info_volatile)
+    if (!config_convo_info_volatile) {
         config_convo_info_volatile =
-                std::make_unique<ConvoInfoVolatile>(ed25519_secretkey, std::nullopt, parent);
+                std::make_unique<ConvoInfoVolatile>(ed25519_secretkey, std::nullopt);
+        add_child_logger(config_convo_info_volatile);
+    }
 
-    if (!config_user_groups)
-        config_user_groups = std::make_unique<UserGroups>(ed25519_secretkey, std::nullopt, parent);
+    if (!config_user_groups) {
+        config_user_groups = std::make_unique<UserGroups>(ed25519_secretkey, std::nullopt);
+        add_child_logger(config_user_groups);
+    }
 
-    if (!config_user_profile)
-        config_user_profile =
-                std::make_unique<UserProfile>(ed25519_secretkey, std::nullopt, parent);
+    if (!config_user_profile) {
+        config_user_profile = std::make_unique<UserProfile>(ed25519_secretkey, std::nullopt);
+        add_child_logger(config_user_profile);
+    }
 }
 
 void State::load(
         Namespace namespace_, std::optional<std::string_view> pubkey_hex_, ustring_view dump) {
-    std::optional<session::state::State*> parent = this;
-
     switch (namespace_) {
         case Namespace::Contacts:
             config_contacts =
-                    std::make_unique<Contacts>(to_unsigned_sv({_user_sk.data(), 64}), dump, parent);
+                    std::make_unique<Contacts>(to_unsigned_sv({_user_sk.data(), 64}), dump);
+            add_child_logger(config_contacts);
             return;
 
         case Namespace::ConvoInfoVolatile:
             config_convo_info_volatile = std::make_unique<ConvoInfoVolatile>(
-                    to_unsigned_sv({_user_sk.data(), 64}), dump, parent);
+                    to_unsigned_sv({_user_sk.data(), 64}), dump);
+            add_child_logger(config_convo_info_volatile);
             return;
 
         case Namespace::UserGroups:
-            config_user_groups = std::make_unique<UserGroups>(
-                    to_unsigned_sv({_user_sk.data(), 64}), dump, parent);
+            config_user_groups =
+                    std::make_unique<UserGroups>(to_unsigned_sv({_user_sk.data(), 64}), dump);
+            add_child_logger(config_user_groups);
             return;
 
         case Namespace::UserProfile:
-            config_user_profile = std::make_unique<UserProfile>(
-                    to_unsigned_sv({_user_sk.data(), 64}), dump, parent);
+            config_user_profile =
+                    std::make_unique<UserProfile>(to_unsigned_sv({_user_sk.data(), 64}), dump);
+            add_child_logger(config_user_profile);
             return;
 
         default: break;
@@ -152,114 +158,28 @@ void State::load(
     }
 
     // Reload the specified namespace with the dump
-    if (namespace_ == Namespace::GroupInfo)
+    if (namespace_ == Namespace::GroupInfo) {
         _config_groups[pubkey_hex]->config_info =
-                std::make_unique<groups::Info>(pubkey_sv, group_ed25519_secretkey, dump, parent);
-    else if (namespace_ == Namespace::GroupMembers)
+                std::make_unique<groups::Info>(pubkey_sv, group_ed25519_secretkey, dump);
+        add_child_logger(_config_groups[pubkey_hex]->config_info);
+    } else if (namespace_ == Namespace::GroupMembers) {
         _config_groups[pubkey_hex]->config_members =
-                std::make_unique<groups::Members>(pubkey_sv, group_ed25519_secretkey, dump, parent);
-    else if (namespace_ == Namespace::GroupKeys) {
+                std::make_unique<groups::Members>(pubkey_sv, group_ed25519_secretkey, dump);
+        add_child_logger(_config_groups[pubkey_hex]->config_members);
+    } else if (namespace_ == Namespace::GroupKeys) {
         auto info = _config_groups[pubkey_hex]->config_info.get();
         auto members = _config_groups[pubkey_hex]->config_members.get();
         auto keys = std::make_unique<groups::Keys>(
-                user_ed25519_secretkey,
-                pubkey_sv,
-                group_ed25519_secretkey,
-                dump,
-                info,
-                members,
-                parent);
-
+                user_ed25519_secretkey, pubkey_sv, group_ed25519_secretkey, dump, *info, *members);
         _config_groups[pubkey_hex]->config_keys = std::move(keys);
     } else
         throw std::runtime_error{"Attempted to load unknown namespace"};
 }
 
-GroupConfigs* State::group_config(std::string_view pubkey_hex) {
-    if (pubkey_hex.size() != 64)
-        throw std::invalid_argument{"Invalid pubkey_hex: expected 64 bytes"};
-    if (!_config_groups.count(pubkey_hex))
-        throw std::runtime_error{
-                "Attempted to merge group configs before for group with no config state"};
-
-    return _config_groups[pubkey_hex].get();
-}
-
-void State::suppress_hooks_start(bool send, bool store, std::string_view pubkey_hex) {
-    log(LogLevel::debug,
-        "suppress_hooks_start: " + std::string(pubkey_hex) + "(send: " + bool_to_string(send) +
-                ", store: " + bool_to_string(store) + ")");
-    _open_suppressions[pubkey_hex] = {
-            _open_suppressions[pubkey_hex].first + (send ? 1 : 0),
-            _open_suppressions[pubkey_hex].second + (store ? 1 : 0)};
-}
-
-void State::suppress_hooks_stop(bool send, bool store, bool force, std::string_view pubkey_hex) {
-    log(LogLevel::debug,
-        "suppress_hooks_stop: '" + std::string(pubkey_hex) + "' (send: " + bool_to_string(send) +
-                ", store: " + bool_to_string(store) + ", force: " + bool_to_string(force) + ")");
-
-    // If `_open_suppressions` doesn't contain a value it'll default to {0, 0}
-    auto final_send = (send && force ? 0 : _open_suppressions[pubkey_hex].first);
-    auto final_store = (store && force ? 0 : _open_suppressions[pubkey_hex].second);
-
-    if (!force) {
-        final_send =
-                (send ? std::max(0, _open_suppressions[pubkey_hex].first - 1)
-                      : _open_suppressions[pubkey_hex].first);
-        final_store =
-                (store ? std::max(0, _open_suppressions[pubkey_hex].second - 1)
-                       : _open_suppressions[pubkey_hex].second);
-    }
-
-    if (final_send == 0 && final_store == 0)
-        _open_suppressions.erase(pubkey_hex);
-    else
-        _open_suppressions[pubkey_hex] = {final_send, final_store};
-
-    // If the hooks are still suppressed then don't trigger the 'config_changed' call
-    if (final_send > 0 && final_store > 0)
-        return;
-
-    // Trigger the config change hooks if needed for the specified config
-    config_changed(pubkey_hex);
-
-    // If no pubkey was provided then we want to check for changes across all configs, the
-    // above line will have defaulted to checking the user configs so we now need to check
-    // all group configs
-    if (pubkey_hex.empty())
-        for (auto& [key, val] : _config_groups)
-            config_changed(key);
-}
-
-void State::perform_while_suppressing_hooks(
-        session::config::ConfigSig* conf, std::function<void()> changes) {
-    std::string target_pubkey_hex = _user_x_pk_hex;
-    auto sign_pk = conf->get_sig_pubkey();
-
-    // If we have a signature pubkey then assume it's a group config, use the `03` prefix with that
-    // instead of the user x_pk
-    if (sign_pk)
-        target_pubkey_hex = "03" + oxenc::to_hex(sign_pk->begin(), sign_pk->end());
-
-    suppress_hooks_start(true, true, target_pubkey_hex);
-    changes();
-    suppress_hooks_stop(true, true, false, target_pubkey_hex);
-}
-
-void State::config_changed(std::optional<std::string_view> pubkey_hex) {
+void State::config_changed(
+        std::optional<std::string_view> pubkey_hex, bool allow_store, bool allow_send) {
     auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
     std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
-
-    // Check if there both `send` and `store` hooks are suppressed (and if so ignore this change)
-    std::pair<int, int> suppressions =
-            (_open_suppressions.count(target_pubkey_hex) ? _open_suppressions[target_pubkey_hex]
-                                                         : _open_suppressions[""]);
-
-    if (suppressions.first > 0 && suppressions.second > 0) {
-        log(LogLevel::debug, "config_changed: Ignoring due to hooks being suppressed");
-        return;
-    }
 
     std::string info_title = "User configs";
     bool needs_push = false;
@@ -272,11 +192,11 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
 
     if (!is_group_pubkey) {
         needs_push =
-                (suppressions.first == 0 &&
+                (allow_send &&
                  (config_contacts->needs_push() || config_convo_info_volatile->needs_push() ||
                   config_user_groups->needs_push() || config_user_profile->needs_push()));
         needs_dump =
-                (suppressions.second == 0 &&
+                (allow_store &&
                  (config_contacts->needs_dump() || config_convo_info_volatile->needs_dump() ||
                   config_user_groups->needs_dump() || config_user_profile->needs_dump()));
         configs = {
@@ -303,15 +223,14 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
 
         // Only group admins can push group config changes
         needs_push =
-                (suppressions.first == 0 && !user_group_info->secretkey.empty() &&
+                (allow_send && !user_group_info->secretkey.empty() &&
                  (_config_groups[target_pubkey_hex]->config_info->needs_push() ||
                   _config_groups[target_pubkey_hex]->config_members->needs_push() ||
                   _config_groups[target_pubkey_hex]->config_keys->pending_config()));
         needs_dump =
-                (suppressions.second == 0 &&
-                 (_config_groups[target_pubkey_hex]->config_info->needs_dump() ||
-                  _config_groups[target_pubkey_hex]->config_members->needs_dump() ||
-                  _config_groups[target_pubkey_hex]->config_keys->needs_dump()));
+                (allow_store && (_config_groups[target_pubkey_hex]->config_info->needs_dump() ||
+                                 _config_groups[target_pubkey_hex]->config_members->needs_dump() ||
+                                 _config_groups[target_pubkey_hex]->config_keys->needs_dump()));
         configs = {
                 _config_groups[target_pubkey_hex]->config_info.get(),
                 _config_groups[target_pubkey_hex]->config_members.get()};
@@ -319,16 +238,14 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
     }
 
     std::string send_info =
-            (suppressions.first > 0 ? "send suppressed"
-                                    : ("needs send: " + bool_to_string(needs_push)));
+            (!allow_send ? "send suppressed" : ("needs send: " + bool_to_string(needs_push)));
     std::string store_info =
-            (suppressions.second > 0 ? "store suppressed"
-                                     : ("needs store: " + bool_to_string(needs_dump)));
+            (!allow_store ? "store suppressed" : ("needs store: " + bool_to_string(needs_dump)));
     log(LogLevel::debug,
         "config_changed: " + info_title + " (" + send_info + ", " + store_info + ")");
 
     // Call the hook to store the dump if needed
-    if (_store && needs_dump && suppressions.second == 0) {
+    if (_store && needs_dump && allow_store) {
         for (auto& config : configs) {
             if (!config->needs_dump())
                 continue;
@@ -354,7 +271,7 @@ void State::config_changed(std::optional<std::string_view> pubkey_hex) {
     }
 
     // Call the hook to perform a push if needed
-    if (_send && needs_push && suppressions.first == 0) {
+    if (_send && needs_push && allow_send) {
         std::vector<nlohmann::json> requests;
         std::vector<std::string> obsolete_hashes;
 
@@ -535,9 +452,6 @@ std::vector<std::string> State::merge(
     auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
     std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
 
-    // Suppress triggering the `send` hook until the merge is complete
-    suppress_hooks_start(true, false, target_pubkey_hex);
-
     for (size_t i = 0; i < sorted_configs.size(); ++i) {
         auto& config = sorted_configs[i];
 
@@ -566,21 +480,25 @@ std::vector<std::string> State::merge(
             case Namespace::Contacts:
                 merged_hashes = config_contacts->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
+                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             case Namespace::ConvoInfoVolatile:
                 merged_hashes = config_convo_info_volatile->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
+                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             case Namespace::UserGroups:
                 merged_hashes = config_user_groups->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
+                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             case Namespace::UserProfile:
                 merged_hashes = config_user_profile->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
+                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             default: break;
@@ -613,11 +531,13 @@ std::vector<std::string> State::merge(
             }
         } else
             throw std::runtime_error{"merge: Attempted to merge from unknown namespace"};
+
+        config_changed(target_pubkey_hex, true, false);  // Immediately store changes
     }
 
-    // Now that all of the merges have been completed we stop suppressing the `send` hook which
-    // will be triggered if there is a pending push
-    suppress_hooks_stop(true, false, false, target_pubkey_hex);
+    // Now that all of the merges have been completed we want to trigger the `send` hook if
+    // there is a pending push
+    config_changed(target_pubkey_hex, false, true);
 
     log(LogLevel::debug, "merge: Complete");
     return good_hashes;
@@ -732,6 +652,9 @@ ustring State::dump(config::Namespace namespace_, std::optional<std::string_view
 void State::received_send_response(std::string pubkey, ustring response, ustring ctx) {
     auto ctx_json = nlohmann::json::parse(ctx);
 
+    if (pubkey.size() != 66)
+        throw std::invalid_argument{
+                "received_send_response: Invalid pubkey - expected 66 characters"};
     if (!ctx_json.contains("type"))
         throw std::invalid_argument{
                 "received_send_response: Invalid ctx - expected to contain 'type'"};
@@ -751,6 +674,9 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
     log(LogLevel::debug, "handle_config_push_response: Called");
     auto response_json = nlohmann::json::parse(response);
 
+    if (pubkey.size() != 66)
+        throw std::invalid_argument{
+                "handle_config_push_response: Invalid pubkey - expected 66 characters"};
     if (!response_json.contains("results"))
         throw std::invalid_argument{
                 "handle_config_push_response: Invalid response - expected to contain 'results' "
@@ -845,15 +771,6 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
         }
 
         // Other namespaces are unique for a given pubkey
-        if (!ctx_json.contains("pubkey"))
-            throw std::invalid_argument{
-                    "handle_config_push_response: Invalid ctx - Missing 'pubkey' for group config "
-                    "push."};
-
-        auto pubkey = ctx_json["pubkey"].get<std::string>();
-        if (pubkey.size() != 66)
-            throw std::invalid_argument{
-                    "handle_config_push_response: Invalid ctx.pubkey - expected 66 characters"};
         if (!_config_groups.count(pubkey))
             throw std::runtime_error{"handle_config_push_response: Unable to retrieve group"};
 
@@ -870,6 +787,145 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
                         "handle_config_push_response: Attempted to load unknown namespace"};
         }
     }
+
+    // Now that we have confirmed the push we need to store the configs again
+    config_changed(pubkey, true, false);
+
     log(LogLevel::debug, "handle_config_push_response: Completed");
 }
+
+std::vector<ustring_view> State::get_keys(
+        Namespace namespace_, std::optional<std::string_view> pubkey_hex_) {
+    switch (namespace_) {
+        case Namespace::Contacts: return config_contacts->get_keys();
+        case Namespace::ConvoInfoVolatile: return config_convo_info_volatile->get_keys();
+        case Namespace::UserGroups: return config_user_groups->get_keys();
+        case Namespace::UserProfile: return config_user_profile->get_keys();
+        default: break;
+    }
+
+    // Other namespaces are unique for a given pubkey_hex_
+    if (!pubkey_hex_)
+        throw std::invalid_argument{
+                "Invalid pubkey_hex: pubkey_hex required for group config namespaces"};
+    if (pubkey_hex_->size() != 64)
+        throw std::invalid_argument{"Invalid pubkey_hex: expected 64 bytes"};
+    if (!_config_groups.count(*pubkey_hex_))
+        throw std::runtime_error{"Unable to retrieve group"};
+
+    // Retrieve the group configs for this pubkey
+    auto group_configs = _config_groups[*pubkey_hex_].get();
+
+    switch (namespace_) {
+        case Namespace::GroupInfo: return group_configs->config_info->get_keys();
+        case Namespace::GroupMembers: return group_configs->config_members->get_keys();
+        case Namespace::GroupKeys: return group_configs->config_keys->group_keys();
+        default: throw std::runtime_error{"Attempted to load unknown namespace"};
+    }
+}
+
+void State::validate_group_pubkey(std::string_view pubkey_hex) const {
+    if (pubkey_hex.size() != 66)
+        throw std::invalid_argument{"config: Invalid pubkey_hex - expected 66 bytes"};
+    if (!_config_groups.count(pubkey_hex))
+        throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
+}
+
+// Template functions
+
+template <typename ConfigType>
+void State::add_child_logger(ConfigType& config) {
+    config->logger = [this](LogLevel lvl, std::string msg) { log(lvl, msg); };
+}
+
+template <typename ConfigType>
+const ConfigType& State::config() const {
+    throw std::runtime_error{"config: Attempted to retrieve config for unknown namespace"};
+};
+
+template <typename ConfigType>
+const ConfigType& State::config(std::string_view pubkey_hex) const {
+    throw std::runtime_error{"config: Attempted to retrieve config for unknown namespace"};
+};
+
+template <>
+const Contacts& State::config() const {
+    return *config_contacts;
+}
+
+template <>
+const ConvoInfoVolatile& State::config() const {
+    return *config_convo_info_volatile;
+};
+
+template <>
+const UserGroups& State::config() const {
+    return *config_user_groups;
+};
+
+template <>
+const UserProfile& State::config() const {
+    return *config_user_profile;
+};
+
+template <>
+const groups::Info& State::config(std::string_view pubkey_hex) const {
+    validate_group_pubkey(pubkey_hex);
+
+    if (auto it = _config_groups.find(pubkey_hex); it != _config_groups.end())
+        return *it->second->config_info;
+
+    throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
+};
+
+template <>
+const groups::Members& State::config(std::string_view pubkey_hex) const {
+    validate_group_pubkey(pubkey_hex);
+
+    if (auto it = _config_groups.find(pubkey_hex); it != _config_groups.end())
+        return *it->second->config_members;
+
+    throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
+};
+
+template <>
+const groups::Keys& State::config(std::string_view pubkey_hex) const {
+    if (auto it = _config_groups.find(pubkey_hex); it != _config_groups.end())
+        return *it->second->config_keys;
+
+    throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
+};
+
+MutableUserConfigs State::mutableConfig(
+        std::optional<std::function<void(std::string_view err)>> set_error) {
+    return MutableUserConfigs(
+            this,
+            *config_contacts,
+            *config_convo_info_volatile,
+            *config_user_groups,
+            *config_user_profile,
+            set_error);
+};
+
+MutableUserConfigs::~MutableUserConfigs() {
+    parent_state->config_changed();
+};
+
+MutableGroupConfigs State::mutableConfig(
+        std::string_view pubkey_hex,
+        std::optional<std::function<void(std::string_view err)>> set_error) {
+    validate_group_pubkey(pubkey_hex);
+    return MutableGroupConfigs(
+            this,
+            *_config_groups[pubkey_hex]->config_info,
+            *_config_groups[pubkey_hex]->config_members,
+            *_config_groups[pubkey_hex]->config_keys,
+            set_error);
+};
+
+MutableGroupConfigs::~MutableGroupConfigs() {
+    if (auto sign_pk = info.get_sig_pubkey())
+        parent_state->config_changed("03" + oxenc::to_hex(sign_pk->begin(), sign_pk->end()));
+};
+
 }  // namespace session::state

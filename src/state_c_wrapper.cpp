@@ -29,26 +29,6 @@ using namespace session::state;
 
 LIBSESSION_C_API const size_t PROFILE_PIC_MAX_URL_LENGTH = profile_pic::MAX_URL_LENGTH;
 
-namespace {
-State& unbox(state_object* state) {
-    assert(state && state->internals);
-    return *static_cast<State*>(state->internals);
-}
-const State& unbox(const state_object* state) {
-    assert(state && state->internals);
-    return *static_cast<const State*>(state->internals);
-}
-
-bool set_error(state_object* state, std::string_view e) {
-    if (e.size() > 255)
-        e.remove_suffix(e.size() - 255);
-    std::memcpy(state->_error_buf, e.data(), e.size());
-    state->_error_buf[e.size()] = 0;
-    state->last_error = state->_error_buf;
-    return false;
-}
-}  // namespace
-
 extern "C" {
 
 // Util Functions
@@ -226,34 +206,6 @@ LIBSESSION_C_API int64_t state_network_offset(state_object* state) {
     return unbox(state).network_offset.count();
 }
 
-LIBSESSION_C_API bool state_suppress_hooks_start(
-        state_object* state, bool send, bool store, const char* pubkey_hex_) {
-    try {
-        std::string_view pubkey_hex = "";
-        if (pubkey_hex_)
-            pubkey_hex = {pubkey_hex_, 66};
-
-        unbox(state).suppress_hooks_start(send, store, pubkey_hex);
-        return true;
-    } catch (const std::exception& e) {
-        return set_error(state, e.what());
-    }
-}
-
-LIBSESSION_C_API bool state_suppress_hooks_stop(
-        state_object* state, bool send, bool store, bool force, const char* pubkey_hex_) {
-    try {
-        std::string_view pubkey_hex = "";
-        if (pubkey_hex_)
-            pubkey_hex = {pubkey_hex_, 66};
-
-        unbox(state).suppress_hooks_stop(send, store, force, pubkey_hex);
-        return true;
-    } catch (const std::exception& e) {
-        return set_error(state, e.what());
-    }
-}
-
 LIBSESSION_C_API bool state_merge(
         state_object* state,
         const char* pubkey_hex_,
@@ -355,113 +307,80 @@ LIBSESSION_C_API bool state_received_send_response(
     }
 }
 
-// User Profile Functions
-
-LIBSESSION_C_API const char* state_get_profile_name(const state_object* state) {
-    if (auto s = unbox(state).config_user_profile->get_name())
-        return s->data();
-    return nullptr;
-}
-
-LIBSESSION_C_API void state_set_profile_name(state_object* state, const char* name) {
-    unbox(state).config_user_profile->set_name(name);
-}
-
-LIBSESSION_C_API user_profile_pic state_get_profile_pic(const state_object* state) {
-    user_profile_pic p;
-    if (auto pic = unbox(state).config_user_profile->get_profile_pic(); pic) {
-        copy_c_str(p.url, pic.url);
-        std::memcpy(p.key, pic.key.data(), 32);
-    } else {
-        p.url[0] = 0;
-    }
-    return p;
-}
-
-LIBSESSION_C_API void state_set_profile_pic(state_object* state, user_profile_pic pic) {
-    std::string_view url{pic.url};
-    ustring_view key;
-    if (!url.empty())
-        key = {pic.key, 32};
-
-    unbox(state).config_user_profile->set_profile_pic(url, key);
-}
-
-LIBSESSION_C_API int state_get_profile_nts_priority(const state_object* state) {
-    return unbox(state).config_user_profile->get_nts_priority();
-}
-
-LIBSESSION_C_API void state_set_profile_nts_priority(state_object* state, int priority) {
-    unbox(state).config_user_profile->set_nts_priority(priority);
-}
-
-LIBSESSION_C_API int state_get_profile_nts_expiry(const state_object* state) {
-    return unbox(state).config_user_profile->get_nts_expiry().value_or(0s).count();
-}
-
-LIBSESSION_C_API void state_set_profile_nts_expiry(state_object* state, int expiry) {
-    unbox(state).config_user_profile->set_nts_expiry(std::max(0, expiry) * 1s);
-}
-
-LIBSESSION_C_API int state_get_profile_blinded_msgreqs(const state_object* state) {
-    if (auto opt = unbox(state).config_user_profile->get_blinded_msgreqs())
-        return static_cast<int>(*opt);
-    return -1;
-}
-
-LIBSESSION_C_API void state_set_profile_blinded_msgreqs(state_object* state, int enabled) {
-    std::optional<bool> val;
-    if (enabled >= 0)
-        val = static_cast<bool>(enabled);
-    unbox(state).config_user_profile->set_blinded_msgreqs(std::move(val));
-}
-
-// Contact Functions
-
-LIBSESSION_C_API bool state_get_contacts(
-        state_object* state, contacts_contact* contact, const char* session_id) {
+LIBSESSION_C_API bool state_get_keys(
+        state_object* state,
+        NAMESPACE namespace_,
+        const char* pubkey_hex_,
+        unsigned char** out,
+        size_t* outlen) {
     try {
-        if (auto c = unbox(state).config_contacts->get(session_id)) {
-            c->into(*contact);
-            return true;
-        }
-    } catch (const std::exception& e) {
-        set_error(state, e.what());
-    }
-    return false;
-}
+        std::optional<std::string_view> pubkey_hex;
+        if (pubkey_hex_)
+            pubkey_hex.emplace(pubkey_hex_, 66);
 
-LIBSESSION_C_API bool state_get_or_construct_contacts(
-        state_object* state, contacts_contact* contact, const char* session_id) {
-    try {
-        unbox(state).config_contacts->get_or_construct(session_id).into(*contact);
+        auto target_namespace = static_cast<Namespace>(namespace_);
+        auto data = unbox(state).get_keys(target_namespace, pubkey_hex);
+        *outlen = data.size();
+        *out = static_cast<unsigned char*>(std::malloc(data.size()));
+        std::memcpy(*out, data.data(), data.size());
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
     }
 }
 
-LIBSESSION_C_API void state_set_contacts(state_object* state, const contacts_contact* contact) {
-    unbox(state).config_contacts->set(contact_info{*contact});
-}
-
-LIBSESSION_C_API bool state_erase_contacts(state_object* state, const char* session_id) {
+LIBSESSION_C_API bool state_mutate_user(
+        state_object* state, void (*callback)(mutable_state_user_object*, void*), void* ctx) {
     try {
-        return unbox(state).config_contacts->erase(session_id);
-    } catch (...) {
-        return false;
+        auto s_object = new mutable_state_user_object();
+        auto mutable_state = unbox(state).mutableConfig([state](std::string_view e) {
+            // Don't override an existing error
+            if (state->last_error)
+                return;
+
+            set_error(state, e);
+        });
+        s_object->internals = &mutable_state;
+        callback(s_object, ctx);
+        return true;
+    } catch (const std::exception& e) {
+        return set_error(state, e.what());
     }
 }
 
-LIBSESSION_C_API size_t state_size_contacts(const state_object* state) {
-    return unbox(state).config_contacts->size();
+LIBSESSION_C_API bool state_mutate_group(
+        state_object* state,
+        const char* pubkey_hex,
+        void (*callback)(mutable_state_group_object*, void*),
+        void* ctx) {
+    try {
+        auto s_object = new mutable_state_group_object();
+        auto mutable_state =
+                unbox(state).mutableConfig({pubkey_hex, 66}, [state](std::string_view e) {
+                    // Don't override an existing error
+                    if (state->last_error)
+                        return;
+
+                    set_error(state, e);
+                });
+        s_object->internals = &mutable_state;
+        callback(s_object, ctx);
+        return true;
+    } catch (const std::exception& e) {
+        return set_error(state, e.what());
+    }
 }
 
-LIBSESSION_C_API contacts_iterator* state_new_iterator_contacts(const state_object* state) {
-    auto* it = new contacts_iterator{};
-    auto it2 = unbox(state).config_contacts->begin();
-    it->_internals = new Contacts::iterator{unbox(state).config_contacts->begin()};
-    return it;
+LIBSESSION_C_API void mutable_state_user_set_error_if_empty(
+        mutable_state_user_object* state, const char* err, size_t err_len) {
+    if (auto set_error = unbox(state).set_error; set_error.has_value())
+        set_error.value()({err, err_len});
+}
+
+LIBSESSION_C_API void mutable_state_group_set_error_if_empty(
+        mutable_state_group_object* state, const char* err, size_t err_len) {
+    if (auto set_error = unbox(state).set_error; set_error.has_value())
+        set_error.value()({err, err_len});
 }
 
 }  // extern "C"

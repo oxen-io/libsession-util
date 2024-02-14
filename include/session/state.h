@@ -8,9 +8,8 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config/contacts.h"
+#include "config/base.h"
 #include "config/namespaces.h"
-#include "config/profile_pic.h"
 #include "export.h"
 
 typedef struct state_object {
@@ -24,6 +23,16 @@ typedef struct state_object {
     // Sometimes used as the backing buffer for `last_error`.  Should not be touched externally.
     char _error_buf[256];
 } state_object;
+
+typedef struct mutable_state_user_object {
+    // Internal opaque object pointer; calling code should leave this alone.
+    void* internals;
+} mutable_state_user_object;
+
+typedef struct mutable_state_group_object {
+    // Internal opaque object pointer; calling code should leave this alone.
+    void* internals;
+} mutable_state_group_object;
 
 typedef struct state_namespaced_dump {
     NAMESPACE namespace_;
@@ -204,39 +213,6 @@ LIBSESSION_EXPORT void state_set_service_node_offset(state_object* state, int64_
 /// most recent API response
 LIBSESSION_EXPORT int64_t state_network_offset(state_object* state);
 
-/// API: state/state_suppress_hooks_start
-///
-/// This will suppress the `send` and `store` hooks until `state_suppress_hooks_stop` is called and
-/// should be used when making multiple config changes to avoid sending and storing unnecessary
-/// partial changes.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to state_object object
-/// - `send` -- [in] controls whether the `send` hook should be suppressed.
-/// - `store` -- [in] controls whether the `store` hook should be suppressed.
-/// - `pubkey_hex` -- [in] pubkey to suppress changes for (in hex, with prefix - 66
-/// bytes). If none is provided then all changes for all configs will be supressed.
-LIBSESSION_EXPORT bool state_suppress_hooks_start(
-        state_object* state, bool send, bool store, const char* pubkey_hex);
-
-/// API: state/state_suppress_hooks_stop
-///
-/// This will stop suppressing the `send` and `store` hooks. When this is called, if there are
-/// any pending changes, the `send` and `store` hooks will immediately be called.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to state_object object
-/// - `send` -- [in] controls whether the `send` hook should no longer be suppressed.
-/// - `store` -- [in] controls whether the `store` hook should no longer be suppressed.
-/// - `force` -- [in] controls whether we should clear out multiple suppressions for the specified
-/// hooks or just a single suppression.
-/// - `pubkey_hex` -- [in] pubkey to stop suppressing changes for (in hex, with prefix - 66 bytes).
-/// If the value provided doesn't match a entry created by `state_suppress_hooks_start` those
-/// changes will continue to be suppressed. If none is provided then the hooks for all configs
-/// with pending changes will be triggered.
-LIBSESSION_EXPORT bool state_suppress_hooks_stop(
-        state_object* state, bool send, bool stor, bool force, const char* pubkey_hex);
-
 /// API: state/state_merge
 ///
 /// Takes an pointer to an array of `state_config_message`, sorts them and merges them into the
@@ -342,231 +318,92 @@ LIBSESSION_EXPORT bool state_received_send_response(
         unsigned char* request_ctx,
         size_t request_ctx_len);
 
-/// User Profile functions
-
-/// API: state/state_get_profile_name
+/// API: state/state_get_keys
 ///
-/// Returns a pointer to the currently-set name (null-terminated), or NULL if there is no name at
-/// all.  Should be copied right away as the pointer may not remain valid beyond other API calls.
+/// Obtains the current group decryption keys.
+///
+/// Returns a buffer where each consecutive 32 bytes is an encryption key for the object, in
+/// priority order (i.e. the key at 0 is the encryption key, and the first decryption key).
+///
+/// This function is mainly for debugging/diagnostics purposes; most config types have one single
+/// key (based on the secret key), and multi-keyed configs such as groups have their own methods for
+/// encryption/decryption that are already aware of the multiple keys.
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
+/// - `out` -- [out] pointer to newly malloced key data (a multiple of 32 bytes); the pointer
+///   belongs to the caller and must be `free()`d when done with it.
+/// - `outlen` -- [out] Pointer where the number of keys will be written (that is: the returned
+/// pointer
+///   will be to a buffer which has a size of of this value times 32).
+LIBSESSION_EXPORT bool state_get_keys(
+        state_object* state,
+        NAMESPACE namespace_,
+        const char* pubkey_hex_,
+        unsigned char** out,
+        size_t* outlen);
+
+/// API: state/state_mutate_user
+///
+/// Calls the callback provided with a mutable version of the `state_object` for user changes.
+///
+/// If an error occurs while the mutation callback is being performed the function will return false
+/// and the `state->last_error` will be populated with the error information.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to the state object
+/// - `callback` -- [in] callback to be called with the `mutable_state_user_object` in order to
+/// modify the user state.
+/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 ///
 /// Outputs:
-/// - `char*` -- Pointer to the currently-set name as a null-terminated string, or NULL if there is
-/// no name
-LIBSESSION_EXPORT const char* state_get_profile_name(const state_object* state);
+/// - `bool` -- Whether the mutation succeeded or not
+LIBSESSION_EXPORT bool state_mutate_user(
+        state_object* state, void (*callback)(mutable_state_user_object*, void*), void* ctx);
 
-/// API: state/state_set_profile_name
+/// API: state/state_mutate_group
 ///
-/// Sets the user profile name to the null-terminated C string.  Returns 0 on success, non-zero on
-/// error (and sets the state_object's error string).
+/// Calls the callback provided with a mutable version of the `state_object` for group changes.
+///
+/// If an error occurs while the mutation callback is being performed the function will return false
+/// and the `state->last_error` will be populated with the error information.
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
-/// - `name` -- [in] Pointer to the name as a null-terminated C string
-LIBSESSION_EXPORT void state_set_profile_name(state_object* state, const char* name);
-
-/// API: state/state_get_profile_pic
-///
-/// Obtains the current profile pic.  The pointers in the returned struct will be NULL if a profile
-/// pic is not currently set, and otherwise should be copied right away (they will not be valid
-/// beyond other API calls on this config object).
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `callback` -- [in] callback to be called with the `mutable_state_group_object` in order to
+/// modify the group state.
+/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 ///
 /// Outputs:
-/// - `user_profile_pic` -- Pointer to the currently-set profile pic
-LIBSESSION_EXPORT user_profile_pic state_get_profile_pic(const state_object* state);
+/// - `bool` -- Whether the mutation succeeded or not
+LIBSESSION_EXPORT bool state_mutate_group(
+        state_object* state,
+        const char* pubkey_hex,
+        void (*callback)(mutable_state_group_object*, void*),
+        void* ctx);
 
-/// API: state/state_set_profile_pic
+/// API: state/mutable_state_user_set_error_if_empty
 ///
-/// Sets a user profile
+/// Updates the `state->last_error` value to the provided message if it is currently empty.
 ///
 /// Inputs:
-/// - `state` -- [in] Pointer to the satet object
-/// - `pic` -- [in] Pointer to the pic
-LIBSESSION_EXPORT void state_set_profile_pic(state_object* state, user_profile_pic pic);
+/// - `state` -- [in] Pointer to the mutable state object
+/// - `err` -- [in] the error value to store in the state
+/// - `err_len` -- [in] length of 'err'
+LIBSESSION_EXPORT void mutable_state_user_set_error_if_empty(
+        mutable_state_user_object* state, const char* err, size_t err_len);
 
-/// API: state/state_get_profile_nts_priority
+/// API: state/mutable_state_group_set_error_if_empty
 ///
-/// Gets the current note-to-self priority level. Will be negative for hidden, 0 for unpinned, and >
-/// 0 for pinned (with higher value = higher priority).
+/// Updates the `state->last_error` value to the provided message if it is currently empty.
 ///
 /// Inputs:
-/// - `state` -- [in] Pointer to the state object
-///
-/// Outputs:
-/// - `int` -- Returns the priority level
-LIBSESSION_EXPORT int state_get_profile_nts_priority(const state_object* state);
-
-/// API: state/state_set_profile_nts_priority
-///
-/// Sets the current note-to-self priority level. Set to -1 for hidden; 0 for unpinned, and > 0 for
-/// higher priority in the conversation list.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-/// - `priority` -- [in] Integer of the priority
-LIBSESSION_EXPORT void state_set_profile_nts_priority(state_object* state, int priority);
-
-/// API: state/state_get_profile_nts_expiry
-///
-/// Gets the Note-to-self message expiry timer (seconds).  Returns 0 if not set.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-///
-/// Outputs:
-/// - `int` -- Returns the expiry timer in seconds. Returns 0 if not set
-LIBSESSION_EXPORT int state_get_profile_nts_expiry(const state_object* state);
-
-/// API: state/state_set_profile_nts_expiry
-///
-/// Sets the Note-to-self message expiry timer (seconds).  Setting 0 (or negative) will clear the
-/// current timer.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-/// - `expiry` -- [in] Integer of the expiry timer in seconds
-LIBSESSION_EXPORT void state_set_profile_nts_expiry(state_object* state, int expiry);
-
-/// API: state/state_get_profile_blinded_msgreqs
-///
-/// Returns true if blinded message requests should be retrieved (from SOGS servers), false if they
-/// should be ignored.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-///
-/// Outputs:
-/// - `int` -- Will be -1 if the state does not have the value explicitly set, 0 if the setting is
-///   explicitly disabled, and 1 if the setting is explicitly enabled.
-LIBSESSION_EXPORT int state_get_profile_blinded_msgreqs(const state_object* state);
-
-/// API: state/state_set_profile_blinded_msgreqs
-///
-/// Sets whether blinded message requests should be retrieved from SOGS servers.  Set to 1 (or any
-/// positive value) to enable; 0 to disable; and -1 to clear the setting.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-/// - `enabled` -- [in] true if they should be enabled, false if disabled
-///
-/// Outputs:
-/// - `void` -- Returns Nothing
-LIBSESSION_EXPORT void state_set_profile_blinded_msgreqs(state_object* state, int enabled);
-
-/// Contact functions
-
-/// API: state/state_get_contacts
-///
-/// Fills `contact` with the contact info given a session ID (specified as a null-terminated hex
-/// string), if the contact exists, and returns true.  If the contact does not exist then `contact`
-/// is left unchanged and false is returned.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-/// - `contact` -- [out] the contact info data
-/// - `session_id` -- [in] null terminated hex string
-///
-/// Output:
-/// - `bool` -- Returns true if contact exsts
-LIBSESSION_EXPORT bool state_get_contacts(
-        state_object* state, contacts_contact* contact, const char* session_id)
-        __attribute__((warn_unused_result));
-
-/// API: state/state_get_or_construct_contacts
-///
-/// Same as the above `state_get_contacts()` except that when the contact does not exist, this sets
-/// all the contact fields to defaults and loads it with the given session_id.
-///
-/// Returns true as long as it is given a valid session_id.  A false return is considered an error,
-/// and means the session_id was not a valid session_id.
-///
-/// This is the method that should usually be used to create or update a contact, followed by
-/// setting fields in the contact, and then giving it to state_set_contacts().
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-/// - `contact` -- [out] the contact info data
-/// - `session_id` -- [in] null terminated hex string
-///
-/// Output:
-/// - `bool` -- Returns true if contact exsts
-LIBSESSION_EXPORT bool state_get_or_construct_contacts(
-        state_object* state, contacts_contact* contact, const char* session_id)
-        __attribute__((warn_unused_result));
-
-/// API: state/state_set_contacts
-///
-/// Adds or updates a contact from the given contact info struct.
-///
-/// Inputs:
-/// - `state` -- [in, out] Pointer to the state object
-/// - `contact` -- [in] Pointer containing the contact info data
-LIBSESSION_EXPORT void state_set_contacts(state_object* state, const contacts_contact* contact);
-
-// NB: wrappers for set_name, set_nickname, etc. C++ methods are deliberately omitted as they would
-// save very little in actual calling code.  The procedure for updating a single field without them
-// is simple enough; for example to update `approved` and leave everything else unchanged:
-//
-// contacts_contact c;
-// if (contacts_get_or_construct(conf, &c, some_session_id)) {
-//     const char* new_nickname = "Joe";
-//     c.approved = new_nickname;
-//     contacts_set_or_create(conf, &c);
-// } else {
-//     // some_session_id was invalid!
-// }
-
-/// API: state/state_erase_contacts
-///
-/// Erases a contact from the contact list.  session_id is in hex.  Returns true if the contact was
-/// found and removed, false if the contact was not present.  You must not call this during
-/// iteration; see details below.
-///
-/// Inputs:
-/// - `state` -- [in, out] Pointer to the state object
-/// - `session_id` -- [in] Text containing null terminated hex string
-///
-/// Outputs:
-/// - `bool` -- True if erasing was successful
-LIBSESSION_EXPORT bool state_erase_contacts(state_object* state, const char* session_id);
-
-/// API: state/state_size_contacts
-///
-/// Returns the number of contacts.
-///
-/// Inputs:
-/// - `state` -- input - Pointer to the state object
-///
-/// Outputs:
-/// - `size_t` -- number of contacts
-LIBSESSION_EXPORT size_t state_size_contacts(const state_object* state);
-
-/// API: state/state_new_iterator_contacts
-///
-/// Starts a new iterator.
-///
-/// Functions for iterating through the entire contact list, in sorted order.  Intended use is:
-///
-///     contacts_contact c;
-///     contacts_iterator *it = state_new_iterator_contacts(state);
-///     for (; !contacts_iterator_done(it, &c); contacts_iterator_advance(it)) {
-///         // c.session_id, c.nickname, etc. are loaded
-///     }
-///     contacts_iterator_free(it);
-///
-/// It is NOT permitted to add/remove/modify records while iterating.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to the state object
-///
-/// Outputs:
-/// - `contacts_iterator*` -- pointer to the iterator
-LIBSESSION_EXPORT contacts_iterator* state_new_iterator_contacts(const state_object* state);
+/// - `state` -- [in] Pointer to the mutable state object
+/// - `err` -- [in] the error value to store in the state
+/// - `err_len` -- [in] length of 'err'
+LIBSESSION_EXPORT void mutable_state_group_set_error_if_empty(
+        mutable_state_group_object* state, const char* err, size_t err_len);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -10,8 +10,11 @@
 #include "config/user_profile.hpp"
 #include "ed25519.hpp"
 #include "session/util.hpp"
+#include "state.h"
 
 namespace session::state {
+
+class State;
 
 using Ed25519PubKey = std::array<unsigned char, 32>;
 using Ed25519Secret = std::array<unsigned char, 64>;
@@ -29,6 +32,55 @@ class GroupConfigs {
     std::unique_ptr<session::config::groups::Info> config_info;
     std::unique_ptr<session::config::groups::Members> config_members;
     std::unique_ptr<session::config::groups::Keys> config_keys;
+};
+
+class MutableUserConfigs {
+  private:
+    State* parent_state;
+
+  public:
+    MutableUserConfigs(
+            State* state,
+            session::config::Contacts& contacts,
+            session::config::ConvoInfoVolatile& convo_info_volatile,
+            session::config::UserGroups& user_groups,
+            session::config::UserProfile& user_profile,
+            std::optional<std::function<void(std::string_view err)>> set_error) :
+            parent_state(state),
+            contacts(contacts),
+            convo_info_volatile(convo_info_volatile),
+            user_groups(user_groups),
+            user_profile(user_profile),
+            set_error(set_error) {}
+
+    session::config::Contacts& contacts;
+    session::config::ConvoInfoVolatile& convo_info_volatile;
+    session::config::UserGroups& user_groups;
+    session::config::UserProfile& user_profile;
+    std::optional<std::function<void(std::string_view err)>> set_error;
+
+    ~MutableUserConfigs();
+};
+
+class MutableGroupConfigs {
+  private:
+    State* parent_state;
+
+  public:
+    MutableGroupConfigs(
+            State* state,
+            session::config::groups::Info& info,
+            session::config::groups::Members& members,
+            session::config::groups::Keys& keys,
+            std::optional<std::function<void(std::string_view err)>> set_error) :
+            parent_state(state), info(info), members(members), keys(keys), set_error(set_error) {}
+
+    session::config::groups::Info& info;
+    session::config::groups::Members& members;
+    session::config::groups::Keys& keys;
+    std::optional<std::function<void(std::string_view err)>> set_error;
+
+    ~MutableGroupConfigs();
 };
 
 struct namespaced_dump {
@@ -82,9 +134,10 @@ struct config_message {
 
 class State {
   private:
-    // Storage of pubkeys which are currently being suppressed, the value specifies how many active
-    // suppressions the `send` or `store` hooks have.
-    std::map<std::string_view, std::pair<int, int>> _open_suppressions = {};
+    std::unique_ptr<session::config::Contacts> config_contacts;
+    std::unique_ptr<session::config::ConvoInfoVolatile> config_convo_info_volatile;
+    std::unique_ptr<session::config::UserGroups> config_user_groups;
+    std::unique_ptr<session::config::UserProfile> config_user_profile;
     std::map<std::string_view, std::unique_ptr<GroupConfigs>> _config_groups;
 
   protected:
@@ -101,14 +154,7 @@ class State {
     std::function<void(std::string pubkey, ustring payload, ustring ctx)> _send;
 
   public:
-    std::unique_ptr<session::config::Contacts> config_contacts;
-    std::unique_ptr<session::config::ConvoInfoVolatile> config_convo_info_volatile;
-    std::unique_ptr<session::config::UserGroups> config_user_groups;
-    std::unique_ptr<session::config::UserProfile> config_user_profile;
-
     std::chrono::milliseconds network_offset;
-
-    GroupConfigs* group_config(std::string_view pubkey_hex);
 
     // Constructs a state with a secretkey that will be used for signing.
     State(ustring_view ed25519_secretkey, std::vector<namespaced_dump> dumps);
@@ -145,9 +191,10 @@ class State {
         if (!hook)
             return;
 
-        _open_suppressions[""] = {false, true};
-        suppress_hooks_stop();  // Trigger config change hooks
-        _open_suppressions.erase("");
+        config_changed(std::nullopt, true, false);
+
+        for (auto& [key, val] : _config_groups)
+            config_changed(key, true, false);
     };
 
     /// Hook which will be called whenever config messages need to be sent via the API. The hook
@@ -163,9 +210,10 @@ class State {
         if (!hook)
             return;
 
-        _open_suppressions[""] = {true, false};
-        suppress_hooks_stop();  // Trigger config change hooks
-        _open_suppressions.erase("");
+        config_changed(std::nullopt, false, true);
+
+        for (auto& [key, val] : _config_groups)
+            config_changed(key, false, true);
     };
 
     /// API: state/State::load
@@ -197,69 +245,14 @@ class State {
     /// Inputs:
     /// - `pubkey_hex` -- optional pubkey the dump is associated to (in hex, with prefix - 66
     /// bytes). Required for group changes.
+    /// - `allow_store` -- boolean value to specify whether this change can trigger the store hook.
+    /// - `allow_send` -- boolean value to specify whether this change can trigger the send hook.
     ///
     /// Outputs: None
-    void config_changed(std::optional<std::string_view> pubkey_hex = std::nullopt);
-
-    /// API: state/State::suppress_hooks_start
-    ///
-    /// This will suppress the `send` and `store` hooks until `suppress_hooks_stop` is called and
-    /// should be used when making multiple config changes to avoid sending and storing unnecessary
-    /// partial changes.
-    ///
-    /// Calling this function multiple times will result in multiple suppressions
-    /// for the specified hook, `suppress_hooks_stop` will need to be called multiple times (or with
-    /// `force = true`) in order for the hooks to start being triggered again.
-    ///
-    /// Inputs:
-    /// - `send` -- controls whether the `send` hook should be suppressed.
-    /// - `store` -- controls whether the `store` hook should be suppressed.
-    /// - `pubkey_hex` -- pubkey to suppress changes for (in hex, with prefix - 66
-    /// bytes). If none is provided then all changes for all configs will be supressed.
-    ///
-    /// Outputs: None
-    void suppress_hooks_start(
-            bool send = true, bool store = true, std::string_view pubkey_hex = "");
-
-    /// API: state/State::suppress_hooks_stop
-    ///
-    /// This will remove a single supression for the `send` and `store` hooks. When this is called,
-    /// if there are are no more supresssions and any pending changes, the `send` and `store` hooks
-    /// will immediately be called.
-    ///
-    /// Calling this function with `force = true` will result in all supressions being removed.
-    ///
-    /// Inputs:
-    /// - `send` -- controls whether the `send` hook should no longer be suppressed.
-    /// - `store` -- controls whether the `store` hook should no longer be suppressed.
-    /// - `force` -- controls whether we should clear out multiple suppressions for the specified
-    /// hooks or just a single suppression.
-    /// - `pubkey_hex` -- pubkey to stop suppressing changes for (in hex, with prefix - 66 bytes).
-    /// If the value provided doesn't match a entry created by `suppress_hooks_start` those
-    /// changes will continue to be suppressed. If none is provided then the hooks for all configs
-    /// with pending changes will be triggered.
-    ///
-    /// Outputs: None
-    void suppress_hooks_stop(
-            bool send = true,
-            bool store = true,
-            bool force = false,
-            std::string_view pubkey_hex = "");
-
-    /// API: state/State::perform_while_suppressing_hooks
-    ///
-    /// This will prevent the `send` and `store` hooks from being called while the `changes`
-    /// function is running. Upon completion of `changes` the hooks will be triggered if there are
-    /// any pending changes.
-    ///
-    /// Inputs:
-    /// - `conf` -- a pointer to the config which the changes are occurring on (this will be used to
-    /// extract the target pubkey).
-    /// - `changes` -- a function encapsulating the desired changes.
-    ///
-    /// Outputs: None
-    void perform_while_suppressing_hooks(
-            session::config::ConfigSig* conf, std::function<void()> changes);
+    void config_changed(
+            std::optional<std::string_view> pubkey_hex = std::nullopt,
+            bool allow_store = true,
+            bool allow_send = true);
 
     /// API: state/State::merge
     ///
@@ -353,8 +346,84 @@ class State {
     /// - `ctx` -- the contextual data provided by the onSend hook.
     void received_send_response(std::string pubkey, ustring response_data, ustring ctx);
 
+    /// API: state/State::get_keys
+    ///
+    /// Returns a vector of encryption keys, in priority order (i.e. element 0 is the encryption
+    /// key, and the first decryption key).
+    ///
+    /// This method is mainly for debugging/diagnostics purposes; most config types have one single
+    /// key (based on the secret key), and multi-keyed configs such as groups have their own methods
+    /// for encryption/decryption that are already aware of the multiple keys.
+    ///
+    /// Inputs:
+    /// - `namespace` -- the namespace where the desired config messages are stored.
+    /// - `pubkey_hex` -- optional pubkey the config is associated to (in hex, with prefix - 66
+    /// bytes). Required for group configs.
+    ///
+    /// Outputs:
+    /// - `std::vector<ustring_view>` -- Returns vector of encryption keys
+    std::vector<ustring_view> get_keys(
+            config::Namespace namespace_, std::optional<std::string_view> pubkey_hex_);
+
+    // Retrieves a read-only version of the user config
+    template <typename ConfigType>
+    const ConfigType& config() const;
+
+    // Retrieves a read-only version of the group config for the given public key
+    template <typename ConfigType>
+    const ConfigType& config(std::string_view pubkey_hex) const;
+
+    // Retrieves an editable version of the user config. Once the returned value is deconstructed it
+    // will trigger the `send` and `store` hooks.
+    MutableUserConfigs mutableConfig(
+            std::optional<std::function<void(std::string_view err)>> set_error = std::nullopt);
+
+    // Retrieves an editable version of the group config for the given public key. Once the returned
+    // value is deconstructed it will trigger the `send` and `store` hooks.
+    MutableGroupConfigs mutableConfig(
+            std::string_view pubkey_hex,
+            std::optional<std::function<void(std::string_view err)>> set_error = std::nullopt);
+
   private:
+    template <typename ConfigType>
+    void add_child_logger(ConfigType& base);
+
     void handle_config_push_response(std::string pubkey, ustring response, ustring ctx);
+    void validate_group_pubkey(std::string_view pubkey_hex) const;
 };
+
+inline State& unbox(state_object* state) {
+    assert(state && state->internals);
+    return *static_cast<State*>(state->internals);
+}
+inline const State& unbox(const state_object* state) {
+    assert(state && state->internals);
+    return *static_cast<const State*>(state->internals);
+}
+inline MutableUserConfigs& unbox(mutable_state_user_object* state) {
+    assert(state && state->internals);
+    return *static_cast<MutableUserConfigs*>(state->internals);
+}
+inline MutableGroupConfigs& unbox(mutable_state_group_object* state) {
+    assert(state && state->internals);
+    return *static_cast<MutableGroupConfigs*>(state->internals);
+}
+
+inline bool set_error(state_object* state, std::string_view e) {
+    if (e.size() > 255)
+        e.remove_suffix(e.size() - 255);
+    std::memcpy(state->_error_buf, e.data(), e.size());
+    state->_error_buf[e.size()] = 0;
+    state->last_error = state->_error_buf;
+    return false;
+}
+
+inline bool set_error_value(char* error, std::string_view e) {
+    std::string msg = {e.data(), e.size()};
+    if (msg.size() > 255)
+        msg.resize(255);
+    std::memcpy(error, msg.c_str(), msg.size() + 1);
+    return false;
+}
 
 };  // namespace session::state

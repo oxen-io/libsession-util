@@ -1,16 +1,23 @@
+#include <oxenc/base64.h>
 #include <oxenc/endian.h>
 #include <oxenc/hex.h>
 #include <session/config/contacts.h>
+#include <session/config/namespaces.h>
+#include <session/state.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 #include <session/config/contacts.hpp>
+#include <session/config/namespaces.hpp>
+#include <session/util.hpp>
 #include <string_view>
 
 #include "utils.hpp"
 
 using namespace std::literals;
 using namespace oxenc::literals;
+using namespace session;
 
 static constexpr int64_t created_ts = 1680064059;
 
@@ -223,6 +230,217 @@ TEST_CASE("Contacts", "[config][contacts]") {
     CHECK(session_ids[1] == third_id);
     CHECK(nicknames[0] == "(N/A)");
     CHECK(nicknames[1] == "Nickname 3");
+}
+
+TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
+    auto ed_sk =
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab78862834829a"
+            "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f"_hexbytes;
+
+    char err[256];
+    state_object* state;
+    REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
+    std::optional<last_store_data> last_store = std::nullopt;
+    std::optional<last_send_data> last_send = std::nullopt;
+    std::optional<last_store_data> last_store_2 = std::nullopt;
+    std::optional<last_send_data> last_send_2 = std::nullopt;
+
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
+
+    const char* const definitely_real_id =
+            "050000000000000000000000000000000000000000000000000000000000000000";
+
+    contacts_contact c;
+    CHECK_FALSE(state_get_contact(state, &c, definitely_real_id, nullptr));
+
+    CHECK(state_get_or_construct_contact(state, &c, definitely_real_id, nullptr));
+
+    CHECK(c.session_id == std::string_view{definitely_real_id});
+    CHECK(strlen(c.name) == 0);
+    CHECK(strlen(c.nickname) == 0);
+    CHECK_FALSE(c.approved);
+    CHECK_FALSE(c.approved_me);
+    CHECK_FALSE(c.blocked);
+    CHECK(strlen(c.profile_pic.url) == 0);
+    CHECK(c.created == 0);
+
+    strcpy(c.name, "Joe");
+    strcpy(c.nickname, "Joey");
+    c.approved = true;
+    c.approved_me = true;
+    c.created = created_ts;
+
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_set_contact(mutable_state, static_cast<const contacts_contact*>(ctx));
+            },
+            &c);
+
+    contacts_contact c2;
+    REQUIRE(state_get_contact(state, &c2, definitely_real_id, nullptr));
+
+    CHECK(c2.name == "Joe"sv);
+    CHECK(c2.nickname == "Joey"sv);
+    CHECK(c2.approved);
+    CHECK(c2.approved_me);
+    CHECK_FALSE(c2.blocked);
+    CHECK(strlen(c2.profile_pic.url) == 0);
+
+    CHECK((*last_store).pubkey ==
+          "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46");
+    CHECK((*last_send).pubkey ==
+          "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61"
+          "f46");
+
+    auto ctx_json = nlohmann::json::parse(last_send->ctx);
+
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 1);
+
+    state_object* state2;
+    REQUIRE(state_init(&state2, ed_sk.data(), nullptr, 0, nullptr));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+
+    auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
+    auto last_send_json = nlohmann::json::parse(last_send->data);
+    REQUIRE(last_send_json.contains(first_request_data));
+    auto last_send_data =
+            to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
+    state_config_message* merge_data = new state_config_message[1];
+    config_string_list* accepted;
+    merge_data[0] = {
+            NAMESPACE_CONTACTS,
+            "fakehash1",
+            created_ts,
+            last_send_data.data(),
+            last_send_data.size()};
+    REQUIRE(state_merge(state2, nullptr, merge_data, 1, &accepted));
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash1"sv);
+    free(accepted);
+    free(merge_data);
+
+    ustring send_response =
+            to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
+    CHECK(state_received_send_response(
+            state,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f",
+            send_response.data(),
+            send_response.size(),
+            last_send->ctx.data(),
+            last_send->ctx.size()));
+
+    contacts_contact c3;
+    REQUIRE(state_get_contact(state2, &c3, definitely_real_id, nullptr));
+    CHECK(c3.name == "Joe"sv);
+    CHECK(c3.nickname == "Joey"sv);
+    CHECK(c3.approved);
+    CHECK(c3.approved_me);
+    CHECK_FALSE(c3.blocked);
+    CHECK(strlen(c3.profile_pic.url) == 0);
+    CHECK(c3.created == created_ts);
+
+    contacts_contact c4;
+    auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
+    REQUIRE(state_get_or_construct_contact(state, &c4, another_id, nullptr));
+    CHECK(strlen(c4.name) == 0);
+    CHECK(strlen(c4.nickname) == 0);
+    CHECK_FALSE(c4.approved);
+    CHECK_FALSE(c4.approved_me);
+    CHECK_FALSE(c4.blocked);
+    CHECK(strlen(c4.profile_pic.url) == 0);
+    CHECK(c4.created == 0);
+
+    state_mutate_user(
+            state2,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_set_contact(mutable_state, static_cast<const contacts_contact*>(ctx));
+            },
+            &c4);
+
+    auto last_send_json_2 = nlohmann::json::parse(last_send_2->data);
+    REQUIRE(last_send_json_2.contains(first_request_data));
+    auto last_send_data_2 = to_unsigned(
+            oxenc::from_base64(last_send_json_2[first_request_data].get<std::string>()));
+    merge_data = new state_config_message[1];
+    merge_data[0] = {
+            NAMESPACE_CONTACTS,
+            "fakehash2",
+            created_ts,
+            last_send_data_2.data(),
+            last_send_data_2.size()};
+    REQUIRE(state_merge(state, nullptr, merge_data, 1, &accepted));
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    free(accepted);
+    free(merge_data);
+
+    send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash2\"}}]}");
+    CHECK(state_received_send_response(
+            state2,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send->ctx.data(),
+            last_send->ctx.size()));
+
+    auto messages_key = nlohmann::json::json_pointer("/params/requests/1/params/messages");
+    REQUIRE(last_send_json_2.contains(messages_key));
+    auto obsolete = last_send_json_2[messages_key].get<std::vector<std::string>>();
+    REQUIRE(obsolete.size() > 0);
+    CHECK(obsolete.size() == 1);
+    CHECK(obsolete[0] == "fakehash1"sv);
+
+    // Iterate through and make sure we got everything we expected
+    std::vector<std::string> session_ids;
+    std::vector<std::string> nicknames;
+
+    CHECK(state_size_contacts(state) == 2);
+    contacts_iterator* it = contacts_iterator_new(state);
+    contacts_contact ci;
+    for (; !contacts_iterator_done(it, &ci); contacts_iterator_advance(it)) {
+        session_ids.push_back(ci.session_id);
+        nicknames.emplace_back(strlen(ci.nickname) ? ci.nickname : "(N/A)");
+    }
+    contacts_iterator_free(it);
+
+    REQUIRE(session_ids.size() == 2);
+    CHECK(session_ids[0] == definitely_real_id);
+    CHECK(session_ids[1] == another_id);
+    CHECK(nicknames[0] == "Joey");
+    CHECK(nicknames[1] == "(N/A)");
+
+    // Changing things while iterating:
+    it = contacts_iterator_new(state);
+    int deletions = 0, non_deletions = 0;
+    std::vector<std::string> contacts_to_remove;
+    while (!contacts_iterator_done(it, &ci)) {
+        if (ci.session_id != std::string_view{definitely_real_id}) {
+            contacts_to_remove.push_back(ci.session_id);
+            deletions++;
+        } else {
+            non_deletions++;
+        }
+        contacts_iterator_advance(it);
+    }
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                auto contacts_to_remove = static_cast<std::vector<std::string>*>(ctx);
+
+                for (auto& cont : *contacts_to_remove)
+                    state_erase_contact(mutable_state, cont.c_str());
+            },
+            &contacts_to_remove);
+
+    CHECK(deletions == 1);
+    CHECK(non_deletions == 1);
+
+    CHECK(state_get_contact(state, &ci, definitely_real_id, nullptr));
+    CHECK_FALSE(state_get_contact(state, &ci, another_id, nullptr));
 }
 
 TEST_CASE("huge contacts compression", "[config][compression][contacts]") {

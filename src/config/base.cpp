@@ -17,7 +17,6 @@
 #include "session/config/encrypt.hpp"
 #include "session/config/protos.hpp"
 #include "session/export.h"
-#include "session/state.hpp"
 #include "session/util.hpp"
 
 using namespace std::literals;
@@ -36,27 +35,10 @@ void ConfigBase::set_state(ConfigState s) {
     _needs_dump = true;
 }
 
-void ConfigBase::log(LogLevel lvl, std::string msg) {
-    if (logger)
-        logger(lvl, std::move(msg));
-    else if (_parent_state && (*_parent_state)->logger)
-        (*_parent_state)->logger(lvl, msg);
-}
-
 MutableConfigMessage& ConfigBase::dirty() {
     if (_state != ConfigState::Dirty) {
         set_state(ConfigState::Dirty);
         _config = std::make_unique<MutableConfigMessage>(*_config, increment_seqno);
-    }
-
-    // If there is a parent state then notify it about the config change
-    if (_parent_state) {
-        std::optional<std::string_view> pubkey_hex;
-
-        if (_sign_pk)
-            pubkey_hex = "03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end());
-
-        (*_parent_state)->config_changed(pubkey_hex);
     }
 
     if (auto* mut = dynamic_cast<MutableConfigMessage*>(_config.get()))
@@ -365,16 +347,12 @@ ustring ConfigBase::make_dump() const {
 }
 
 ConfigBase::ConfigBase(
-        std::optional<session::state::State*> parent_state,
         std::optional<ustring_view> dump,
         std::optional<ustring_view> ed25519_pubkey,
         std::optional<ustring_view> ed25519_secretkey) {
 
     if (sodium_init() == -1)
         throw std::runtime_error{"libsodium initialization failed!"};
-
-    if (parent_state)
-        _parent_state = *parent_state;
 
     if (dump)
         init_from_dump(from_unsigned_sv(*dump));

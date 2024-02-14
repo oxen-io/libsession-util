@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "session/config/base.h"
+#include "session/config/namespaces.h"
+#include "session/config/namespaces.hpp"
 
 using ustring = std::basic_string<unsigned char>;
 using ustring_view = std::basic_string_view<unsigned char>;
@@ -87,4 +89,41 @@ std::vector<std::basic_string_view<C>> view_vec(const std::vector<std::basic_str
     vv.reserve(v.size());
     std::copy(v.begin(), v.end(), std::back_inserter(vv));
     return vv;
+}
+
+struct last_store_data {
+    session::config::Namespace namespace_;
+    std::string pubkey;
+    uint64_t timestamp;
+    ustring data;
+};
+struct last_send_data {
+    std::string pubkey;
+    ustring data;
+    ustring ctx;
+};
+
+inline void c_store_callback(
+        NAMESPACE namespace_,
+        const char* pubkey,
+        uint64_t timestamp_ms,
+        const unsigned char* data,
+        size_t data_len,
+        void* ctx) {
+    *static_cast<std::optional<last_store_data>*>(ctx) = last_store_data{
+            static_cast<session::config::Namespace>(namespace_),
+            {pubkey, 66},
+            timestamp_ms,
+            {data, data_len}};
+}
+
+inline void c_send_callback(
+        const char* pubkey,
+        const unsigned char* data,
+        size_t data_len,
+        const unsigned char* request_ctx,
+        size_t request_ctx_len,
+        void* ctx) {
+    *static_cast<std::optional<last_send_data>*>(ctx) =
+            last_send_data{{pubkey, 66}, {data, data_len}, {request_ctx, request_ctx_len}};
 }

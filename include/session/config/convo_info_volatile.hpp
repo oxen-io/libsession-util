@@ -171,10 +171,7 @@ class ConvoInfoVolatile : public ConfigBase {
     /// the secret key.
     /// - `dumped` -- either `std::nullopt` to construct a new, empty object; or binary state data
     /// that was previously dumped from an instance of this class by calling `dump()`.
-    ConvoInfoVolatile(
-            ustring_view ed25519_secretkey,
-            std::optional<ustring_view> dumped,
-            std::optional<session::state::State*> parent_state = std::nullopt);
+    ConvoInfoVolatile(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
 
     /// API: convo_info_volatile/ConvoInfoVolatile::storage_namespace
     ///

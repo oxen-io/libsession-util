@@ -262,10 +262,7 @@ class UserGroups : public ConfigBase {
     ///
     /// Outputs:
     /// - `UserGroups` - Constructor
-    UserGroups(
-            ustring_view ed25519_secretkey,
-            std::optional<ustring_view> dumped,
-            std::optional<session::state::State*> parent_state = std::nullopt);
+    UserGroups(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped);
 
     /// API: user_groups/UserGroups::storage_namespace
     ///

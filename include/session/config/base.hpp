@@ -14,10 +14,6 @@
 #include "base.h"
 #include "namespaces.hpp"
 
-namespace session::state {
-class State;
-}
-
 namespace session::config {
 
 template <typename T, typename... U>
@@ -170,10 +166,6 @@ class ConfigBase : public ConfigSig {
     std::unordered_set<std::string> _old_hashes;
 
   protected:
-    // The parent state which owns this config object. By providing a pointer to the parent state
-    // we can inform the parent when changes occur.
-    std::optional<session::state::State*> _parent_state;
-
     // Constructs a base config by loading the data from a dump as produced by `dump()`.  If the
     // dump is nullopt then an empty base config is constructed with no config settings and seqno
     // set to 0.
@@ -183,7 +175,6 @@ class ConfigBase : public ConfigSig {
     // verification of incoming messages using the associated pubkey, and will be signed using the
     // secretkey (if a secret key is given).
     explicit ConfigBase(
-            std::optional<session::state::State*> parent_state = std::nullopt,
             std::optional<ustring_view> dump = std::nullopt,
             std::optional<ustring_view> ed25519_pubkey = std::nullopt,
             std::optional<ustring_view> ed25519_secretkey = std::nullopt);
@@ -198,7 +189,10 @@ class ConfigBase : public ConfigSig {
     void set_state(ConfigState s);
 
     // Invokes the `logger` callback if set, does nothing if there is no logger.
-    void log(LogLevel lvl, std::string msg);
+    void log(LogLevel lvl, std::string msg) {
+        if (logger)
+            logger(lvl, std::move(msg));
+    }
 
     // Returns a reference to the current MutableConfigMessage.  If the current message is not
     // already dirty (i.e. Clean or Waiting) then calling this increments the seqno counter.

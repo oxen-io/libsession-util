@@ -1,9 +1,11 @@
+#include <oxenc/base64.h>
 #include <oxenc/hex.h>
 #include <session/config/user_groups.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <nlohmann/json.hpp>
 #include <session/config/user_groups.hpp>
 #include <string_view>
 #include <variant>
@@ -13,6 +15,7 @@
 
 using namespace std::literals;
 using namespace oxenc::literals;
+using namespace session;
 
 static constexpr int64_t created_ts = 1680064059;
 
@@ -576,15 +579,22 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
     char err[256];
-    config_object* conf;
-    rc = user_groups_init(&conf, ed_sk.data(), NULL, 0, err);
-    REQUIRE(rc == 0);
+    state_object* state;
+    REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
+    std::optional<last_store_data> last_store = std::nullopt;
+    std::optional<last_send_data> last_send = std::nullopt;
+    std::optional<last_store_data> last_store_2 = std::nullopt;
+    std::optional<last_send_data> last_send_2 = std::nullopt;
+
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
 
     constexpr auto definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000";
 
-    ugroups_legacy_group_info* group =
-            user_groups_get_or_construct_legacy_group(conf, definitely_real_id);
+    ugroups_legacy_group_info* group;
+    REQUIRE(state_get_or_construct_ugroups_legacy_group(
+            state, &group, definitely_real_id, nullptr));
     CHECK(group->joined_at == 0);
     group->joined_at = created_ts;
 
@@ -663,47 +673,91 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
         expected_members.emplace(users[i], true);
 
     // Non-freeing, so we can keep using `group`; this is less common:
-    user_groups_set_legacy_group(conf, group);
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                auto group = static_cast<ugroups_legacy_group_info*>(ctx);
+                state_set_ugroups_legacy_group(mutable_state, group);
 
-    group->session_id[2] = 'e';
-    // The "normal" way to set a group when you're done with it (also properly frees `group`).
-    user_groups_set_free_legacy_group(conf, group);
+                group->session_id[2] = 'e';
+                // The "normal" way to set a group when you're done with it (also properly frees
+                //`group`).
+                state_set_free_ugroups_legacy_group(mutable_state, group);
+            },
+            group);
 
-    config_string_list* hashes = config_current_hashes(conf);
-    REQUIRE(hashes);
+    config_string_list* hashes;
+    REQUIRE(state_current_hashes(state, nullptr, &hashes));
     CHECK(hashes->len == 0);
     free(hashes);
 
-    config_push_data* to_push = config_push(conf);
-    CHECK(to_push->seqno == 1);
+    CHECK((*last_store).pubkey ==
+          "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
+    CHECK((*last_send).pubkey ==
+          "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3"
+          "a72");
 
-    hashes = config_current_hashes(conf);
-    REQUIRE(hashes);
-    CHECK(hashes->len == 0);
-    free(hashes);
+    auto ctx_json = nlohmann::json::parse(last_send->ctx);
 
-    config_confirm_pushed(conf, to_push->seqno, "fakehash1");
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 1);
 
-    hashes = config_current_hashes(conf);
+    ustring send_response =
+            to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
+    CHECK(state_received_send_response(
+            state,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send->ctx.data(),
+            last_send->ctx.size()));
+
+    REQUIRE(state_current_hashes(state, nullptr, &hashes));
     REQUIRE(hashes);
     REQUIRE(hashes->len == 1);
     CHECK(hashes->value[0] == "fakehash1"sv);
     free(hashes);
 
     size_t key_len;
-    unsigned char* keys = config_get_keys(conf, &key_len);
+    unsigned char* keys;
+    state_get_keys(state, NAMESPACE_USER_GROUPS, nullptr, &keys, &key_len);
     REQUIRE(keys);
     REQUIRE(key_len == 1);
 
-    session::config::UserGroups c2{ustring_view{seed}, std::nullopt};
+    state_object* state2;
+    REQUIRE(state_init(&state2, ed_sk.data(), nullptr, 0, nullptr));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
 
-    std::vector<std::pair<std::string, ustring_view>> to_merge;
-    to_merge.emplace_back("fakehash1", ustring_view{to_push->config, to_push->config_len});
-    CHECK(c2.merge(to_merge) == std::vector<std::string>{{"fakehash1"}});
+    auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
+    auto last_send_json = nlohmann::json::parse(last_send->data);
+    REQUIRE(last_send_json.contains(first_request_data));
+    auto last_send_data =
+            to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
+    state_config_message* merge_data = new state_config_message[1];
+    config_string_list* accepted;
+    merge_data[0] = {
+            NAMESPACE_USER_GROUPS,
+            "fakehash1",
+            created_ts,
+            last_send_data.data(),
+            last_send_data.size()};
+    CHECK(state_merge(state2, nullptr, merge_data, 1, &accepted));
+    REQUIRE(accepted->len == 1);
+    CHECK(accepted->value[0] == "fakehash1"sv);
+    free(accepted);
+    free(merge_data);
 
-    auto grp = c2.get_legacy_group(definitely_real_id);
-    REQUIRE(grp);
-    CHECK(grp->members() == expected_members);
+    ugroups_legacy_group_info* grp;
+    REQUIRE(state_get_ugroups_legacy_group(state2, &grp, definitely_real_id, nullptr));
+
+    found_members.clear();
+    it = ugroups_legacy_members_begin(grp);
+    while (ugroups_legacy_members_next(it, &session_id, &admin)) {
+        found_members[session_id] = admin;
+    }
+    ugroups_legacy_members_free(it);
+    CHECK(found_members == expected_members);
     CHECK(grp->joined_at == created_ts);
 }
 

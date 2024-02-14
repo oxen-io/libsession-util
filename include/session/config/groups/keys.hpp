@@ -73,10 +73,6 @@ using namespace std::literals;
 ///   key="SessionGroupKeyGen"), where S = H(group_seed, key="SessionGroupKeySeed").
 
 class Keys final : public ConfigSig {
-    // The parent state which owns this config object. By providing a pointer to the parent state
-    // we can inform the parent when changes occur.
-    std::optional<session::state::State*> _parent_state;
-
     Ed25519Secret user_ed25519_sk;
 
     struct key_info {
@@ -105,10 +101,6 @@ class Keys final : public ConfigSig {
     int64_t pending_gen_ = -1;
 
     bool needs_dump_ = false;
-
-    // Updates the `needs_dump_` value, should always be called instead of setting directly as there
-    // are side effects we want to trigger when the value changes.
-    void set_needs_dump(bool updated_needs_dump);
 
     ConfigMessage::verify_callable verifier_;
     ConfigMessage::sign_callable signer_;
@@ -191,24 +183,7 @@ class Keys final : public ConfigSig {
          std::optional<ustring_view> group_ed25519_secretkey,
          std::optional<ustring_view> dumped,
          Info& info,
-         Members& members,
-         std::optional<session::state::State*> parent_state = std::nullopt);
-
-    /// Same as the above but takes pointers instead of references. For internal use only.
-    Keys(ustring_view user_ed25519_secretkey,
-         ustring_view group_ed25519_pubkey,
-         std::optional<ustring_view> group_ed25519_secretkey,
-         std::optional<ustring_view> dumped,
-         Info* info,
-         Members* members,
-         std::optional<session::state::State*> parent_state = std::nullopt) :
-            Keys(user_ed25519_secretkey,
-                 group_ed25519_pubkey,
-                 group_ed25519_secretkey,
-                 dumped,
-                 *info,
-                 *members,
-                 parent_state) {}
+         Members& members);
 
     /// API: groups/Keys::storage_namespace
     ///

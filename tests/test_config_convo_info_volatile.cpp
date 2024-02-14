@@ -1,10 +1,14 @@
+#include <oxenc/base64.h>
 #include <oxenc/hex.h>
 #include <session/config/convo_info_volatile.h>
 #include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <nlohmann/json.hpp>
 #include <session/config/convo_info_volatile.hpp>
+#include <session/state.hpp>
+#include <session/util.hpp>
 #include <string_view>
 #include <variant>
 
@@ -12,6 +16,9 @@
 
 using namespace std::literals;
 using namespace oxenc::literals;
+using namespace session;
+
+static constexpr int64_t created_ts = 1680064059;
 
 TEST_CASE("Conversations", "[config][conversations]") {
 
@@ -242,30 +249,39 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
-    config_object* conf;
-    REQUIRE(0 == convo_info_volatile_init(&conf, ed_sk.data(), NULL, 0, NULL));
+    char err[256];
+    memset(err, 0, 255);
+    state_object* state;
+    REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
+    std::optional<last_store_data> last_store = std::nullopt;
+    std::optional<last_send_data> last_send = std::nullopt;
+    std::optional<last_store_data> last_store_2 = std::nullopt;
+    std::optional<last_send_data> last_send_2 = std::nullopt;
+
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
 
     const char* const definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000";
 
     convo_info_volatile_1to1 c;
-    CHECK_FALSE(convo_info_volatile_get_1to1(conf, &c, definitely_real_id));
-    CHECK(conf->last_error == nullptr);
 
-    CHECK_FALSE(convo_info_volatile_get_1to1(conf, &c, "05123456"));
-    CHECK(conf->last_error ==
-          "Invalid session ID: expected 66 hex digits starting with 05; got 05123456"sv);
+    CHECK_FALSE(state_get_convo_info_volatile_1to1(state, &c, definitely_real_id, err));
+    CHECK(err == ""sv);
 
-    CHECK(convo_info_volatile_size(conf) == 0);
+    CHECK_FALSE(state_get_convo_info_volatile_1to1(state, &c, "05123456", err));
+    CHECK(err == "Invalid session ID: expected 66 hex digits starting with 05; got 05123456"sv);
 
-    CHECK(convo_info_volatile_get_or_construct_1to1(conf, &c, definitely_real_id));
+    CHECK(state_size_convo_info_volatile(state) == 0);
+
+    CHECK(state_get_or_construct_convo_info_volatile_1to1(state, &c, definitely_real_id, nullptr));
 
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK(c.last_read == 0);
     CHECK_FALSE(c.unread);
 
-    CHECK_FALSE(config_needs_push(conf));
-    CHECK_FALSE(config_needs_dump(conf));
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
 
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
@@ -273,40 +289,36 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     c.last_read = now_ms;
 
-    // The new data doesn't get stored until we call this:
-    convo_info_volatile_set_1to1(conf, &c);
-
     convo_info_volatile_legacy_group cg;
-    REQUIRE_FALSE(convo_info_volatile_get_legacy_group(conf, &cg, definitely_real_id));
-    REQUIRE(convo_info_volatile_get_1to1(conf, &c, definitely_real_id));
-    CHECK(c.last_read == now_ms);
-
-    CHECK(config_needs_push(conf));
-    CHECK(config_needs_dump(conf));
+    REQUIRE_FALSE(
+            state_get_convo_info_volatile_legacy_group(state, &cg, definitely_real_id, nullptr));
 
     const auto open_group_pubkey =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"_hexbytes;
 
     convo_info_volatile_community og;
 
-    CHECK_FALSE(convo_info_volatile_get_or_construct_community(
-            conf,
+    CHECK_FALSE(state_get_or_construct_convo_info_volatile_community(
+            state,
             &og,
             "bad-url",
             "room",
-            "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes.data()));
-    CHECK(conf->last_error == "Invalid community URL: invalid/missing protocol://"sv);
-    CHECK_FALSE(convo_info_volatile_get_or_construct_community(
-            conf,
+            "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes.data(),
+            err));
+    CHECK(err == "Invalid community URL: invalid/missing protocol://"sv);
+    CHECK_FALSE(state_get_or_construct_convo_info_volatile_community(
+            state,
             &og,
             "https://example.com",
             "bad room name",
-            "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes.data()));
-    CHECK(conf->last_error == "Invalid community URL: room token contains invalid characters"sv);
+            "0000000000000000000000000000000000000000000000000000000000000000"_hexbytes.data(),
+            err));
+    CHECK(err == "Invalid community URL: room token contains invalid characters"sv);
 
-    CHECK(convo_info_volatile_get_or_construct_community(
-            conf, &og, "http://Example.ORG:5678", "SudokuRoom", open_group_pubkey.data()));
-    CHECK(conf->last_error == nullptr);
+    memset(err, 0, 255);
+    CHECK(state_get_or_construct_convo_info_volatile_community(
+            state, &og, "http://Example.ORG:5678", "SudokuRoom", open_group_pubkey.data(), err));
+    CHECK(err == ""sv);
     CHECK(og.base_url == "http://example.org:5678"sv);  // Note: lower-case
     CHECK(og.room == "sudokuroom"sv);                   // Note: lower-case
     CHECK(oxenc::to_hex(og.pubkey, og.pubkey + 32) ==
@@ -314,82 +326,141 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     og.unread = true;
 
     // The new data doesn't get stored until we call this:
-    convo_info_volatile_set_community(conf, &og);
+    std::pair<convo_info_volatile_1to1*, convo_info_volatile_community*> convos = {&c, &og};
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                auto convos = static_cast<
+                        std::pair<convo_info_volatile_1to1*, convo_info_volatile_community*>*>(ctx);
+                state_set_convo_info_volatile_1to1(mutable_state, convos->first);
+                state_set_convo_info_volatile_community(mutable_state, convos->second);
+            },
+            &convos);
 
-    config_push_data* to_push = config_push(conf);
-    auto seqno = to_push->seqno;
-    free(to_push);
-    CHECK(seqno == 1);
+    REQUIRE(state_get_convo_info_volatile_1to1(state, &c, definitely_real_id, nullptr));
+    CHECK(c.last_read == now_ms);
+
+    CHECK(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
+    CHECK(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
+    auto ctx_json = nlohmann::json::parse(last_send->ctx);
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 1);
 
     // Pretend we uploaded it
-    config_confirm_pushed(conf, seqno, "hash1");
-    CHECK(config_needs_dump(conf));
-    CHECK_FALSE(config_needs_push(conf));
+    ustring send_response =
+            to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash1\"}}]}");
+    CHECK(state_received_send_response(
+            state,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send->ctx.data(),
+            last_send->ctx.size()));
 
-    unsigned char* dump;
-    size_t dumplen;
-    config_dump(conf, &dump, &dumplen);
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
 
-    config_object* conf2;
-    REQUIRE(convo_info_volatile_init(&conf2, ed_sk.data(), dump, dumplen, NULL) == 0);
-    free(dump);
+    state_namespaced_dump* dumps = new state_namespaced_dump[1];
+    dumps[0] = {
+            static_cast<NAMESPACE>((*last_store).namespace_),
+            (*last_store).pubkey.c_str(),
+            (*last_store).data.data(),
+            (*last_store).data.size()};
+    state_object* state2;
+    REQUIRE(state_init(&state2, ed_sk.data(), dumps, 1, nullptr));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+    free(dumps);
 
-    CHECK_FALSE(config_needs_push(conf2));
-    CHECK_FALSE(config_needs_dump(conf2));
+    CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
+    CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_dump());
 
-    REQUIRE(convo_info_volatile_get_1to1(conf2, &c, definitely_real_id));
+    REQUIRE(state_get_convo_info_volatile_1to1(state2, &c, definitely_real_id, nullptr));
     CHECK(c.last_read == now_ms);
     CHECK(c.session_id == std::string_view{definitely_real_id});
     CHECK_FALSE(c.unread);
 
-    REQUIRE(convo_info_volatile_get_community(conf2, &og, "http://EXAMPLE.org:5678", "sudokuRoom"));
+    REQUIRE(state_get_convo_info_volatile_community(
+            state2, &og, "http://EXAMPLE.org:5678", "sudokuRoom", nullptr));
     CHECK(og.base_url == "http://example.org:5678"sv);
     CHECK(og.room == "sudokuroom"sv);
     CHECK(oxenc::to_hex(og.pubkey, og.pubkey + 32) == to_hex(open_group_pubkey));
 
     auto another_id = "051111111111111111111111111111111111111111111111111111111111111111";
     convo_info_volatile_1to1 c2;
-    REQUIRE(convo_info_volatile_get_or_construct_1to1(conf2, &c2, another_id));
+    REQUIRE(state_get_or_construct_convo_info_volatile_1to1(state2, &c2, another_id, nullptr));
     c2.unread = true;
-    convo_info_volatile_set_1to1(conf2, &c2);
 
-    REQUIRE(convo_info_volatile_get_or_construct_legacy_group(
-            conf2, &cg, "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"));
+    REQUIRE(state_get_or_construct_convo_info_volatile_legacy_group(
+            state2,
+            &cg,
+            "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            nullptr));
     cg.last_read = now_ms - 50;
-    convo_info_volatile_set_legacy_group(conf2, &cg);
-    CHECK(config_needs_push(conf2));
+    std::pair<convo_info_volatile_1to1*, convo_info_volatile_legacy_group*> convos2 = {&c2, &cg};
+    state_mutate_user(
+            state2,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                auto convos = static_cast<
+                        std::pair<convo_info_volatile_1to1*, convo_info_volatile_legacy_group*>*>(
+                        ctx);
+                state_set_convo_info_volatile_1to1(mutable_state, convos->first);
+                state_set_convo_info_volatile_legacy_group(mutable_state, convos->second);
+            },
+            &convos2);
+    REQUIRE(state_get_or_construct_convo_info_volatile_legacy_group(
+            state2,
+            &cg,
+            "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            nullptr));
+    CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
+    ctx_json = nlohmann::json::parse(last_send_2->ctx);
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 2);
 
-    to_push = config_push(conf2);
-    CHECK(to_push->seqno == 2);
-
-    const char* hash_data[1];
-    const unsigned char* merge_data[1];
-    size_t merge_size[1];
-    hash_data[0] = "hash123";
-    merge_data[0] = to_push->config;
-    merge_size[0] = to_push->config_len;
-    config_string_list* accepted = config_merge(conf, hash_data, merge_data, merge_size, 1);
+    auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
+    auto last_send_json = nlohmann::json::parse(last_send_2->data);
+    REQUIRE(last_send_json.contains(first_request_data));
+    auto last_send_data =
+            to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
+    state_config_message* merge_data = new state_config_message[1];
+    config_string_list* accepted;
+    merge_data[0] = {
+            NAMESPACE_CONVO_INFO_VOLATILE,
+            "hash123",
+            created_ts,
+            last_send_data.data(),
+            last_send_data.size()};
+    REQUIRE(state_merge(state, nullptr, merge_data, 1, &accepted));
     REQUIRE(accepted->len == 1);
     CHECK(accepted->value[0] == "hash123"sv);
     free(accepted);
-    config_confirm_pushed(conf2, seqno, "hash123");
-    free(to_push);
+    free(merge_data);
 
-    CHECK_FALSE(config_needs_push(conf));
+    ctx_json = nlohmann::json::parse(last_send_2->ctx);
+    send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash123\"}}]}");
+    CHECK(state_received_send_response(
+            state2,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send_2->ctx.data(),
+            last_send_2->ctx.size()));
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
 
     std::vector<std::string> seen;
-    for (auto* conf : {conf, conf2}) {
+    for (auto* state : {state, state2}) {
         // Iterate through and make sure we got everything we expected
         seen.clear();
-        CHECK(convo_info_volatile_size(conf) == 4);
-        CHECK(convo_info_volatile_size_1to1(conf) == 2);
-        CHECK(convo_info_volatile_size_communities(conf) == 1);
-        CHECK(convo_info_volatile_size_legacy_groups(conf) == 1);
+        CHECK(state_size_convo_info_volatile(state) == 4);
+        CHECK(state_size_convo_info_volatile_1to1(state) == 2);
+        CHECK(state_size_convo_info_volatile_communities(state) == 1);
+        CHECK(state_size_convo_info_volatile_legacy_groups(state) == 1);
 
         convo_info_volatile_1to1 c1;
         convo_info_volatile_community c2;
         convo_info_volatile_legacy_group c3;
-        convo_info_volatile_iterator* it = convo_info_volatile_iterator_new(conf);
+        convo_info_volatile_iterator* it = convo_info_volatile_iterator_new(state);
         for (; !convo_info_volatile_iterator_done(it); convo_info_volatile_iterator_advance(it)) {
             if (convo_info_volatile_it_is_1to1(it, &c1)) {
                 seen.push_back("1-to-1: "s + c1.session_id);
@@ -412,22 +483,35 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
                                "c"}});
     }
 
-    CHECK_FALSE(config_needs_push(conf));
-    convo_info_volatile_erase_1to1(
-            conf, "052000000000000000000000000000000000000000000000000000000000000000");
-    CHECK_FALSE(config_needs_push(conf));
-    convo_info_volatile_erase_1to1(
-            conf, "055000000000000000000000000000000000000000000000000000000000000000");
-    CHECK(config_needs_push(conf));
-    CHECK(convo_info_volatile_size(conf) == 3);
-    CHECK(convo_info_volatile_size_1to1(conf) == 1);
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
+
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_erase_convo_info_volatile_1to1(
+                        mutable_state,
+                        "052000000000000000000000000000000000000000000000000000000000000000");
+            },
+            nullptr);
+    CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_erase_convo_info_volatile_1to1(
+                        mutable_state,
+                        "055000000000000000000000000000000000000000000000000000000000000000");
+            },
+            nullptr);
+    CHECK(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
+    CHECK(state_size_convo_info_volatile(state) == 3);
+    CHECK(state_size_convo_info_volatile_1to1(state) == 1);
 
     // Check the single-type iterators:
     seen.clear();
 
     convo_info_volatile_iterator* it;
     convo_info_volatile_1to1 ci;
-    for (it = convo_info_volatile_iterator_new_1to1(conf); !convo_info_volatile_iterator_done(it);
+    for (it = convo_info_volatile_iterator_new_1to1(state); !convo_info_volatile_iterator_done(it);
          convo_info_volatile_iterator_advance(it)) {
         REQUIRE(convo_info_volatile_it_is_1to1(it, &ci));
         seen.push_back(ci.session_id);
@@ -439,7 +523,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     seen.clear();
     convo_info_volatile_community ogi;
-    for (it = convo_info_volatile_iterator_new_communities(conf);
+    for (it = convo_info_volatile_iterator_new_communities(state);
          !convo_info_volatile_iterator_done(it);
          convo_info_volatile_iterator_advance(it)) {
         REQUIRE(convo_info_volatile_it_is_community(it, &ogi));
@@ -452,7 +536,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     seen.clear();
     convo_info_volatile_legacy_group cgi;
-    for (it = convo_info_volatile_iterator_new_legacy_groups(conf);
+    for (it = convo_info_volatile_iterator_new_legacy_groups(state);
          !convo_info_volatile_iterator_done(it);
          convo_info_volatile_iterator_advance(it)) {
         REQUIRE(convo_info_volatile_it_is_legacy_group(it, &cgi));
@@ -579,89 +663,157 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     CHECK(oxenc::to_hex(seed.begin(), seed.end()) ==
           oxenc::to_hex(ed_sk.begin(), ed_sk.begin() + 32));
 
-    config_object* conf;
-    REQUIRE(0 == convo_info_volatile_init(&conf, ed_sk.data(), NULL, 0, NULL));
+    char err[256];
+    state_object* state;
+    REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
+    std::optional<last_store_data> last_store = std::nullopt;
+    std::optional<last_send_data> last_send = std::nullopt;
+    std::optional<last_store_data> last_store_2 = std::nullopt;
+    std::optional<last_send_data> last_send_2 = std::nullopt;
+
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
 
     convo_info_volatile_1to1 c;
-    CHECK(convo_info_volatile_get_or_construct_1to1(
-            conf, &c, "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+    CHECK(state_get_or_construct_convo_info_volatile_1to1(
+            state, &c, "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", err));
     c.last_read = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
-    convo_info_volatile_set_1to1(conf, &c);
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_set_convo_info_volatile_1to1(
+                        mutable_state, static_cast<convo_info_volatile_1to1*>(ctx));
+            },
+            &c);
 
     // Fake push:
-    config_push_data* to_push = config_push(conf);
-    seqno_t seqno = to_push->seqno;
-    free(to_push);
-    CHECK(seqno == 1);
-    config_confirm_pushed(conf, seqno, "somehash");
-    CHECK(config_needs_dump(conf));
-
-    // Dump:
-    unsigned char* dump;
-    size_t dumplen;
-    config_dump(conf, &dump, &dumplen);
+    auto ctx_json = nlohmann::json::parse(last_send->ctx);
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 1);
+    ustring send_response =
+            to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"somehash\"}}]}");
+    CHECK(state_received_send_response(
+            state,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send->ctx.data(),
+            last_send->ctx.size()));
 
     // Load the dump:
-    config_object* conf2;
-    REQUIRE(0 == convo_info_volatile_init(&conf2, ed_sk.data(), dump, dumplen, NULL));
-
-    free(dump);
+    state_namespaced_dump* dumps = new state_namespaced_dump[1];
+    dumps[0] = {
+            static_cast<NAMESPACE>((*last_store).namespace_),
+            (*last_store).pubkey.c_str(),
+            (*last_store).data.data(),
+            (*last_store).data.size()};
+    state_object* state2;
+    REQUIRE(state_init(&state2, ed_sk.data(), dumps, 1, nullptr));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+    free(dumps);
 
     // Change the original again, then push it for conf2:
-    CHECK(convo_info_volatile_get_or_construct_1to1(
-            conf, &c, "051111111111111111111111111111111111111111111111111111111111111111"));
+    CHECK(state_get_or_construct_convo_info_volatile_1to1(
+            state,
+            &c,
+            "051111111111111111111111111111111111111111111111111111111111111111",
+            nullptr));
     c.last_read = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
-    convo_info_volatile_set_1to1(conf, &c);
+    state_mutate_user(
+            state,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_set_convo_info_volatile_1to1(
+                        mutable_state, static_cast<convo_info_volatile_1to1*>(ctx));
+            },
+            &c);
 
-    to_push = config_push(conf);
-    CHECK(to_push->seqno == 2);
-    config_confirm_pushed(conf, to_push->seqno, "hash5235");
+    ctx_json = nlohmann::json::parse(last_send->ctx);
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 2);
+    send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash5235\"}}]}");
+    CHECK(state_received_send_response(
+            state,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send->ctx.data(),
+            last_send->ctx.size()));
 
     // But *before* we load the push make a dirtying change to conf2 that we *don't* push (so that
     // we'll be merging into a dirty-state config):
-    CHECK(convo_info_volatile_get_or_construct_1to1(
-            conf2, &c, "052222111111111111111111111111111111111111111111111111111111111111"));
+    CHECK(state_get_or_construct_convo_info_volatile_1to1(
+            state2,
+            &c,
+            "052222111111111111111111111111111111111111111111111111111111111111",
+            nullptr));
     c.last_read = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
-    convo_info_volatile_set_1to1(conf2, &c);
+    state_mutate_user(
+            state2,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                state_set_convo_info_volatile_1to1(
+                        mutable_state, static_cast<convo_info_volatile_1to1*>(ctx));
+            },
+            &c);
 
-    // And now, *before* we push the dirty config, also merge the incoming push from `conf`:
-    const char* merge_hash[1];
-    const unsigned char* merge_data[1];
-    size_t merge_size[1];
-    merge_hash[0] = "hash5235";
-    merge_data[0] = to_push->config;
-    merge_size[0] = to_push->config_len;
-
-    config_string_list* accepted = config_merge(conf2, merge_hash, merge_data, merge_size, 1);
+    // And now, *before* we push the dirty config, also merge the incoming push from `state`:
+    auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
+    auto last_send_json = nlohmann::json::parse(last_send->data);
+    REQUIRE(last_send_json.contains(first_request_data));
+    auto last_send_data =
+            to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
+    state_config_message* merge_data = new state_config_message[1];
+    config_string_list* accepted;
+    merge_data[0] = {
+            NAMESPACE_CONVO_INFO_VOLATILE,
+            "hash5235",
+            created_ts,
+            last_send_data.data(),
+            last_send_data.size()};
+    REQUIRE(state_merge(state2, nullptr, merge_data, 1, &accepted));
     REQUIRE(accepted->len == 1);
     CHECK(accepted->value[0] == "hash5235"sv);
     free(accepted);
-    free(to_push);
+    free(merge_data);
 
-    CHECK(config_needs_push(conf2));
+    CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
 
     convo_info_volatile_1to1 c1;
-    REQUIRE(convo_info_volatile_get_or_construct_1to1(
-            conf2, &c1, "051111111111111111111111111111111111111111111111111111111111111111"));
+    REQUIRE(state_get_or_construct_convo_info_volatile_1to1(
+            state2,
+            &c1,
+            "051111111111111111111111111111111111111111111111111111111111111111",
+            nullptr));
     c1.last_read += 10;
     // Prior to the commit that added this test case (and fix), this call would fail with:
     //     Internal error: unexpected dirty but non-mutable ConfigMessage
     // because of the above dirty->merge->dirty (without an intermediate push) pattern.
-    REQUIRE_NOTHROW(convo_info_volatile_set_1to1(conf2, &c1));
+    state_mutate_user(
+            state2,
+            [](mutable_state_user_object* mutable_state, void* ctx) {
+                REQUIRE_NOTHROW(state_set_convo_info_volatile_1to1(
+                        mutable_state, static_cast<convo_info_volatile_1to1*>(ctx)));
+            },
+            &c1);
 
-    CHECK(config_needs_push(conf2));
-    to_push = config_push(conf2);
-    CHECK(to_push->seqno == 3);
-    config_confirm_pushed(conf2, to_push->seqno, "hashz");
-    CHECK_FALSE(config_needs_push(conf2));
-
-    config_dump(conf2, &dump, &dumplen);
-    free(dump);
-    CHECK_FALSE(config_needs_dump(conf2));
+    CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
+    ctx_json = nlohmann::json::parse(last_send_2->ctx);
+    REQUIRE(ctx_json.contains("seqnos"));
+    CHECK(ctx_json["seqnos"][0] == 4);
+    send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hashz\"}}]}");
+    CHECK(state_received_send_response(
+            state2,
+            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
+            send_response.data(),
+            send_response.size(),
+            last_send_2->ctx.data(),
+            last_send_2->ctx.size()));
+    CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
+    CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_dump());
 }

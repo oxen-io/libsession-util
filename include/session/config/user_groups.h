@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 
+#include "../state.h"
 #include "base.h"
 #include "notify.h"
 #include "util.h"
@@ -88,68 +89,43 @@ typedef struct ugroups_community_info {
 
 } ugroups_community_info;
 
-/// API: user_groups/user_groups_init
-///
-/// Initializes the user groups object
-///
-/// Declaration:
-/// ```cpp
-/// INT user_groups_init(
-///     [out]           config_object**     conf,
-///     [in]            unsigned char*      ed25519_secretkey,
-///     [in, optional]  unsigned char*      dump,
-///     [in, optional]  size_t              dumplen,
-///     [out]           char*               error
-/// );
-/// ```
-///
-/// Inputs:
-/// - `conf` -- [in] pointer to config_object object
-/// - `ed25519_secretkey` -- [in] pointer to secret key
-/// - `dump` -- [in, optional] text of dump
-/// - `dumplen` -- [in, optional] size of the text passed in as dump
-/// - `error` -- [out] of the error if failed
-///
-/// Outputs:
-/// - `int` -- Whether the function succeeded or not
-LIBSESSION_EXPORT int user_groups_init(
-        config_object** conf,
-        const unsigned char* ed25519_secretkey,
-        const unsigned char* dump,
-        size_t dumplen,
-        char* error) __attribute__((warn_unused_result));
-
-/// API: user_groups/user_groups_get_group
+/// API: user_groups/state_get_ugroups_group
 ///
 /// Gets (non-legacy) group info into `group`, if the group was found.  `group_id` is a
 /// null-terminated C string containing the 66 character group id in hex (beginning with "03").
 ///
 /// Inputs:
-/// `conf` -- pointer to the group config object
+/// `state` -- pointer to the state object
 /// `group` -- [out] `ugroups_group_info` struct into which to store the group info.
 /// `group_id` -- C string containing the hex group id (starting with "03")
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
 ///
 /// Outputs:
 /// Returns `true` and populates `group` if the group was found; returns false otherwise.
-LIBSESSION_EXPORT bool user_groups_get_group(
-        config_object* conf, ugroups_group_info* group, const char* group_id);
+LIBSESSION_EXPORT bool state_get_ugroups_group(
+        const state_object* state, ugroups_group_info* group, const char* group_id, char* error);
 
-/// API: user_groups/user_groups_get_or_construct_group
+/// API: user_groups/state_get_or_construct_ugroups_group
 ///
 /// Gets (non-legacy) group info into `group`, if the group was found.  Otherwise initialize `group`
 /// to default values (and set its `.id` appropriately).
 ///
 /// Inputs:
-/// `conf` -- pointer to the group config object
+/// `state` -- pointer to the mutable state object
 /// `group` -- [out] `ugroups_group_info` struct into which to store the group info.
 /// `group_id` -- C string containing the hex group id (starting with "03")
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
 ///
 /// Outputs:
-/// Returns `true` on success, `false` upon error (such as when given an invalid group id).
-LIBSESSION_EXPORT bool user_groups_get_or_construct_group(
-        config_object* conf, ugroups_group_info* group, const char* group_id);
+/// - `bool` -- `true` on success, `false` upon error (such as when given an invalid group id).
+LIBSESSION_EXPORT bool state_get_or_construct_ugroups_group(
+        const state_object* state, ugroups_group_info* group, const char* group_id, char* error);
 
-/// API: user_groups/user_groups_get_community
+/// API: user_groups/state_get_ugroups_community
 ///
 /// Gets community conversation info into `comm`, if the community info was found. `base_url` and
 /// `room` are null-terminated c strings.  base_url will be normalized/lower-cased; room is
@@ -157,32 +133,28 @@ LIBSESSION_EXPORT bool user_groups_get_or_construct_group(
 /// different room capitalization than the one provided to the call.
 ///
 /// Returns true if the community was found and `comm` populated; false otherwise.  A false return
-/// can either be because it didn't exist (`conf->last_error` will be NULL) or because of some error
-/// (`last_error` will be set to an error string).
-///
-/// Declaration:
-/// ```cpp
-/// BOOL user_groups_get_community(
-///     [in]    config_object*              conf,
-///     [out]   ugroups_community_info*     comm,
-///     [in]    const char*                 base_url,
-///     [in]    const char*                 room
-/// );
-/// ```
+/// can either be because it didn't exist (the error buffer will be NULL) or because of some error
+/// (the error buffer will be set to an error string).
 ///
 /// Inputs:
-/// - `conf` -- [in] pointer to config_object object
+/// - `state` -- [in] pointer to state object
 /// - `comm` -- [out] pointer to ugroups_community_info object
 /// - `base_url` -- [in] text of the url
 /// - `room` -- [in] text of the room
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
 ///
 /// Outputs:
 /// - `bool` -- Whether the function succeeded or not
-LIBSESSION_EXPORT bool user_groups_get_community(
-        config_object* conf, ugroups_community_info* comm, const char* base_url, const char* room)
-        __attribute__((warn_unused_result));
+LIBSESSION_EXPORT bool state_get_ugroups_community(
+        const state_object* state,
+        ugroups_community_info* comm,
+        const char* base_url,
+        const char* room,
+        char* error) __attribute__((warn_unused_result));
 
-/// API: user_groups/user_groups_get_or_construct_community
+/// API: user_groups/state_get_or_construct_ugroups_community
 ///
 /// Like the above, but if the community was not found, this constructs one that can be inserted.
 /// `base_url` will be normalized in the returned object.  `room` is a case-insensitive lookup key
@@ -195,62 +167,48 @@ LIBSESSION_EXPORT bool user_groups_get_community(
 /// Note that this is all different from convo_info_volatile, which always forces the room token to
 /// lower-case (because it does not preserve the case).
 ///
-/// Returns false (and sets `conf->last_error`) on error.
-///
-/// Declaration:
-/// ```cpp
-/// BOOL user_groups_get_or_construct_community(
-///     [in]    config_object*              conf,
-///     [out]   ugroups_community_info*     comm,
-///     [in]    const char*                 base_url,
-///     [in]    const char*                 room,
-///     [in]    unsigned const char*        pubkey
-/// );
-/// ```
+/// Returns false (and sets the error buffer) on error.
 ///
 /// Inputs:
-/// - `conf` -- [in] pointer to config_object object
+/// - `state` -- [in] pointer to mutable state object
 /// - `comm` -- [out] pointer to ugroups_community_info object
 /// - `base_url` -- [in] text of the url
 /// - `room` -- [in] text of the room
 /// - `pubkey` -- [in] binary of pubkey
-///
-/// Outputs:
-/// - `bool` -- Whether the function succeeded or not
-LIBSESSION_EXPORT bool user_groups_get_or_construct_community(
-        config_object* conf,
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
+LIBSESSION_EXPORT bool state_get_or_construct_ugroups_community(
+        const state_object* state,
         ugroups_community_info* comm,
         const char* base_url,
         const char* room,
-        unsigned const char* pubkey) __attribute__((warn_unused_result));
+        unsigned const char* pubkey,
+        char* error);
 
-/// API: user_groups/user_groups_get_legacy_group
+/// API: user_groups/state_get_ugroups_legacy_group
 ///
 /// Returns a ugroups_legacy_group_info pointer containing the conversation info for a given legacy
 /// group ID (specified as a null-terminated hex string), if the conversation exists.  If the
-/// conversation does not exist, returns NULL.  Sets conf->last_error on error.
+/// conversation does not exist, returns NULL.  Sets the error buffer on error.
 ///
 /// The returned pointer *must* be freed either by calling `ugroups_legacy_group_free()` when done
 /// with it, or by passing it to `user_groups_set_free_legacy_group()`.
 ///
-/// Declaration:
-/// ```cpp
-/// UGROUPS_LEGACY_GROUP_INFO* user_groups_get_legacy_group(
-///     [in]    config_object*      conf,
-///     [in]    const char*         id
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
+/// - `legacy_group_info` -- [out] Pointer containing conversation info
 /// - `id` -- [in] Null terminated hex string
-///
-/// Outputs:
-/// - `ugroupts_legacy_group_info*` -- Pointer containing conversation info
-LIBSESSION_EXPORT ugroups_legacy_group_info* user_groups_get_legacy_group(
-        config_object* conf, const char* id) __attribute__((warn_unused_result));
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
+LIBSESSION_EXPORT bool state_get_ugroups_legacy_group(
+        const state_object* state,
+        ugroups_legacy_group_info** legacy_group_info,
+        const char* id,
+        char* error);
 
-/// API: user_groups/user_groups_get_or_construct_legacy_group
+/// API: user_groups/state_get_or_construct_ugroups_legacy_group
 ///
 /// Same as the above `get_legacy_group()`except that when the conversation does not exist, this
 /// sets all the group fields to defaults and loads it with the given id.
@@ -265,177 +223,111 @@ LIBSESSION_EXPORT ugroups_legacy_group_info* user_groups_get_legacy_group(
 /// This is the method that should usually be used to create or update a conversation, followed by
 /// setting fields in the group, and then giving it to user_groups_set().
 ///
-/// On error, this returns NULL and sets `conf->last_error`.
-///
-/// Declaration:
-/// ```cpp
-/// UGROUPS_LEGACY_GROUP_INFO* user_groups_get_or_construct_legacy_group(
-///     [in]    config_object*      conf,
-///     [in]    const char*         id
-/// );
-/// ```
+/// On error, this returns NULL and sets the error buffer.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to mutable state object
+/// - `legacy_group_info` -- [out] Pointer containing conversation info
 /// - `id` -- [in] Null terminated hex string
-///
-/// Outputs:
-/// - `ugroupts_legacy_group_info*` -- Pointer containing conversation info
-LIBSESSION_EXPORT ugroups_legacy_group_info* user_groups_get_or_construct_legacy_group(
-        config_object* conf, const char* id) __attribute__((warn_unused_result));
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
+LIBSESSION_EXPORT bool state_get_or_construct_ugroups_legacy_group(
+        const state_object* state,
+        ugroups_legacy_group_info** legacy_group_info,
+        const char* id,
+        char* error);
 
-/// API: user_groups/ugroups_legacy_group_free
-///
-/// Properly frees memory associated with a ugroups_legacy_group_info pointer (as returned by
-/// get_legacy_group/get_or_construct_legacy_group).
-///
-/// Declaration:
-/// ```cpp
-/// VOID ugroups_legacy_group_free(
-///     [in]    ugroups_community_info*   group
-/// );
-/// ```
-///
-/// Inputs:
-/// - `group` -- [in] Pointer to ugroups_legacy_group_info
-LIBSESSION_EXPORT void ugroups_legacy_group_free(ugroups_legacy_group_info* group);
-
-/// API: user_groups/user_groups_set_community
+/// API: user_groups/state_set_ugroups_community
 ///
 /// Adds or updates a community conversation from the given group info
 ///
-/// Declaration:
-/// ```cpp
-/// VOID user_groups_set_community(
-///     [in]    config_object*                  conf,
-///     [in]    const ugroups_community_info*   group
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a community group info object
-LIBSESSION_EXPORT void user_groups_set_community(
-        config_object* conf, const ugroups_community_info* group);
+LIBSESSION_EXPORT void state_set_ugroups_community(
+        mutable_state_user_object* state, const ugroups_community_info* group);
 
-/// API: user_groups/user_groups_set_group
+/// API: user_groups/state_set_ugroups_group
 ///
 /// Adds or updates a (non-legacy) group conversation from the given group info
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a group info object
-LIBSESSION_EXPORT void user_groups_set_group(config_object* conf, const ugroups_group_info* group);
+LIBSESSION_EXPORT void state_set_ugroups_group(
+        mutable_state_user_object* state, const ugroups_group_info* group);
 
-/// API: user_groups/user_groups_set_legacy_group
+/// API: user_groups/state_set_ugroups_legacy_group
 ///
 /// Adds or updates a legacy group conversation from the into.  This version of the method should
 /// only be used when you explicitly want the `group` to remain valid; if the set is the last thing
 /// you need to do with it (which is common) it is more efficient to call the freeing version,
 /// below.
 ///
-/// Declaration:
-/// ```cpp
-/// VOID user_groups_set_legacy_group(
-///     [in]    config_object*                      conf,
-///     [in]    const ugroups_legacy_group_info*    group
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a legacy group info object
-LIBSESSION_EXPORT void user_groups_set_legacy_group(
-        config_object* conf, const ugroups_legacy_group_info* group);
+LIBSESSION_EXPORT void state_set_ugroups_legacy_group(
+        mutable_state_user_object* state, const ugroups_legacy_group_info* group);
 
-/// API: user_groups/user_groups_set_free_legacy_group
+/// API: user_groups/state_set_free_ugroups_legacy_group
 ///
 /// Same as above `user_groups_set_free_legacy_group()`, except that this also frees the pointer for
 /// you, which is commonly what is wanted when updating fields.  This is equivalent to, but more
 /// efficient than, setting and then freeing.
 ///
-/// Declaration:
-/// ```cpp
-/// VOID user_groups_set_free_legacy_group(
-///     [in]    config_object*                      conf,
-///     [in]    const ugroups_legacy_group_info*    group
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a legacy group info object
-LIBSESSION_EXPORT void user_groups_set_free_legacy_group(
-        config_object* conf, ugroups_legacy_group_info* group);
+LIBSESSION_EXPORT void state_set_free_ugroups_legacy_group(
+        mutable_state_user_object* state, ugroups_legacy_group_info* group);
 
-/// API: user_groups/user_groups_erase_community
+/// API: user_groups/state_erase_ugroups_community
 ///
 /// Erases a conversation from the conversation list.  Returns true if the conversation was found
 /// and removed, false if the conversation was not present.  You must not call this during
 /// iteration; see details below.
 ///
-/// Declaration:
-/// ```cpp
-/// BOOL user_groups_erase_community(
-///     [in]    config_object*      conf,
-///     [in]    const char*         base_url,
-///     [in]    const char*         room
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 /// - `base_url` -- [in] null terminated string of the base url
 /// - `room` -- [in] null terminated string of the room
 ///
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
-LIBSESSION_EXPORT bool user_groups_erase_community(
-        config_object* conf, const char* base_url, const char* room);
+LIBSESSION_EXPORT bool state_erase_ugroups_community(
+        mutable_state_user_object* state, const char* base_url, const char* room);
 
-/// API: user_groups/user_groups_erase_group
+/// API: user_groups/state_erase_ugroups_group
 ///
 /// Erases a group conversation from the conversation list.  Returns true if the conversation was
 /// found and removed, false if the conversation was not present.  You must not call this during
 /// iteration; see details below.
 ///
-/// Declaration:
-/// ```cpp
-/// BOOL user_groups_erase_group(
-///     [in]    config_object*      conf,
-///     [in]    const char*         group_id
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 /// - `group_id` -- [in] null terminated string of the hex group id (starting with "03")
 ///
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
-LIBSESSION_EXPORT bool user_groups_erase_group(config_object* conf, const char* group_id);
+LIBSESSION_EXPORT bool state_erase_ugroups_group(
+        mutable_state_user_object* state, const char* group_id);
 
-/// API: user_groups/user_groups_erase_legacy_group
+/// API: user_groups/state_erase_ugroups_legacy_group
 ///
 /// Erases a conversation from the conversation list.  Returns true if the conversation was found
 /// and removed, false if the conversation was not present.  You must not call this during
 /// iteration; see details below.
 ///
-/// Declaration:
-/// ```cpp
-/// BOOL user_groups_erase_legacy_group(
-///     [in]    config_object*      conf,
-///     [in]    const char*         group_id
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 /// - `group_id` -- [in] null terminated string of the base url
 ///
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
-LIBSESSION_EXPORT bool user_groups_erase_legacy_group(config_object* conf, const char* group_id);
+LIBSESSION_EXPORT bool state_erase_ugroups_legacy_group(
+        mutable_state_user_object* state, const char* group_id);
 
 /// API: user_groups/ugroups_group_set_kicked
 ///
@@ -450,6 +342,8 @@ LIBSESSION_EXPORT void ugroups_group_set_kicked(ugroups_group_info* group);
 /// API: user_groups/ugroups_group_is_kicked
 ///
 /// Returns true if we have been kicked (i.e. our secret key and auth data are empty).
+/// Properly frees memory associated with a ugroups_legacy_group_info pointer (as returned by
+/// get_legacy_group/get_or_construct_legacy_group).
 ///
 /// Inputs:
 /// - `group` -- [in] pointer to the group info to query
@@ -457,6 +351,15 @@ LIBSESSION_EXPORT void ugroups_group_set_kicked(ugroups_group_info* group);
 LIBSESSION_EXPORT bool ugroups_group_is_kicked(const ugroups_group_info* group);
 
 typedef struct ugroups_legacy_members_iterator ugroups_legacy_members_iterator;
+
+/// API: user_groups/ugroups_legacy_group_free
+///
+/// Properly frees memory associated with a ugroups_legacy_group_info pointer (as returned by
+/// get_legacy_group/get_or_construct_legacy_group).
+///
+/// Inputs:
+/// - `group` -- [in] Pointer to ugroups_legacy_group_info
+LIBSESSION_EXPORT void ugroups_legacy_group_free(ugroups_legacy_group_info* group);
 
 /// API: user_groups/ugroups_legacy_members_begin
 ///
@@ -632,81 +535,53 @@ LIBSESSION_EXPORT bool ugroups_legacy_member_remove(
 LIBSESSION_EXPORT size_t ugroups_legacy_members_count(
         const ugroups_legacy_group_info* group, size_t* members, size_t* admins);
 
-/// API: user_groups/user_groups_size
+/// API: user_groups/state_size_ugroups
 ///
 /// Returns the number of conversations.
 ///
-/// Declaration:
-/// ```cpp
-/// SIZE_T user_groups_size(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `size_t` -- Returns the number of conversations
-LIBSESSION_EXPORT size_t user_groups_size(const config_object* conf);
+LIBSESSION_EXPORT size_t state_size_ugroups(const state_object* state);
 
-/// API: user_groups/user_groups_size_communities
+/// API: user_groups/state_size_ugroups_communities
 ///
 /// Returns the number of community conversations.
 ///
-/// Declaration:
-/// ```cpp
-/// SIZE_T user_groups_size_communities(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `size_t` -- Returns the number of conversations
-LIBSESSION_EXPORT size_t user_groups_size_communities(const config_object* conf);
+LIBSESSION_EXPORT size_t state_size_ugroups_communities(const state_object* state);
 
-/// API: user_groups/user_groups_size_groups
+/// API: user_groups/state_size_ugroups_groups
 ///
 /// Returns the number of (non-legacy) group conversations.
 ///
-/// Declaration:
-/// ```cpp
-/// SIZE_T user_groups_size_groups(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `size_t` -- Returns the number of conversations
-LIBSESSION_EXPORT size_t user_groups_size_groups(const config_object* conf);
+LIBSESSION_EXPORT size_t state_size_ugroups_groups(const state_object* state);
 
-/// API: user_groups/user_groups_size_legacy_groups
+/// API: user_groups/state_size_ugroups_legacy_groups
 ///
 /// Returns the number of legacy group conversations.
 ///
-/// Declaration:
-/// ```cpp
-/// SIZE_T user_groups_size_legacy_groups(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
 /// - `conf` -- [in] Pointer to config_object object
 ///
 /// Outputs:
 /// - `size_t` -- Returns the number of conversations
-LIBSESSION_EXPORT size_t user_groups_size_legacy_groups(const config_object* conf);
+LIBSESSION_EXPORT size_t state_size_ugroups_legacy_groups(const state_object* state);
 
 typedef struct user_groups_iterator user_groups_iterator;
 
-/// API: user_groups/user_groups_iterator_new
+/// API: user_groups/state_iterator_new_user_groups
 ///
 /// Starts a new iterator that iterates over all conversations.
 ///
@@ -715,7 +590,7 @@ typedef struct user_groups_iterator user_groups_iterator;
 ///     ugroups_community_info c2;
 ///     ugroups_legacy_group_info c3;
 ///     ugroups_group_info c4;
-///     user_groups_iterator *it = user_groups_iterator_new(my_groups);
+///     user_groups_iterator *it = state_iterator_new_user_groups(my_groups);
 ///     for (; !user_groups_iterator_done(it); user_groups_iterator_advance(it)) {
 ///         if (user_groups_it_is_community(it, &c2)) {
 ///             // use c2.whatever
@@ -730,79 +605,58 @@ typedef struct user_groups_iterator user_groups_iterator;
 ///
 /// It is NOT permitted to add/remove/modify records while iterating.
 ///
-/// Declaration:
-/// ```cpp
-/// USER_GROUPS_ITERATOR* user_groups_iterator_new(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `user_groups_iterator*` -- The Iterator
-LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new(const config_object* conf);
+LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new(const state_object* state);
 
-/// API: user_groups/user_groups_iterator_new_communities
+/// API: user_groups/state_iterator_new_user_groups_communities
 ///
-/// The same as `user_groups_iterator_new` except that this iterates *only* over one type of
+/// The same as `state_iterator_new_user_groups` except that this iterates *only* over one type of
 /// conversation. You still need to use `user_groups_it_is_community` (or the alternatives)
 /// to load the data in each pass of the loop.  (You can, however, safely ignore the bool return
 /// value of the `it_is_whatever` function: it will always be true for the particular type being
 /// iterated over).
 ///
-/// Declaration:
-/// ```cpp
-/// USER_GROUPS_ITERATOR* user_groups_iterator_new_communities(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `user_groups_iterator*` -- The Iterator
 LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_communities(
-        const config_object* conf);
+        const state_object* state);
 
-/// API: user_groups/user_groups_iterator_new_legacy_groups
+/// API: user_groups/state_iterator_new_user_groups_legacy_groups
 ///
-/// The same as `user_groups_iterator_new` except that this iterates *only* over one type of
+/// The same as `state_iterator_new_user_groups` except that this iterates *only* over one type of
 /// conversation. You still need to use `user_groups_it_is_community` (or the alternatives)
 /// to load the data in each pass of the loop.  (You can, however, safely ignore the bool return
 /// value of the `it_is_whatever` function: it will always be true for the particular type being
 /// iterated over).
 ///
-/// Declaration:
-/// ```cpp
-/// USER_GROUPS_ITERATOR* user_groups_iterator_new_legacy_groups(
-///     [in]    const config_object*    conf
-/// );
-/// ```
-///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `user_groups_iterator*` -- The Iterator
 LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_legacy_groups(
-        const config_object* conf);
+        const state_object* state);
 
-/// API: user_groups/user_groups_iterator_new_groups
+/// API: user_groups/state_iterator_new_user_groups_groups
 ///
-/// The same as `user_groups_iterator_new` except that this iterates *only* over one type of
+/// The same as `state_iterator_new_user_groups` except that this iterates *only* over one type of
 /// conversation: non-legacy groups. You still need to use `user_groups_it_is_group` to load the
 /// data in each pass of the loop.  (You can, however, safely ignore the bool return value of the
 /// `it_is_group` function: it will always be true for iterations for this iterator).
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `user_groups_iterator*` -- The Iterator
-LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_groups(const config_object* conf);
+LIBSESSION_EXPORT user_groups_iterator* user_groups_iterator_new_groups(const state_object* state);
 
 /// API: user_groups/user_groups_iterator_free
 ///
