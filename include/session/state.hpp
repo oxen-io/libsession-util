@@ -195,10 +195,10 @@ class State {
     // Hook which will be called whenever config dumps need to be saved to persistent storage. The
     // hook will immediately be called upon assignment if the state needs to be stored.
     void on_store(std::function<
-                 void(config::Namespace namespace_,
-                      std::string prefixed_pubkey,
-                      uint64_t timestamp_ms,
-                      ustring data)> hook) {
+                  void(config::Namespace namespace_,
+                       std::string prefixed_pubkey,
+                       uint64_t timestamp_ms,
+                       ustring data)> hook) {
         _store = hook;
 
         if (!hook)
@@ -220,10 +220,10 @@ class State {
     /// - `received_response` -- callback which should be called with the response from the send
     /// request.
     void on_send(std::function<
-                void(std::string pubkey,
-                     ustring payload,
-                     std::function<void(bool success, int16_t status_code, ustring response)>
-                             received_response)> hook) {
+                 void(std::string pubkey,
+                      ustring payload,
+                      std::function<void(bool success, int16_t status_code, ustring response)>
+                              received_response)> hook) {
         _send = hook;
 
         if (!hook)

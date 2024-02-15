@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 
+#include "../../state.h"
 #include "../base.h"
 #include "../profile_pic.h"
 #include "../util.h"
@@ -27,86 +28,71 @@ typedef struct config_group_member {
 
 } config_group_member;
 
-/// API: groups/groups_members_init
-///
-/// Constructs a group members config object and sets a pointer to it in `conf`.
-///
-/// When done with the object the `config_object` must be destroyed by passing the pointer to
-/// config_free() (in `session/config/base.h`).
-///
-/// Inputs:
-/// - `conf` -- [out] Pointer to the config object
-/// - `ed25519_pubkey` -- [in] 32-byte pointer to the group's public key
-/// - `ed25519_secretkey` -- [in] optional 64-byte pointer to the group's secret key
-///   (libsodium-style 64 byte value).  Pass as NULL for a non-admin member.
-/// - `dump` -- [in] if non-NULL this restores the state from the dumped byte string produced by a
-/// past instantiation's call to `dump()`.  To construct a new, empty object this should be NULL.
-/// - `dumplen` -- [in] the length of `dump` when restoring from a dump, or 0 when `dump` is NULL.
-/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
-/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
-/// buffer of at least 256 bytes.
-///
-/// Outputs:
-/// - `int` -- Returns 0 on success; returns a non-zero error code and write the exception message
-/// as a C-string into `error` (if not NULL) on failure.
-LIBSESSION_EXPORT int groups_members_init(
-        config_object** conf,
-        const unsigned char* ed25519_pubkey,
-        const unsigned char* ed25519_secretkey,
-        const unsigned char* dump,
-        size_t dumplen,
-        char* error) __attribute__((warn_unused_result));
-
-/// API: groups/groups_members_get
+/// API: groups/state_get_group_member
 ///
 /// Fills `member` with the member info given a session ID (specified as a null-terminated hex
 /// string), if the member exists, and returns true.  If the member does not exist then `member`
 /// is left unchanged and false is returned.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
 /// - `member` -- [out] the member info data
 /// - `session_id` -- [in] null terminated hex string
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
 ///
 /// Output:
 /// - `bool` -- Returns true if member exists
-LIBSESSION_EXPORT bool groups_members_get(
-        config_object* conf, config_group_member* member, const char* session_id)
-        __attribute__((warn_unused_result));
+LIBSESSION_EXPORT bool state_get_group_member(
+        const state_object* state,
+        const char* pubkey_hex,
+        config_group_member* member,
+        const char* session_id,
+        char* error) __attribute__((warn_unused_result));
 
-/// API: groups/groups_members_get_or_construct
+/// API: groups/state_get_or_construct_group_member
 ///
-/// Same as the above `groups_members_get()` except that when the member does not exist, this sets
-/// all the member fields to defaults and loads it with the given session_id.
+/// Same as the above `state_get_group_members()` except that when the member does not exist, this
+/// sets all the member fields to defaults and loads it with the given session_id.
 ///
 /// Returns true as long as it is given a valid session_id.  A false return is considered an error,
 /// and means the session_id was not a valid session_id.
 ///
 /// This is the method that should usually be used to create or update a member, followed by
-/// setting fields in the member, and then giving it to groups_members_set().
+/// setting fields in the member, and then giving it to state_set_group_member().
+/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
+/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
+/// buffer of at least 256 bytes.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
 /// - `member` -- [out] the member info data
 /// - `session_id` -- [in] null terminated hex string
 ///
 /// Output:
 /// - `bool` -- Returns true if the call succeeds, false if an error occurs (e.g. because of an
 ///   invalid session_id).
-LIBSESSION_EXPORT bool groups_members_get_or_construct(
-        config_object* conf, config_group_member* member, const char* session_id)
-        __attribute__((warn_unused_result));
+LIBSESSION_EXPORT bool state_get_or_construct_group_member(
+        const state_object* state,
+        const char* pubkey_hex,
+        config_group_member* member,
+        const char* session_id,
+        char* error) __attribute__((warn_unused_result));
 
-/// API: groups/groups_members_set
+/// API: groups/state_set_group_member
 ///
 /// Adds or updates a member from the given member info struct.
 ///
 /// Inputs:
-/// - `conf` -- [in, out] Pointer to the config object
+/// - `state` -- [in, out] Pointer to the mutable state object
 /// - `member` -- [in] Pointer containing the member info data
-LIBSESSION_EXPORT void groups_members_set(config_object* conf, const config_group_member* member);
+LIBSESSION_EXPORT void state_set_group_member(
+        mutable_state_group_object* state, const config_group_member* member);
 
-/// API: groups/groups_members_erase
+/// API: groups/state_erase_group_member
 ///
 /// Erases a member from the member list.  session_id is in hex.  Returns true if the member was
 /// found and removed, false if the member was not present.  You must not call this during
@@ -116,23 +102,27 @@ LIBSESSION_EXPORT void groups_members_set(config_object* conf, const config_grou
 /// group).
 ///
 /// Inputs:
-/// - `conf` -- [in, out] Pointer to the config object
+/// - `state` -- [in, out] Pointer to the mutable state object
 /// - `session_id` -- [in] Text containing null terminated hex string
 ///
 /// Outputs:
 /// - `bool` -- True if erasing was successful
-LIBSESSION_EXPORT bool groups_members_erase(config_object* conf, const char* session_id);
+LIBSESSION_EXPORT bool state_erase_group_member(
+        mutable_state_group_object* state, const char* session_id);
 
-/// API: groups/groups_members_size
+/// API: groups/state_size_group_members
 ///
 /// Returns the number of group members.
 ///
 /// Inputs:
-/// - `conf` -- input - Pointer to the config object
+/// - `state` -- [in] - Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
 ///
 /// Outputs:
-/// - `size_t` -- number of contacts
-LIBSESSION_EXPORT size_t groups_members_size(const config_object* conf);
+/// - `size_t` -- number of members in the group (will be 0 if the group doesn't exist or the
+/// 'pubkey_hex' is invalid)
+LIBSESSION_EXPORT size_t
+state_size_group_members(const state_object* state, const char* pubkey_hex);
 
 typedef struct groups_members_iterator {
     void* _internals;
@@ -145,7 +135,7 @@ typedef struct groups_members_iterator {
 /// Functions for iterating through the entire member list, in sorted order.  Intended use is:
 ///
 ///     group_member m;
-///     groups_members_iterator *it = groups_members_iterator_new(group);
+///     groups_members_iterator *it = groups_members_iterator_new(state, group_id);
 ///     for (; !groups_members_iterator_done(it, &c); groups_members_iterator_advance(it)) {
 ///         // c.session_id, c.name, etc. are loaded
 ///     }
@@ -154,11 +144,13 @@ typedef struct groups_members_iterator {
 /// It is NOT permitted to add/remove/modify members while iterating.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
 ///
 /// Outputs:
 /// - `groups_members_iterator*` -- pointer to the new iterator
-LIBSESSION_EXPORT groups_members_iterator* groups_members_iterator_new(const config_object* conf);
+LIBSESSION_EXPORT groups_members_iterator* groups_members_iterator_new(
+        const state_object* state, const char* pubkey_hex);
 
 /// API: groups/groups_members_iterator_free
 ///

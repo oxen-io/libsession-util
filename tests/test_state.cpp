@@ -43,10 +43,10 @@ TEST_CASE("State", "[state][state]") {
     std::optional<last_send_data> last_send = std::nullopt;
 
     state.on_store([&last_store](
-                          config::Namespace namespace_,
-                          std::string pubkey,
-                          uint64_t timestamp_ms,
-                          ustring data) {
+                           config::Namespace namespace_,
+                           std::string pubkey,
+                           uint64_t timestamp_ms,
+                           ustring data) {
         last_store = {namespace_, pubkey, timestamp_ms, data};
     });
     state.on_send(
@@ -55,6 +55,7 @@ TEST_CASE("State", "[state][state]") {
                 // Replicate the behaviour in the C wrapper
                 auto on_response =
                         std::make_unique<response_callback_t>(std::move(received_response));
+
                 last_send = {
                         pubkey,
                         payload,

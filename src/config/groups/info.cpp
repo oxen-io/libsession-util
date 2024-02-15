@@ -122,6 +122,8 @@ using namespace session;
 using namespace session::state;
 using namespace session::config;
 
+extern "C" {
+
 LIBSESSION_C_API const size_t GROUP_INFO_NAME_MAX_LENGTH = groups::Info::NAME_MAX_LENGTH;
 LIBSESSION_C_API const size_t GROUP_INFO_DESCRIPTION_MAX_LENGTH =
         groups::Info::DESCRIPTION_MAX_LENGTH;
@@ -270,3 +272,5 @@ LIBSESSION_C_API bool state_groups_info_is_destroyed(
 LIBSESSION_C_API void state_destroy_group(mutable_state_group_object* state) {
     unbox(state).info.destroy_group();
 }
+
+}  // extern "C"

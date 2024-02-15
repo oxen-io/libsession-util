@@ -21,6 +21,7 @@
 #include "session/export.h"
 #include "session/state.h"
 #include "session/state.hpp"
+#include "session/state_groups.h"
 #include "session/util.hpp"
 
 using namespace std::literals;
@@ -136,9 +137,9 @@ LIBSESSION_C_API bool state_set_send_callback(
             unbox(state).on_send(nullptr);
         else {
             unbox(state).on_send([callback, app_ctx](
-                                        std::string pubkey,
-                                        ustring data,
-                                        response_callback_t received_response) {
+                                         std::string pubkey,
+                                         ustring data,
+                                         response_callback_t received_response) {
                 // We leak ownership of this std::function below in the `.release()` call, then we
                 // recapture it inside the inner response callback below.
                 auto on_response =
@@ -201,10 +202,10 @@ LIBSESSION_C_API bool state_set_store_callback(
         else {
             // Setting this can result in the callback being immediately triggered which could throw
             unbox(state).on_store([callback, ctx](
-                                         config::Namespace namespace_,
-                                         std::string pubkey,
-                                         uint64_t timestamp_ms,
-                                         ustring data) {
+                                          config::Namespace namespace_,
+                                          std::string pubkey,
+                                          uint64_t timestamp_ms,
+                                          ustring data) {
                 callback(
                         static_cast<NAMESPACE>(namespace_),
                         pubkey.c_str(),

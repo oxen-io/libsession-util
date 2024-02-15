@@ -9,7 +9,6 @@ extern "C" {
 #include <stdint.h>
 
 #include "config/base.h"
-#include "config/groups/members.h"
 #include "config/namespaces.h"
 #include "config/profile_pic.h"
 #include "export.h"
@@ -371,20 +370,6 @@ LIBSESSION_EXPORT bool state_get_keys(
         const char* pubkey_hex_,
         unsigned char** out,
         size_t* outlen);
-
-LIBSESSION_EXPORT void state_create_group(
-        state_object* state,
-        const char* name,
-        const char* description,
-        const user_profile_pic pic_,
-        const config_group_member* members_,
-        const size_t members_len,
-        void (*callback)(
-                bool success, const char* group_id, unsigned const char* group_sk, void* ctx),
-        void* ctx);
-
-LIBSESSION_EXPORT void state_approve_group(
-        state_object* state, const char* group_id, unsigned const char* group_sk);
 
 /// API: state/state_mutate_user
 ///
