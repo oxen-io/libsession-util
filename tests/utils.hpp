@@ -99,8 +99,15 @@ struct last_store_data {
 };
 struct last_send_data {
     std::string pubkey;
-    ustring data;
-    ustring ctx;
+    ustring payload;
+    bool (*response_cb)(
+            bool success,
+            int16_t status_code,
+            const unsigned char* res,
+            size_t reslen,
+            void* callback_context);
+    void* app_ctx;
+    void* callback_context;
 };
 
 inline void c_store_callback(
@@ -121,9 +128,14 @@ inline void c_send_callback(
         const char* pubkey,
         const unsigned char* data,
         size_t data_len,
-        const unsigned char* request_ctx,
-        size_t request_ctx_len,
-        void* ctx) {
-    *static_cast<std::optional<last_send_data>*>(ctx) =
-            last_send_data{{pubkey, 66}, {data, data_len}, {request_ctx, request_ctx_len}};
+        bool (*response_cb)(
+                bool success,
+                int16_t status_code,
+                const unsigned char* res,
+                size_t reslen,
+                void* callback_context),
+        void* app_ctx,
+        void* callback_context) {
+    *static_cast<std::optional<last_send_data>*>(app_ctx) =
+            last_send_data{{pubkey, 66}, {data, data_len}, response_cb, app_ctx, callback_context};
 }

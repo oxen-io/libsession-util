@@ -22,16 +22,19 @@ using Ed25519Secret = std::array<unsigned char, 64>;
 /// Struct containing group configs.
 class GroupConfigs {
   public:
-    GroupConfigs(ustring_view pubkey, ustring_view user_sk);
+    GroupConfigs(
+            ustring_view pubkey,
+            ustring_view user_sk,
+            std::optional<ustring_view> ed25519_secretkey = std::nullopt);
 
     GroupConfigs(GroupConfigs&&) = delete;
     GroupConfigs(const GroupConfigs&) = delete;
     GroupConfigs& operator=(GroupConfigs&&) = delete;
     GroupConfigs& operator=(const GroupConfigs&) = delete;
 
-    std::unique_ptr<session::config::groups::Info> config_info;
-    std::unique_ptr<session::config::groups::Members> config_members;
-    std::unique_ptr<session::config::groups::Keys> config_keys;
+    std::unique_ptr<session::config::groups::Info> info;
+    std::unique_ptr<session::config::groups::Members> members;
+    std::unique_ptr<session::config::groups::Keys> keys;
 };
 
 class MutableUserConfigs {
@@ -132,12 +135,17 @@ struct config_message {
     bool operator!=(const config_message& b) const { return cmpval() != b.cmpval(); }
 };
 
+struct PreparedPush {
+    ustring payload;
+    std::vector<std::pair<config::Namespace, seqno_t>> namespace_seqno;
+};
+
 class State {
   private:
-    std::unique_ptr<session::config::Contacts> config_contacts;
-    std::unique_ptr<session::config::ConvoInfoVolatile> config_convo_info_volatile;
-    std::unique_ptr<session::config::UserGroups> config_user_groups;
-    std::unique_ptr<session::config::UserProfile> config_user_profile;
+    std::unique_ptr<session::config::Contacts> _config_contacts;
+    std::unique_ptr<session::config::ConvoInfoVolatile> _config_convo_info_volatile;
+    std::unique_ptr<session::config::UserGroups> _config_user_groups;
+    std::unique_ptr<session::config::UserProfile> _config_user_profile;
     std::map<std::string_view, std::unique_ptr<GroupConfigs>> _config_groups;
 
   protected:
@@ -151,7 +159,12 @@ class State {
             uint64_t timestamp_ms,
             ustring data)>
             _store;
-    std::function<void(std::string pubkey, ustring payload, ustring ctx)> _send;
+    std::function<void(
+            std::string pubkey,
+            ustring payload,
+            std::function<void(bool success, int16_t status_code, ustring response)>
+                    received_response)>
+            _send;
 
   public:
     std::chrono::milliseconds network_offset;
@@ -181,7 +194,7 @@ class State {
 
     // Hook which will be called whenever config dumps need to be saved to persistent storage. The
     // hook will immediately be called upon assignment if the state needs to be stored.
-    void onStore(std::function<
+    void on_store(std::function<
                  void(config::Namespace namespace_,
                       std::string prefixed_pubkey,
                       uint64_t timestamp_ms,
@@ -204,7 +217,13 @@ class State {
     /// - `pubkey` -- the pubkey (in hex) for the swarm where the data should be sent.
     /// - `payload` -- payload which should be sent to the API.
     /// - `ctx` -- contextual data which should be used when processing the response.
-    void onSend(std::function<void(std::string pubkey, ustring payload, ustring ctx)> hook) {
+    /// - `received_response` -- callback which should be called with the response from the send
+    /// request.
+    void on_send(std::function<
+                void(std::string pubkey,
+                     ustring payload,
+                     std::function<void(bool success, int16_t status_code, ustring response)>
+                             received_response)> hook) {
         _send = hook;
 
         if (!hook)
@@ -334,18 +353,6 @@ class State {
             config::Namespace namespace_,
             std::optional<std::string_view> pubkey_hex = std::nullopt);
 
-    /// API: state/State::received_send_response
-    ///
-    /// Takes the network response from sending the data from the `send` hook and confirms the
-    /// configs were successfully pushed.
-    ///
-    /// Inputs:
-    /// - `pubkey` -- the pubkey (in hex, with prefix - 66 bytes) for the swarm where the data was
-    /// sent.
-    /// - `response_data` -- response that was returned from the swarm.
-    /// - `ctx` -- the contextual data provided by the onSend hook.
-    void received_send_response(std::string pubkey, ustring response_data, ustring ctx);
-
     /// API: state/State::get_keys
     ///
     /// Returns a vector of encryption keys, in priority order (i.e. element 0 is the encryption
@@ -365,6 +372,16 @@ class State {
     std::vector<ustring_view> get_keys(
             config::Namespace namespace_, std::optional<std::string_view> pubkey_hex_);
 
+    void create_group(
+            std::string_view name,
+            std::optional<std::string_view> description,
+            std::optional<config::profile_pic> pic,
+            std::vector<config::groups::member> members,
+            std::function<void(bool success, std::string_view group_id, ustring_view group_sk)>
+                    callback);
+
+    void approve_group(std::string_view group_id, std::optional<ustring_view> group_sk);
+
     // Retrieves a read-only version of the user config
     template <typename ConfigType>
     const ConfigType& config() const;
@@ -375,12 +392,12 @@ class State {
 
     // Retrieves an editable version of the user config. Once the returned value is deconstructed it
     // will trigger the `send` and `store` hooks.
-    MutableUserConfigs mutableConfig(
+    MutableUserConfigs mutable_config(
             std::optional<std::function<void(std::string_view err)>> set_error = std::nullopt);
 
     // Retrieves an editable version of the group config for the given public key. Once the returned
     // value is deconstructed it will trigger the `send` and `store` hooks.
-    MutableGroupConfigs mutableConfig(
+    MutableGroupConfigs mutable_config(
             std::string_view pubkey_hex,
             std::optional<std::function<void(std::string_view err)>> set_error = std::nullopt);
 
@@ -388,7 +405,16 @@ class State {
     template <typename ConfigType>
     void add_child_logger(ConfigType& base);
 
-    void handle_config_push_response(std::string pubkey, ustring response, ustring ctx);
+    PreparedPush prepare_push(
+            std::string pubkey_hex,
+            std::chrono::milliseconds timestamp,
+            std::vector<config::ConfigBase*> configs);
+    void handle_config_push_response(
+            std::string pubkey,
+            std::vector<std::pair<config::Namespace, seqno_t>> namespace_seqnos,
+            bool success,
+            uint16_t status_code,
+            ustring response);
     void validate_group_pubkey(std::string_view pubkey_hex) const;
 };
 
@@ -419,6 +445,9 @@ inline bool set_error(state_object* state, std::string_view e) {
 }
 
 inline bool set_error_value(char* error, std::string_view e) {
+    if (!error)
+        return false;
+
     std::string msg = {e.data(), e.size()};
     if (msg.size() > 255)
         msg.resize(255);

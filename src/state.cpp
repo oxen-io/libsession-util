@@ -14,6 +14,7 @@
 #include "session/config/base.hpp"
 #include "session/config/contacts.hpp"
 #include "session/config/convo_info_volatile.hpp"
+#include "session/config/groups/members.hpp"
 #include "session/config/namespaces.h"
 #include "session/config/namespaces.hpp"
 #include "session/config/user_groups.hpp"
@@ -27,18 +28,12 @@ using namespace session::config;
 
 namespace session::state {
 
-enum class RequestType : std::uint8_t {
-    ConfigPush = 2,
-};
-
-GroupConfigs::GroupConfigs(ustring_view pubkey, ustring_view user_sk) {
-    auto info = std::make_unique<groups::Info>(pubkey, std::nullopt, std::nullopt);
-    auto members = std::make_unique<groups::Members>(pubkey, std::nullopt, std::nullopt);
-    auto keys = std::make_unique<groups::Keys>(
-            user_sk, pubkey, std::nullopt, std::nullopt, *info, *members);
-    config_info = std::move(info);
-    config_members = std::move(members);
-    config_keys = std::move(keys);
+GroupConfigs::GroupConfigs(
+        ustring_view pubkey, ustring_view user_sk, std::optional<ustring_view> ed25519_secretkey) {
+    info = std::make_unique<groups::Info>(pubkey, ed25519_secretkey, std::nullopt);
+    members = std::make_unique<groups::Members>(pubkey, ed25519_secretkey, std::nullopt);
+    keys = std::make_unique<groups::Keys>(
+            user_sk, pubkey, ed25519_secretkey, std::nullopt, *info, *members);
 }
 
 State::State(ustring_view ed25519_secretkey, std::vector<namespaced_dump> dumps) {
@@ -70,25 +65,25 @@ State::State(ustring_view ed25519_secretkey, std::vector<namespaced_dump> dumps)
     }
 
     // Initialise empty config states for any missing required config types
-    if (!config_contacts) {
-        config_contacts = std::make_unique<Contacts>(ed25519_secretkey, std::nullopt);
-        add_child_logger(config_contacts);
+    if (!_config_contacts) {
+        _config_contacts = std::make_unique<Contacts>(ed25519_secretkey, std::nullopt);
+        add_child_logger(_config_contacts);
     }
 
-    if (!config_convo_info_volatile) {
-        config_convo_info_volatile =
+    if (!_config_convo_info_volatile) {
+        _config_convo_info_volatile =
                 std::make_unique<ConvoInfoVolatile>(ed25519_secretkey, std::nullopt);
-        add_child_logger(config_convo_info_volatile);
+        add_child_logger(_config_convo_info_volatile);
     }
 
-    if (!config_user_groups) {
-        config_user_groups = std::make_unique<UserGroups>(ed25519_secretkey, std::nullopt);
-        add_child_logger(config_user_groups);
+    if (!_config_user_groups) {
+        _config_user_groups = std::make_unique<UserGroups>(ed25519_secretkey, std::nullopt);
+        add_child_logger(_config_user_groups);
     }
 
-    if (!config_user_profile) {
-        config_user_profile = std::make_unique<UserProfile>(ed25519_secretkey, std::nullopt);
-        add_child_logger(config_user_profile);
+    if (!_config_user_profile) {
+        _config_user_profile = std::make_unique<UserProfile>(ed25519_secretkey, std::nullopt);
+        add_child_logger(_config_user_profile);
     }
 }
 
@@ -96,27 +91,27 @@ void State::load(
         Namespace namespace_, std::optional<std::string_view> pubkey_hex_, ustring_view dump) {
     switch (namespace_) {
         case Namespace::Contacts:
-            config_contacts =
+            _config_contacts =
                     std::make_unique<Contacts>(to_unsigned_sv({_user_sk.data(), 64}), dump);
-            add_child_logger(config_contacts);
+            add_child_logger(_config_contacts);
             return;
 
         case Namespace::ConvoInfoVolatile:
-            config_convo_info_volatile = std::make_unique<ConvoInfoVolatile>(
+            _config_convo_info_volatile = std::make_unique<ConvoInfoVolatile>(
                     to_unsigned_sv({_user_sk.data(), 64}), dump);
-            add_child_logger(config_convo_info_volatile);
+            add_child_logger(_config_convo_info_volatile);
             return;
 
         case Namespace::UserGroups:
-            config_user_groups =
+            _config_user_groups =
                     std::make_unique<UserGroups>(to_unsigned_sv({_user_sk.data(), 64}), dump);
-            add_child_logger(config_user_groups);
+            add_child_logger(_config_user_groups);
             return;
 
         case Namespace::UserProfile:
-            config_user_profile =
+            _config_user_profile =
                     std::make_unique<UserProfile>(to_unsigned_sv({_user_sk.data(), 64}), dump);
-            add_child_logger(config_user_profile);
+            add_child_logger(_config_user_profile);
             return;
 
         default: break;
@@ -131,7 +126,7 @@ void State::load(
 
     // Retrieve any keys for the group
     std::string_view pubkey_hex = *pubkey_hex_;
-    auto user_group_info = config_user_groups->get_group(pubkey_hex);
+    auto user_group_info = _config_user_groups->get_group(pubkey_hex);
 
     if (!user_group_info)
         throw std::runtime_error{
@@ -159,19 +154,19 @@ void State::load(
 
     // Reload the specified namespace with the dump
     if (namespace_ == Namespace::GroupInfo) {
-        _config_groups[pubkey_hex]->config_info =
+        _config_groups[pubkey_hex]->info =
                 std::make_unique<groups::Info>(pubkey_sv, group_ed25519_secretkey, dump);
-        add_child_logger(_config_groups[pubkey_hex]->config_info);
+        add_child_logger(_config_groups[pubkey_hex]->info);
     } else if (namespace_ == Namespace::GroupMembers) {
-        _config_groups[pubkey_hex]->config_members =
+        _config_groups[pubkey_hex]->members =
                 std::make_unique<groups::Members>(pubkey_sv, group_ed25519_secretkey, dump);
-        add_child_logger(_config_groups[pubkey_hex]->config_members);
+        add_child_logger(_config_groups[pubkey_hex]->members);
     } else if (namespace_ == Namespace::GroupKeys) {
-        auto info = _config_groups[pubkey_hex]->config_info.get();
-        auto members = _config_groups[pubkey_hex]->config_members.get();
+        auto info = _config_groups[pubkey_hex]->info.get();
+        auto members = _config_groups[pubkey_hex]->members.get();
         auto keys = std::make_unique<groups::Keys>(
                 user_ed25519_secretkey, pubkey_sv, group_ed25519_secretkey, dump, *info, *members);
-        _config_groups[pubkey_hex]->config_keys = std::move(keys);
+        _config_groups[pubkey_hex]->keys = std::move(keys);
     } else
         throw std::runtime_error{"Attempted to load unknown namespace"};
 }
@@ -193,17 +188,17 @@ void State::config_changed(
     if (!is_group_pubkey) {
         needs_push =
                 (allow_send &&
-                 (config_contacts->needs_push() || config_convo_info_volatile->needs_push() ||
-                  config_user_groups->needs_push() || config_user_profile->needs_push()));
+                 (_config_contacts->needs_push() || _config_convo_info_volatile->needs_push() ||
+                  _config_user_groups->needs_push() || _config_user_profile->needs_push()));
         needs_dump =
                 (allow_store &&
-                 (config_contacts->needs_dump() || config_convo_info_volatile->needs_dump() ||
-                  config_user_groups->needs_dump() || config_user_profile->needs_dump()));
+                 (_config_contacts->needs_dump() || _config_convo_info_volatile->needs_dump() ||
+                  _config_user_groups->needs_dump() || _config_user_profile->needs_dump()));
         configs = {
-                config_contacts.get(),
-                config_convo_info_volatile.get(),
-                config_user_groups.get(),
-                config_user_profile.get()};
+                _config_contacts.get(),
+                _config_convo_info_volatile.get(),
+                _config_user_groups.get(),
+                _config_user_profile.get()};
     } else {
         // Other namespaces are unique for a given pubkey_hex_
         if (target_pubkey_hex.size() != 66)
@@ -214,7 +209,7 @@ void State::config_changed(
                     target_pubkey_hex};
 
         // Ensure we have the admin key for the group
-        auto user_group_info = config_user_groups->get_group(target_pubkey_hex);
+        auto user_group_info = _config_user_groups->get_group(target_pubkey_hex);
 
         if (!user_group_info)
             throw std::runtime_error{
@@ -224,16 +219,16 @@ void State::config_changed(
         // Only group admins can push group config changes
         needs_push =
                 (allow_send && !user_group_info->secretkey.empty() &&
-                 (_config_groups[target_pubkey_hex]->config_info->needs_push() ||
-                  _config_groups[target_pubkey_hex]->config_members->needs_push() ||
-                  _config_groups[target_pubkey_hex]->config_keys->pending_config()));
+                 (_config_groups[target_pubkey_hex]->info->needs_push() ||
+                  _config_groups[target_pubkey_hex]->members->needs_push() ||
+                  _config_groups[target_pubkey_hex]->keys->pending_config()));
         needs_dump =
-                (allow_store && (_config_groups[target_pubkey_hex]->config_info->needs_dump() ||
-                                 _config_groups[target_pubkey_hex]->config_members->needs_dump() ||
-                                 _config_groups[target_pubkey_hex]->config_keys->needs_dump()));
+                (allow_store && (_config_groups[target_pubkey_hex]->info->needs_dump() ||
+                                 _config_groups[target_pubkey_hex]->members->needs_dump() ||
+                                 _config_groups[target_pubkey_hex]->keys->needs_dump()));
         configs = {
-                _config_groups[target_pubkey_hex]->config_info.get(),
-                _config_groups[target_pubkey_hex]->config_members.get()};
+                _config_groups[target_pubkey_hex]->info.get(),
+                _config_groups[target_pubkey_hex]->members.get()};
         info_title = "Group configs for " + target_pubkey_hex;
     }
 
@@ -258,10 +253,10 @@ void State::config_changed(
         }
 
         // GroupKeys needs special handling as it's not a `ConfigBase`
-        if (is_group_pubkey && _config_groups[target_pubkey_hex]->config_keys->needs_dump()) {
+        if (is_group_pubkey && _config_groups[target_pubkey_hex]->keys->needs_dump()) {
             log(LogLevel::debug,
                 "config_changed: Group Keys config for " + target_pubkey_hex + " needs_dump");
-            auto keys_config = _config_groups[target_pubkey_hex]->config_keys.get();
+            auto keys_config = _config_groups[target_pubkey_hex]->keys.get();
 
             _store(keys_config->storage_namespace(),
                    target_pubkey_hex,
@@ -272,28 +267,88 @@ void State::config_changed(
 
     // Call the hook to perform a push if needed
     if (_send && needs_push && allow_send) {
-        std::vector<nlohmann::json> requests;
-        std::vector<std::string> obsolete_hashes;
+        auto push = prepare_push(target_pubkey_hex, timestamp, configs);
 
-        for (auto& config : configs) {
-            if (!config->needs_push())
-                continue;
+        log(LogLevel::debug, "config_changed: Call 'send'");
+        _send(target_pubkey_hex,
+              push.payload,
+              [this, target_pubkey_hex, push](
+                      bool success, uint16_t status_code, ustring response) {
+                  handle_config_push_response(
+                          target_pubkey_hex, push.namespace_seqno, success, status_code, response);
+              });
+    }
+    log(LogLevel::debug, "config_changed: Complete");
+}
+
+PreparedPush State::prepare_push(
+        std::string pubkey_hex,
+        std::chrono::milliseconds timestamp,
+        std::vector<config::ConfigBase*> configs) {
+    auto is_group_pubkey = (!pubkey_hex.empty() && pubkey_hex.substr(0, 2) != "05");
+    std::vector<nlohmann::json> requests;
+    std::vector<std::string> obsolete_hashes;
+
+    for (auto& config : configs) {
+        if (!config->needs_push())
+            continue;
+        log(LogLevel::debug,
+            "prepare_push: generate push for " + namespace_name(config->storage_namespace()) +
+                    ", (" + pubkey_hex + ")");
+        auto [seqno, msg, obs] = config->push();
+
+        for (auto hash : obs)
+            obsolete_hashes.emplace_back(hash);
+
+        // Ed25519 signature of `("store" || namespace || timestamp)`, where namespace and
+        // `timestamp` are the base10 expression of the namespace and `timestamp` values
+        std::array<unsigned char, 64> sig;
+        ustring verification = to_unsigned("store");
+        verification +=
+                to_unsigned_sv(std::to_string(static_cast<int>(config->storage_namespace())));
+        verification += to_unsigned_sv(std::to_string(timestamp.count()));
+
+        if (0 !=
+            crypto_sign_ed25519_detached(
+                    sig.data(), nullptr, verification.data(), verification.size(), _user_sk.data()))
+            throw std::runtime_error{
+                    "config_changed: Failed to sign; perhaps the secret key is invalid?"};
+
+        nlohmann::json params{
+                {"namespace", static_cast<int>(config->storage_namespace())},
+                {"pubkey", pubkey_hex},
+                {"ttl", config->default_ttl().count()},
+                {"timestamp", timestamp.count()},
+                {"data", oxenc::to_base64(msg)},
+                {"signature", oxenc::to_base64(sig.begin(), sig.end())},
+        };
+
+        // For user config storage we also need to add `pubkey_ed25519`
+        if (!is_group_pubkey)
+            params["pubkey_ed25519"] = oxenc::to_hex(_user_pk.begin(), _user_pk.end());
+
+        // Add the 'seqno' temporarily to the params (this will be removed from the payload
+        // before sending but is needed to generate the request context)
+        params["seqno"] = seqno;
+
+        requests.emplace_back(params);
+    }
+
+    // GroupKeys needs special handling as it's not a `ConfigBase`
+    if (is_group_pubkey) {
+        auto config = _config_groups[pubkey_hex]->keys.get();
+        auto pending = config->pending_config();
+
+        if (pending) {
             log(LogLevel::debug,
-                "config_changed: generate 'send' request for " +
-                        namespace_name(config->storage_namespace()) + ", (" + target_pubkey_hex +
-                        ")");
-            auto [seqno, msg, obs] = config->push();
-
-            for (auto hash : obs)
-                obsolete_hashes.emplace_back(hash);
-
+                "prepare_push: generate push for " + namespace_name(config->storage_namespace()) +
+                        ", (" + pubkey_hex + ")");
             // Ed25519 signature of `("store" || namespace || timestamp)`, where namespace and
             // `timestamp` are the base10 expression of the namespace and `timestamp` values
             std::array<unsigned char, 64> sig;
-            ustring verification = to_unsigned("store");
-            verification +=
-                    to_unsigned_sv(std::to_string(static_cast<int>(config->storage_namespace())));
-            verification += to_unsigned_sv(std::to_string(timestamp.count()));
+            ustring verification = to_unsigned("store") +
+                                   static_cast<unsigned char>(config->storage_namespace()) +
+                                   static_cast<unsigned char>(timestamp.count());
 
             if (0 != crypto_sign_ed25519_detached(
                              sig.data(),
@@ -305,132 +360,75 @@ void State::config_changed(
                         "config_changed: Failed to sign; perhaps the secret key is invalid?"};
 
             nlohmann::json params{
-                    {"namespace", static_cast<int>(config->storage_namespace())},
-                    {"pubkey", target_pubkey_hex},
+                    {"namespace", config->storage_namespace()},
+                    {"pubkey", pubkey_hex},
                     {"ttl", config->default_ttl().count()},
                     {"timestamp", timestamp.count()},
-                    {"data", oxenc::to_base64(msg)},
+                    {"data", oxenc::to_base64(*pending)},
                     {"signature", oxenc::to_base64(sig.begin(), sig.end())},
             };
 
-            // For user config storage we also need to add `pubkey_ed25519`
-            if (!pubkey_hex || pubkey_hex->substr(0, 2) == "05")
-                params["pubkey_ed25519"] = oxenc::to_hex(_user_pk.begin(), _user_pk.end());
-
-            // Add the 'seqno' temporarily to the params (this will be removed from the payload
+            // The 'GROUP_KEYS' push data doesn't need a 'seqno', but to avoid index
+            // out-of-bounds issues we add one anyway (this will be removed from the payload
             // before sending but is needed to generate the request context)
-            params["seqno"] = seqno;
+            params["seqno"] = 0;
 
             requests.emplace_back(params);
         }
-
-        // GroupKeys needs special handling as it's not a `ConfigBase`
-        if (is_group_pubkey) {
-            auto config = _config_groups[target_pubkey_hex]->config_keys.get();
-            auto pending = config->pending_config();
-
-            if (pending) {
-                log(LogLevel::debug,
-                    "config_changed: generate 'send' request for " +
-                            namespace_name(config->storage_namespace()) + ", (" +
-                            target_pubkey_hex + ")");
-                // Ed25519 signature of `("store" || namespace || timestamp)`, where namespace and
-                // `timestamp` are the base10 expression of the namespace and `timestamp` values
-                std::array<unsigned char, 64> sig;
-                ustring verification = to_unsigned("store") +
-                                       static_cast<unsigned char>(config->storage_namespace()) +
-                                       static_cast<unsigned char>(timestamp.count());
-
-                if (0 != crypto_sign_ed25519_detached(
-                                 sig.data(),
-                                 nullptr,
-                                 verification.data(),
-                                 verification.size(),
-                                 _user_sk.data()))
-                    throw std::runtime_error{
-                            "config_changed: Failed to sign; perhaps the secret key is invalid?"};
-
-                nlohmann::json params{
-                        {"namespace", config->storage_namespace()},
-                        {"pubkey", target_pubkey_hex},
-                        {"ttl", config->default_ttl().count()},
-                        {"timestamp", timestamp.count()},
-                        {"data", oxenc::to_base64(*pending)},
-                        {"signature", oxenc::to_base64(sig.begin(), sig.end())},
-                };
-
-                // The 'GROUP_KEYS' push data doesn't need a 'seqno', but to avoid index
-                // out-of-bounds issues we add one anyway (this will be removed from the payload
-                // before sending but is needed to generate the request context)
-                params["seqno"] = 0;
-
-                requests.emplace_back(params);
-            }
-        }
-
-        // Sort the namespaces based on the order they should be stored in to minimise the chance
-        // that config messages dependant on others are stored before their dependencies
-        auto sorted_requests = requests;
-        std::sort(sorted_requests.begin(), sorted_requests.end(), [](const auto& a, const auto& b) {
-            return namespace_store_order(static_cast<Namespace>(a["namespace"])) <
-                   namespace_store_order(static_cast<Namespace>(b["namespace"]));
-        });
-
-        std::vector<seqno_t> seqnos;
-        std::vector<Namespace> namespaces;
-        nlohmann::json sequence_params;
-
-        for (auto& request : sorted_requests) {
-            seqnos.push_back(request["seqno"].get<seqno_t>());
-            namespaces.push_back(request["namespace"].get<Namespace>());
-            request.erase("seqno");  // Erase the 'seqno' as it shouldn't be in the request payload
-
-            nlohmann::json request_json{{"method", "store"}, {"params", request}};
-            sequence_params["requests"].push_back(request_json);
-        }
-
-        // Also delete obsolete hashes
-        if (!obsolete_hashes.empty()) {
-            // Ed25519 signature of `("delete" || messages...)`
-            std::array<unsigned char, 64> sig;
-            ustring verification = to_unsigned("delete");
-            log(LogLevel::debug, "config_changed: has obsolete hashes");
-            for (auto& hash : obsolete_hashes)
-                verification += to_unsigned_sv(hash);
-
-            if (0 != crypto_sign_ed25519_detached(
-                             sig.data(),
-                             nullptr,
-                             verification.data(),
-                             verification.size(),
-                             _user_sk.data()))
-                throw std::runtime_error{
-                        "config_changed: Failed to sign; perhaps the secret key is invalid?"};
-
-            nlohmann::json params{
-                    {"messages", obsolete_hashes},
-                    {"pubkey", target_pubkey_hex},
-                    {"signature", oxenc::to_base64(sig.begin(), sig.end())},
-            };
-
-            // For user config storage we also need to add `pubkey_ed25519`
-            if (!pubkey_hex || pubkey_hex->substr(0, 2) == "05")
-                params["pubkey_ed25519"] = oxenc::to_hex(_user_pk.begin(), _user_pk.end());
-
-            nlohmann::json request_json{{"method", "delete"}, {"params", params}};
-            sequence_params["requests"].push_back(request_json);
-        }
-        log(LogLevel::debug, "config_changed: Call 'send'");
-        nlohmann::json payload{{"method", "sequence"}, {"params", sequence_params}};
-        nlohmann::json ctx{
-                {"type", RequestType::ConfigPush},
-                {"pubkey", target_pubkey_hex},
-                {"seqnos", seqnos},
-                {"namespaces", namespaces}};
-
-        _send(target_pubkey_hex, to_unsigned(payload.dump()), to_unsigned(ctx.dump()));
     }
-    log(LogLevel::debug, "config_changed: Complete");
+
+    // Sort the namespaces based on the order they should be stored in to minimise the chance
+    // that config messages dependant on others are stored before their dependencies
+    auto sorted_requests = requests;
+    std::sort(sorted_requests.begin(), sorted_requests.end(), [](const auto& a, const auto& b) {
+        return namespace_store_order(static_cast<Namespace>(a["namespace"])) <
+               namespace_store_order(static_cast<Namespace>(b["namespace"]));
+    });
+
+    std::vector<std::pair<Namespace, seqno_t>> namespace_seqnos;
+    nlohmann::json sequence_params;
+
+    for (auto& request : sorted_requests) {
+        namespace_seqnos.push_back(
+                {request["namespace"].get<Namespace>(), request["seqno"].get<seqno_t>()});
+        request.erase("seqno");  // Erase the 'seqno' as it shouldn't be in the request payload
+
+        nlohmann::json request_json{{"method", "store"}, {"params", request}};
+        sequence_params["requests"].push_back(request_json);
+    }
+
+    // Also delete obsolete hashes
+    if (!obsolete_hashes.empty()) {
+        // Ed25519 signature of `("delete" || messages...)`
+        std::array<unsigned char, 64> sig;
+        ustring verification = to_unsigned("delete");
+        log(LogLevel::debug, "config_changed: has obsolete hashes");
+        for (auto& hash : obsolete_hashes)
+            verification += to_unsigned_sv(hash);
+
+        if (0 !=
+            crypto_sign_ed25519_detached(
+                    sig.data(), nullptr, verification.data(), verification.size(), _user_sk.data()))
+            throw std::runtime_error{
+                    "config_changed: Failed to sign; perhaps the secret key is invalid?"};
+
+        nlohmann::json params{
+                {"messages", obsolete_hashes},
+                {"pubkey", pubkey_hex},
+                {"signature", oxenc::to_base64(sig.begin(), sig.end())},
+        };
+
+        // For user config storage we also need to add `pubkey_ed25519`
+        if (!is_group_pubkey)
+            params["pubkey_ed25519"] = oxenc::to_hex(_user_pk.begin(), _user_pk.end());
+
+        nlohmann::json request_json{{"method", "delete"}, {"params", params}};
+        sequence_params["requests"].push_back(request_json);
+    }
+
+    nlohmann::json payload{{"method", "sequence"}, {"params", sequence_params}};
+
+    return {to_unsigned(payload.dump()), namespace_seqnos};
 }
 
 std::vector<std::string> State::merge(
@@ -478,25 +476,25 @@ std::vector<std::string> State::merge(
         std::vector<std::string> merged_hashes;
         switch (config.namespace_) {
             case Namespace::Contacts:
-                merged_hashes = config_contacts->merge(pending_configs);
+                merged_hashes = _config_contacts->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
                 config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             case Namespace::ConvoInfoVolatile:
-                merged_hashes = config_convo_info_volatile->merge(pending_configs);
+                merged_hashes = _config_convo_info_volatile->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
                 config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             case Namespace::UserGroups:
-                merged_hashes = config_user_groups->merge(pending_configs);
+                merged_hashes = _config_user_groups->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
                 config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
 
             case Namespace::UserProfile:
-                merged_hashes = config_user_profile->merge(pending_configs);
+                merged_hashes = _config_user_profile->merge(pending_configs);
                 good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
                 config_changed(target_pubkey_hex, true, false);  // Immediately store changes
                 continue;
@@ -515,8 +513,8 @@ std::vector<std::string> State::merge(
                     "merge: Attempted to merge group configs before for group with no config "
                     "state"};
 
-        auto info = _config_groups[target_pubkey_hex]->config_info.get();
-        auto members = _config_groups[target_pubkey_hex]->config_members.get();
+        auto info = _config_groups[target_pubkey_hex]->info.get();
+        auto members = _config_groups[target_pubkey_hex]->members.get();
         is_group_merge = true;
 
         if (config.namespace_ == Namespace::GroupInfo)
@@ -525,7 +523,7 @@ std::vector<std::string> State::merge(
             merged_hashes = members->merge(pending_configs);
         else if (config.namespace_ == Namespace::GroupKeys) {
             // GroupKeys doesn't support merging multiple messages at once so do them individually
-            if (_config_groups[target_pubkey_hex]->config_keys->load_key_message(
+            if (_config_groups[target_pubkey_hex]->keys->load_key_message(
                         config.hash, config.data, config.timestamp_ms, *info, *members)) {
                 good_hashes.emplace_back(config.hash);
             }
@@ -547,10 +545,10 @@ std::vector<std::string> State::current_hashes(std::optional<std::string_view> p
     std::vector<std::string> result;
 
     if (!pubkey_hex || pubkey_hex->empty() || pubkey_hex->substr(0, 2) == "05") {
-        auto contact_hashes = config_contacts->current_hashes();
-        auto convo_info_volatile_hashes = config_convo_info_volatile->current_hashes();
-        auto user_group_hashes = config_user_groups->current_hashes();
-        auto user_profile_hashes = config_user_profile->current_hashes();
+        auto contact_hashes = _config_contacts->current_hashes();
+        auto convo_info_volatile_hashes = _config_convo_info_volatile->current_hashes();
+        auto user_group_hashes = _config_user_groups->current_hashes();
+        auto user_profile_hashes = _config_user_profile->current_hashes();
         result.insert(result.end(), contact_hashes.begin(), contact_hashes.end());
         result.insert(
                 result.end(), convo_info_volatile_hashes.begin(), convo_info_volatile_hashes.end());
@@ -564,9 +562,9 @@ std::vector<std::string> State::current_hashes(std::optional<std::string_view> p
                     "current_hashes: Attempted to retrieve current hashes for group with no config "
                     "state"};
 
-        auto info_hashes = _config_groups[*pubkey_hex]->config_info->current_hashes();
-        auto members_hashes = _config_groups[*pubkey_hex]->config_members->current_hashes();
-        auto keys_hashes = _config_groups[*pubkey_hex]->config_keys->current_hashes();
+        auto info_hashes = _config_groups[*pubkey_hex]->info->current_hashes();
+        auto members_hashes = _config_groups[*pubkey_hex]->members->current_hashes();
+        auto keys_hashes = _config_groups[*pubkey_hex]->keys->current_hashes();
         result.insert(result.end(), info_hashes.begin(), info_hashes.end());
         result.insert(result.end(), members_hashes.begin(), members_hashes.end());
         result.insert(result.end(), keys_hashes.begin(), keys_hashes.end());
@@ -579,38 +577,36 @@ ustring State::dump(bool full_dump) {
     oxenc::bt_dict_producer combined;
 
     // NOTE: the keys have to be in ascii-sorted order:
-    if (full_dump || config_contacts->needs_dump())
-        combined.append("contacts", session::from_unsigned_sv(config_contacts->dump()));
+    if (full_dump || _config_contacts->needs_dump())
+        combined.append("contacts", session::from_unsigned_sv(_config_contacts->dump()));
 
-    if (full_dump || config_convo_info_volatile->needs_dump())
+    if (full_dump || _config_convo_info_volatile->needs_dump())
         combined.append(
                 "convo_info_volatile",
-                session::from_unsigned_sv(config_convo_info_volatile->dump()));
+                session::from_unsigned_sv(_config_convo_info_volatile->dump()));
 
-    if (full_dump || config_user_groups->needs_dump())
-        combined.append("user_groups", session::from_unsigned_sv(config_user_groups->dump()));
+    if (full_dump || _config_user_groups->needs_dump())
+        combined.append("user_groups", session::from_unsigned_sv(_config_user_groups->dump()));
 
-    if (full_dump || config_user_profile->needs_dump())
-        combined.append("user_profile", session::from_unsigned_sv(config_user_profile->dump()));
+    if (full_dump || _config_user_profile->needs_dump())
+        combined.append("user_profile", session::from_unsigned_sv(_config_user_profile->dump()));
 
     // NOTE: `std::map` sorts keys in ascending order so can just add them in order
     if (_config_groups.size() > 0) {
         for (const auto& [key, config] : _config_groups) {
-            if (full_dump || config->config_info->needs_dump() ||
-                config->config_keys->needs_dump() || config->config_members->needs_dump()) {
+            if (full_dump || config->info->needs_dump() || config->keys->needs_dump() ||
+                config->members->needs_dump()) {
                 oxenc::bt_dict_producer group_combined = combined.append_dict(key);
 
-                if (full_dump || config->config_info->needs_dump())
-                    group_combined.append(
-                            "info", session::from_unsigned_sv(config->config_info->dump()));
+                if (full_dump || config->info->needs_dump())
+                    group_combined.append("info", session::from_unsigned_sv(config->info->dump()));
 
-                if (full_dump || config->config_keys->needs_dump())
-                    group_combined.append(
-                            "keys", session::from_unsigned_sv(config->config_keys->dump()));
+                if (full_dump || config->keys->needs_dump())
+                    group_combined.append("keys", session::from_unsigned_sv(config->keys->dump()));
 
-                if (full_dump || config->config_members->needs_dump())
+                if (full_dump || config->members->needs_dump())
                     group_combined.append(
-                            "members", session::from_unsigned_sv(config->config_members->dump()));
+                            "members", session::from_unsigned_sv(config->members->dump()));
             }
         }
     }
@@ -622,10 +618,10 @@ ustring State::dump(bool full_dump) {
 
 ustring State::dump(config::Namespace namespace_, std::optional<std::string_view> pubkey_hex_) {
     switch (namespace_) {
-        case Namespace::Contacts: return config_contacts->dump();
-        case Namespace::ConvoInfoVolatile: return config_convo_info_volatile->dump();
-        case Namespace::UserGroups: return config_user_groups->dump();
-        case Namespace::UserProfile: return config_user_profile->dump();
+        case Namespace::Contacts: return _config_contacts->dump();
+        case Namespace::ConvoInfoVolatile: return _config_convo_info_volatile->dump();
+        case Namespace::UserGroups: return _config_user_groups->dump();
+        case Namespace::UserProfile: return _config_user_profile->dump();
         default: break;
     }
 
@@ -642,41 +638,29 @@ ustring State::dump(config::Namespace namespace_, std::optional<std::string_view
     auto group_configs = _config_groups[*pubkey_hex_].get();
 
     switch (namespace_) {
-        case Namespace::GroupInfo: return group_configs->config_info->dump();
-        case Namespace::GroupMembers: return group_configs->config_members->dump();
-        case Namespace::GroupKeys: return group_configs->config_keys->dump();
+        case Namespace::GroupInfo: return group_configs->info->dump();
+        case Namespace::GroupMembers: return group_configs->members->dump();
+        case Namespace::GroupKeys: return group_configs->keys->dump();
         default: throw std::runtime_error{"Attempted to load unknown namespace"};
     }
 }
 
-void State::received_send_response(std::string pubkey, ustring response, ustring ctx) {
-    auto ctx_json = nlohmann::json::parse(ctx);
+void State::handle_config_push_response(
+        std::string pubkey,
+        std::vector<std::pair<Namespace, seqno_t>> namespace_seqnos,
+        bool success,
+        uint16_t status_code,
+        ustring response) {
+    std::string response_string = {from_unsigned(response.data()), response.size()};
 
-    if (pubkey.size() != 66)
+    // If the request failed then just error
+    if (!success || (status_code < 200 && status_code > 299))
         throw std::invalid_argument{
-                "received_send_response: Invalid pubkey - expected 66 characters"};
-    if (!ctx_json.contains("type"))
-        throw std::invalid_argument{
-                "received_send_response: Invalid ctx - expected to contain 'type'"};
+                "handle_config_push_response: Request failed with data - " + response_string};
 
-    auto request_type = static_cast<RequestType>(ctx_json["type"].get<uint8_t>());
-
-    switch (request_type) {
-        case RequestType::ConfigPush: handle_config_push_response(pubkey, response, ctx); break;
-        default:
-            throw std::invalid_argument{
-                    "received_send_response: Unrecognised ctx.type '" +
-                    std::to_string(static_cast<uint8_t>(request_type)) + "'"};
-    }
-}
-
-void State::handle_config_push_response(std::string pubkey, ustring response, ustring ctx) {
-    log(LogLevel::debug, "handle_config_push_response: Called");
+    // Otherwise process the response data
     auto response_json = nlohmann::json::parse(response);
 
-    if (pubkey.size() != 66)
-        throw std::invalid_argument{
-                "handle_config_push_response: Invalid pubkey - expected 66 characters"};
     if (!response_json.contains("results"))
         throw std::invalid_argument{
                 "handle_config_push_response: Invalid response - expected to contain 'results' "
@@ -738,13 +722,7 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
                  std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::system_clock::now().time_since_epoch()));
 
-    // The 'results' array will be in the same order as the requests sent within 'payload' so
-    // iterate through them both and mark any successful request as pushed
-    auto ctx_json = nlohmann::json::parse(ctx);
-
-    if (!ctx_json.contains("seqnos") || !ctx_json.contains("namespaces") ||
-        results.size() < ctx_json["seqnos"].size() ||
-        results.size() < ctx_json["namespaces"].size())
+    if (results.size() < namespace_seqnos.size())
         throw std::invalid_argument{
                 "handle_config_push_response: Invalid response - Number of responses doesn't match "
                 "the number of requests."};
@@ -757,16 +735,18 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
             continue;
 
         auto hash = results[i]["body"]["hash"].get<std::string>();
-        auto seqno = ctx_json["seqnos"][i].get<seqno_t>();
-        auto namespace_ = ctx_json["namespaces"][i].get<Namespace>();
+        auto seqno = namespace_seqnos[i].second;
+        auto namespace_ = namespace_seqnos[i].first;
 
         switch (namespace_) {
-            case Namespace::Contacts: config_contacts->confirm_pushed(seqno, hash); continue;
+            case Namespace::Contacts: _config_contacts->confirm_pushed(seqno, hash); continue;
             case Namespace::ConvoInfoVolatile:
-                config_convo_info_volatile->confirm_pushed(seqno, hash);
+                _config_convo_info_volatile->confirm_pushed(seqno, hash);
                 continue;
-            case Namespace::UserGroups: config_user_groups->confirm_pushed(seqno, hash); continue;
-            case Namespace::UserProfile: config_user_profile->confirm_pushed(seqno, hash); continue;
+            case Namespace::UserGroups: _config_user_groups->confirm_pushed(seqno, hash); continue;
+            case Namespace::UserProfile:
+                _config_user_profile->confirm_pushed(seqno, hash);
+                continue;
             default: break;
         }
 
@@ -778,9 +758,8 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
         auto group_configs = _config_groups[pubkey].get();
 
         switch (namespace_) {
-            case Namespace::GroupInfo: group_configs->config_info->confirm_pushed(seqno, hash);
-            case Namespace::GroupMembers:
-                group_configs->config_members->confirm_pushed(seqno, hash);
+            case Namespace::GroupInfo: group_configs->info->confirm_pushed(seqno, hash);
+            case Namespace::GroupMembers: group_configs->members->confirm_pushed(seqno, hash);
             case Namespace::GroupKeys: continue;  // No need to do anything here
             default:
                 throw std::runtime_error{
@@ -797,10 +776,10 @@ void State::handle_config_push_response(std::string pubkey, ustring response, us
 std::vector<ustring_view> State::get_keys(
         Namespace namespace_, std::optional<std::string_view> pubkey_hex_) {
     switch (namespace_) {
-        case Namespace::Contacts: return config_contacts->get_keys();
-        case Namespace::ConvoInfoVolatile: return config_convo_info_volatile->get_keys();
-        case Namespace::UserGroups: return config_user_groups->get_keys();
-        case Namespace::UserProfile: return config_user_profile->get_keys();
+        case Namespace::Contacts: return _config_contacts->get_keys();
+        case Namespace::ConvoInfoVolatile: return _config_convo_info_volatile->get_keys();
+        case Namespace::UserGroups: return _config_user_groups->get_keys();
+        case Namespace::UserProfile: return _config_user_profile->get_keys();
         default: break;
     }
 
@@ -817,11 +796,142 @@ std::vector<ustring_view> State::get_keys(
     auto group_configs = _config_groups[*pubkey_hex_].get();
 
     switch (namespace_) {
-        case Namespace::GroupInfo: return group_configs->config_info->get_keys();
-        case Namespace::GroupMembers: return group_configs->config_members->get_keys();
-        case Namespace::GroupKeys: return group_configs->config_keys->group_keys();
+        case Namespace::GroupInfo: return group_configs->info->get_keys();
+        case Namespace::GroupMembers: return group_configs->members->get_keys();
+        case Namespace::GroupKeys: return group_configs->keys->group_keys();
         default: throw std::runtime_error{"Attempted to load unknown namespace"};
     }
+}
+
+void State::create_group(
+        std::string_view name,
+        std::optional<std::string_view> description,
+        std::optional<profile_pic> pic,
+        std::vector<groups::member> members_,
+        std::function<void(bool success, std::string_view group_id, ustring_view group_sk)>
+                callback) {
+    auto key_pair = ed25519::ed25519_key_pair();
+    auto group_id = "03" + oxenc::to_hex(key_pair.first.begin(), key_pair.first.end());
+    std::chrono::milliseconds timestamp =
+            (std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::system_clock::now().time_since_epoch()) +
+             network_offset);
+
+    // Sanity check to avoid group collision
+    if (_config_groups.count(group_id))
+        throw std::runtime_error{"create_group: Tried to create group matching an existing group"};
+
+    ustring_view ed_pk = to_unsigned_sv(key_pair.first);
+    ustring_view ed_sk = to_unsigned_sv(key_pair.second);
+    _config_groups[group_id] = std::make_unique<GroupConfigs>(ed_pk, to_unsigned_sv(_user_sk));
+
+    // Store the group info
+    _config_groups[group_id]->info = std::make_unique<groups::Info>(ed_pk, ed_sk, std::nullopt);
+    _config_groups[group_id]->info->set_name(name);
+    _config_groups[group_id]->info->set_created(timestamp.count());
+
+    if (description)
+        _config_groups[group_id]->info->set_description(*description);
+
+    if (pic)
+        _config_groups[group_id]->info->set_profile_pic(*pic);
+
+    // Need to load the members before creating the Keys config to ensure they
+    // are included in the initial key rotation
+    _config_groups[group_id]->members =
+            std::make_unique<groups::Members>(ed_pk, ed_sk, std::nullopt);
+
+    // Insert the current user as a group admin
+    auto admin_member = groups::member{_user_x_pk_hex};
+    admin_member.admin = true;
+    admin_member.profile_picture = _config_user_profile->get_profile_pic();
+
+    if (auto name = _config_user_profile->get_name())
+        admin_member.name = *name;
+
+    _config_groups[group_id]->members->set(admin_member);
+
+    // Add other members (ignore the current user if they happen to be included)
+    for (auto m : members_)
+        if (m.session_id != _user_x_pk_hex)
+            _config_groups[group_id]->members->set(m);
+
+    // Finally create the keys
+    auto info = _config_groups[group_id]->info.get();
+    auto members = _config_groups[group_id]->members.get();
+    _config_groups[group_id]->keys = std::make_unique<groups::Keys>(
+            to_unsigned_sv(_user_sk), ed_pk, ed_sk, std::nullopt, *info, *members);
+
+    // Prepare and trigger the push for the group configs
+    std::vector<config::ConfigBase*> configs = {
+            _config_groups[group_id]->info.get(), _config_groups[group_id]->members.get()};
+    auto push = prepare_push(group_id, timestamp, configs);
+    _send(group_id,
+          push.payload,
+          [this, group_id, push, ed_sk, name, timestamp, callback](
+                  bool success, int16_t status_code, ustring response) {
+              // Call through to the default 'handle_config_push_response' first to update it's
+              // state correctly (this will also result in the configs getting stored to disk)
+              handle_config_push_response(
+                      group_id, push.namespace_seqno, success, status_code, response);
+
+              // Double check that the group state still exists
+              if (!_config_groups.count(group_id)) {
+                  log(LogLevel::error,
+                      "create_group: Unable to retrieve group when processing create response");
+                  callback(false, "", to_unsigned_sv(""));
+                  return;
+              }
+
+              try {
+                  // Retrieve the group configs for this pubkey and setup an entry in the user
+                  // groups config for it
+                  auto group_configs = _config_groups[group_id].get();
+                  auto group = _config_user_groups->get_or_construct_group(group_id);
+                  group.name = name;
+                  group.joined_at = timestamp.count();
+                  group.secretkey = ed_sk;
+                  _config_user_groups->set(group);
+
+                  // Manually trigger 'config_changed' because we modified '_config_user_groups'
+                  // directly rather than via the 'MutableUserConfigs' so it won't automatically get
+                  // triggered
+                  config_changed();
+
+                  // Lastly trigger the 'callback' to communicate the group was successfully created
+                  callback(true, group_id, ed_sk);
+              } catch (...) {
+                  callback(false, "", to_unsigned_sv(""));
+              }
+          });
+}
+
+void State::approve_group(std::string_view group_id, std::optional<ustring_view> group_sk) {
+    // If we don't already have GroupConfigs then create them
+    if (!_config_groups[group_id]) {
+        auto ed_pk = to_unsigned_sv(oxenc::from_hex(group_id.begin() + 2, group_id.end()));
+        _config_groups[group_id] =
+                std::make_unique<GroupConfigs>(ed_pk, to_unsigned_sv(_user_sk), group_sk);
+        _config_groups[group_id]->info =
+                std::make_unique<groups::Info>(ed_pk, group_sk, std::nullopt);
+        _config_groups[group_id]->members =
+                std::make_unique<groups::Members>(ed_pk, group_sk, std::nullopt);
+
+        auto info = _config_groups[group_id]->info.get();
+        auto members = _config_groups[group_id]->members.get();
+        _config_groups[group_id]->keys = std::make_unique<groups::Keys>(
+                to_unsigned_sv(_user_sk), ed_pk, group_sk, std::nullopt, *info, *members);
+    }
+
+    // Update the USER_GROUPS config to have the group marked as approved
+    auto group = _config_user_groups->get_or_construct_group(group_id);
+    group.invited = false;
+    _config_user_groups->set(group);
+
+    // Trigger the 'config_changed' callback directly since we aren't using 'MutableUserConfig' (We
+    // don't call it for the group config because there is no data so it's likely we are creating
+    // the initial state upon accepting an invite so have no data yet)
+    config_changed();
 }
 
 void State::validate_group_pubkey(std::string_view pubkey_hex) const {
@@ -850,22 +960,22 @@ const ConfigType& State::config(std::string_view pubkey_hex) const {
 
 template <>
 const Contacts& State::config() const {
-    return *config_contacts;
+    return *_config_contacts;
 }
 
 template <>
 const ConvoInfoVolatile& State::config() const {
-    return *config_convo_info_volatile;
+    return *_config_convo_info_volatile;
 };
 
 template <>
 const UserGroups& State::config() const {
-    return *config_user_groups;
+    return *_config_user_groups;
 };
 
 template <>
 const UserProfile& State::config() const {
-    return *config_user_profile;
+    return *_config_user_profile;
 };
 
 template <>
@@ -873,7 +983,7 @@ const groups::Info& State::config(std::string_view pubkey_hex) const {
     validate_group_pubkey(pubkey_hex);
 
     if (auto it = _config_groups.find(pubkey_hex); it != _config_groups.end())
-        return *it->second->config_info;
+        return *it->second->info;
 
     throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
 };
@@ -883,7 +993,7 @@ const groups::Members& State::config(std::string_view pubkey_hex) const {
     validate_group_pubkey(pubkey_hex);
 
     if (auto it = _config_groups.find(pubkey_hex); it != _config_groups.end())
-        return *it->second->config_members;
+        return *it->second->members;
 
     throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
 };
@@ -891,19 +1001,19 @@ const groups::Members& State::config(std::string_view pubkey_hex) const {
 template <>
 const groups::Keys& State::config(std::string_view pubkey_hex) const {
     if (auto it = _config_groups.find(pubkey_hex); it != _config_groups.end())
-        return *it->second->config_keys;
+        return *it->second->keys;
 
     throw std::runtime_error{"config: Attempted to retrieve group configs which doesn't exist"};
 };
 
-MutableUserConfigs State::mutableConfig(
+MutableUserConfigs State::mutable_config(
         std::optional<std::function<void(std::string_view err)>> set_error) {
     return MutableUserConfigs(
             this,
-            *config_contacts,
-            *config_convo_info_volatile,
-            *config_user_groups,
-            *config_user_profile,
+            *_config_contacts,
+            *_config_convo_info_volatile,
+            *_config_user_groups,
+            *_config_user_profile,
             set_error);
 };
 
@@ -911,21 +1021,20 @@ MutableUserConfigs::~MutableUserConfigs() {
     parent_state->config_changed();
 };
 
-MutableGroupConfigs State::mutableConfig(
+MutableGroupConfigs State::mutable_config(
         std::string_view pubkey_hex,
         std::optional<std::function<void(std::string_view err)>> set_error) {
     validate_group_pubkey(pubkey_hex);
     return MutableGroupConfigs(
             this,
-            *_config_groups[pubkey_hex]->config_info,
-            *_config_groups[pubkey_hex]->config_members,
-            *_config_groups[pubkey_hex]->config_keys,
+            *_config_groups[pubkey_hex]->info,
+            *_config_groups[pubkey_hex]->members,
+            *_config_groups[pubkey_hex]->keys,
             set_error);
 };
 
 MutableGroupConfigs::~MutableGroupConfigs() {
-    if (auto sign_pk = info.get_sig_pubkey())
-        parent_state->config_changed("03" + oxenc::to_hex(sign_pk->begin(), sign_pk->end()));
+    parent_state->config_changed(info.id);
 };
 
 }  // namespace session::state

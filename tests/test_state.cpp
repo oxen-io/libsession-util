@@ -18,6 +18,8 @@ using namespace session::state;
 using namespace session::config;
 
 static constexpr int64_t created_ts = 1680064059;
+using response_callback_t =
+        std::function<void(bool success, int16_t status_code, ustring response)>;
 
 std::string replace_suffix_between(
         std::string_view value,
@@ -40,20 +42,45 @@ TEST_CASE("State", "[state][state]") {
     std::optional<last_store_data> last_store = std::nullopt;
     std::optional<last_send_data> last_send = std::nullopt;
 
-    state.onStore([&last_store](
+    state.on_store([&last_store](
                           config::Namespace namespace_,
                           std::string pubkey,
                           uint64_t timestamp_ms,
                           ustring data) {
         last_store = {namespace_, pubkey, timestamp_ms, data};
     });
-    state.onSend([&last_send](std::string pubkey, ustring data, ustring ctx) {
-        last_send = {pubkey, data, ctx};
-    });
+    state.on_send(
+            [&last_send](
+                    std::string pubkey, ustring payload, response_callback_t received_response) {
+                // Replicate the behaviour in the C wrapper
+                auto on_response =
+                        std::make_unique<response_callback_t>(std::move(received_response));
+                last_send = {
+                        pubkey,
+                        payload,
+                        [](bool success,
+                           int16_t status_code,
+                           const unsigned char* res,
+                           size_t reslen,
+                           void* callback_context) {
+                            try {
+                                // Recapture the std::function callback here in a unique_ptr so that
+                                // we clean it up at the end of this lambda.
+                                std::unique_ptr<response_callback_t> cb{
+                                        static_cast<response_callback_t*>(callback_context)};
+                                (*cb)(success, status_code, {res, reslen});
+                                return true;
+                            } catch (...) {
+                                return false;
+                            }
+                        },
+                        nullptr,
+                        on_response.release()};
+            });
 
     // Sanity check direct config access
     CHECK_FALSE(state.config<UserProfile>().get_name().has_value());
-    state.mutableConfig().user_profile.set_name("Test Name");
+    state.mutable_config().user_profile.set_name("Test Name");
     CHECK(state.config<UserProfile>().get_name() == "Test Name");
     CHECK(last_store->namespace_ == Namespace::UserProfile);
     CHECK(last_store->pubkey ==
@@ -65,7 +92,7 @@ TEST_CASE("State", "[state][state]") {
     CHECK(last_send->pubkey ==
           "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f4"
           "6");
-    auto send_data_no_ts = replace_suffix_between(to_sv(last_send->data), (13 + 22), 22, "0");
+    auto send_data_no_ts = replace_suffix_between(to_sv(last_send->payload), (13 + 22), 22, "0");
     auto send_data_no_sig = replace_suffix_between(send_data_no_ts, (37 + 88), 37, "sig");
     CHECK(send_data_no_sig ==
           "{\"method\":\"sequence\",\"params\":{\"requests\":[{\"method\":\"store\",\"params\":{"
@@ -84,18 +111,13 @@ TEST_CASE("State", "[state][state]") {
           "\"0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46\",\"pubkey_"
           "ed25519\":\"8862834829a87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f\","
           "\"signature\":\"sig\",\"timestamp\":0,\"ttl\":2592000000}}]}}");
-    CHECK(to_sv(last_send->ctx) ==
-          "{\"namespaces\":[2],\"pubkey\":"
-          "\"0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46\",\"seqnos\":[1],"
-          "\"type\":2}");
+    CHECK(state.config<UserProfile>().get_seqno() == 1);
 
     // Confirm the push
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
-    state.received_send_response(
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response,
-            last_send->ctx);
+    last_send->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
 
     // Init with dumps
     auto dump = state.dump(Namespace::UserProfile);

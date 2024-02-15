@@ -697,20 +697,11 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
           "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3"
           "a72");
 
-    auto ctx_json = nlohmann::json::parse(last_send->ctx);
-
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 1);
-
+    CHECK(state_current_seqno(state, nullptr, NAMESPACE_USER_GROUPS) == 1);
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
-    CHECK(state_received_send_response(
-            state,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send->ctx.data(),
-            last_send->ctx.size()));
+    last_send->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
 
     REQUIRE(state_current_hashes(state, nullptr, &hashes));
     REQUIRE(hashes);
@@ -730,7 +721,7 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send->data);
+    auto last_send_json = nlohmann::json::parse(last_send->payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));

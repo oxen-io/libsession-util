@@ -13,6 +13,7 @@
 #include "session/config/contacts.h"
 #include "session/config/contacts.hpp"
 #include "session/config/convo_info_volatile.hpp"
+#include "session/config/groups/members.h"
 #include "session/config/namespaces.h"
 #include "session/config/namespaces.hpp"
 #include "session/config/user_groups.hpp"
@@ -41,28 +42,6 @@ LIBSESSION_C_API bool session_id_is_valid(const char* session_id) {
 
 LIBSESSION_EXPORT void state_free(state_object* state) {
     delete state;
-}
-
-LIBSESSION_C_API bool state_create(state_object** state, char* error) {
-    try {
-        auto s = std::make_unique<session::state::State>();
-        auto s_object = std::make_unique<state_object>();
-
-        s_object->internals = s.release();
-        s_object->last_error = nullptr;
-        *state = s_object.release();
-        return true;
-    } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return false;
-    } catch (...) {
-        return false;
-    }
 }
 
 LIBSESSION_C_API bool state_init(
@@ -96,13 +75,7 @@ LIBSESSION_C_API bool state_init(
         *state = s_object.release();
         return true;
     } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
@@ -140,28 +113,78 @@ LIBSESSION_C_API void state_set_logger(
     }
 }
 
+using response_callback_t =
+        std::function<void(bool success, int16_t status_code, ustring response)>;
+
 LIBSESSION_C_API bool state_set_send_callback(
         state_object* state,
         void (*callback)(
-                const char*, const unsigned char*, size_t, const unsigned char*, size_t, void*),
-        void* ctx) {
+                const char* pubkey,
+                const unsigned char* data,
+                size_t data_len,
+                bool (*response_cb)(
+                        bool success,
+                        int16_t status_code,
+                        const unsigned char* res,
+                        size_t reslen,
+                        void* callback_context),
+                void* app_ctx,
+                void* callback_context),
+        void* app_ctx) {
     try {
         if (!callback)
-            unbox(state).onSend(nullptr);
+            unbox(state).on_send(nullptr);
         else {
-            // Setting this can result in the callback being immediately triggered which could throw
-            unbox(state).onSend(
-                    [callback, ctx](std::string pubkey, ustring data, ustring request_ctx) {
-                        callback(
-                                pubkey.c_str(),
-                                data.data(),
-                                data.size(),
-                                request_ctx.data(),
-                                request_ctx.size(),
-                                ctx);
-                    });
+            unbox(state).on_send([callback, app_ctx](
+                                        std::string pubkey,
+                                        ustring data,
+                                        response_callback_t received_response) {
+                // We leak ownership of this std::function below in the `.release()` call, then we
+                // recapture it inside the inner response callback below.
+                auto on_response =
+                        std::make_unique<response_callback_t>(std::move(received_response));
+
+                callback(
+                        pubkey.c_str(),
+                        data.data(),
+                        data.size(),
+                        [](bool success,
+                           int16_t status_code,
+                           const unsigned char* res,
+                           size_t reslen,
+                           void* callback_context) {
+                            try {
+                                // Recapture the std::function callback here in a unique_ptr so that
+                                // we clean it up at the end of this lambda.
+                                std::unique_ptr<response_callback_t> cb{
+                                        static_cast<response_callback_t*>(callback_context)};
+                                (*cb)(success, status_code, {res, reslen});
+                                return true;
+                            } catch (...) {
+                                return false;
+                            }
+                        },
+                        app_ctx,
+                        on_response.release());
+            });
         }
 
+        return true;
+    } catch (const std::exception& e) {
+        return set_error(state, e.what());
+    }
+}
+
+LIBSESSION_C_API bool state_received_send_response(
+        state_object* state,
+        const state_send_response* callback,
+        const unsigned char* response,
+        const size_t size) {
+    try {
+        assert(callback && callback->internals);
+        auto received_response =
+                *static_cast<std::function<void(ustring response)>*>(callback->internals);
+        received_response({response, size});
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
@@ -174,10 +197,10 @@ LIBSESSION_C_API bool state_set_store_callback(
         void* ctx) {
     try {
         if (!callback)
-            unbox(state).onStore(nullptr);
+            unbox(state).on_store(nullptr);
         else {
             // Setting this can result in the callback being immediately triggered which could throw
-            unbox(state).onStore([callback, ctx](
+            unbox(state).on_store([callback, ctx](
                                          config::Namespace namespace_,
                                          std::string pubkey,
                                          uint64_t timestamp_ms,
@@ -202,7 +225,7 @@ LIBSESSION_C_API void state_set_service_node_offset(state_object* state, int64_t
     unbox(state).network_offset = std::chrono::milliseconds(offset_ms);
 }
 
-LIBSESSION_C_API int64_t state_network_offset(state_object* state) {
+LIBSESSION_C_API int64_t state_network_offset(const state_object* state) {
     return unbox(state).network_offset.count();
 }
 
@@ -251,6 +274,37 @@ LIBSESSION_C_API bool state_current_hashes(
     }
 }
 
+LIBSESSION_C_API seqno_t
+state_current_seqno(state_object* state, const char* pubkey_hex_, NAMESPACE namespace_) {
+    switch (namespace_) {
+        case NAMESPACE_CONTACTS: return unbox(state).config<Contacts>().get_seqno();
+        case NAMESPACE_CONVO_INFO_VOLATILE:
+            return unbox(state).config<ConvoInfoVolatile>().get_seqno();
+        case NAMESPACE_USER_GROUPS: return unbox(state).config<UserGroups>().get_seqno();
+        case NAMESPACE_USER_PROFILE: return unbox(state).config<UserProfile>().get_seqno();
+        default: break;
+    }
+
+    // Other namespaces are unique for a given pubkey_hex_
+    if (!pubkey_hex_)
+        return -1;
+
+    try {
+        std::string_view pubkey_hex = {pubkey_hex_, 66};
+
+        switch (namespace_) {
+            case NAMESPACE_GROUP_INFO:
+                return unbox(state).config<groups::Info>({pubkey_hex_, 66}).get_seqno();
+            case NAMESPACE_GROUP_MEMBERS:
+                return unbox(state).config<groups::Members>({pubkey_hex_, 66}).get_seqno();
+            case NAMESPACE_GROUP_KEYS: return 0;  // No seqno needed for GROUP_KEYS
+            default: return -1;
+        }
+    } catch (...) {
+        return -1;
+    }
+}
+
 LIBSESSION_C_API bool state_dump(
         state_object* state, bool full_dump, unsigned char** out, size_t* outlen) {
     try {
@@ -289,24 +343,6 @@ LIBSESSION_C_API bool state_dump_namespace(
     }
 }
 
-LIBSESSION_C_API bool state_received_send_response(
-        state_object* state,
-        const char* pubkey_hex,
-        unsigned char* response_data,
-        size_t response_data_len,
-        unsigned char* request_ctx,
-        size_t request_ctx_len) {
-    try {
-        unbox(state).received_send_response(
-                {pubkey_hex, 66},
-                {response_data, response_data_len},
-                {request_ctx, request_ctx_len});
-        return true;
-    } catch (const std::exception& e) {
-        return set_error(state, e.what());
-    }
-}
-
 LIBSESSION_C_API bool state_get_keys(
         state_object* state,
         NAMESPACE namespace_,
@@ -329,11 +365,62 @@ LIBSESSION_C_API bool state_get_keys(
     }
 }
 
+LIBSESSION_C_API void state_create_group(
+        state_object* state,
+        const char* name,
+        const char* description,
+        const user_profile_pic pic_,
+        const config_group_member* members_,
+        const size_t members_len,
+        void (*callback)(
+                bool success, const char* group_id, unsigned const char* group_sk, void* ctx),
+        void* ctx) {
+    try {
+        std::string_view url{pic_.url};
+        ustring_view key;
+        if (!url.empty())
+            key = {pic_.key, 32};
+
+        std::optional<profile_pic> pic = profile_pic{url, key};
+        std::vector<groups::member> members = {};
+        members.reserve(members_len);
+
+        for (size_t i = 0; i < members_len; i++) {
+            members.emplace_back(groups::member{members_[i]});
+        }
+
+        unbox(state).create_group(
+                name,
+                description,
+                pic,
+                members,
+                [callback, ctx](bool success, std::string_view group_id, ustring_view group_sk) {
+                    callback(success, group_id.data(), group_sk.data(), ctx);
+                });
+    } catch (const std::exception& e) {
+        set_error(state, e.what());
+        callback(false, nullptr, nullptr, ctx);
+    }
+}
+
+LIBSESSION_EXPORT void state_approve_group(
+        state_object* state, const char* group_id, unsigned const char* group_sk) {
+    try {
+        std::optional<ustring_view> ed_sk;
+        if (group_sk)
+            ed_sk = {group_sk, 64};
+
+        unbox(state).approve_group({group_id, 66}, ed_sk);
+    } catch (const std::exception& e) {
+        set_error(state, e.what());
+    }
+}
+
 LIBSESSION_C_API bool state_mutate_user(
         state_object* state, void (*callback)(mutable_state_user_object*, void*), void* ctx) {
     try {
         auto s_object = new mutable_state_user_object();
-        auto mutable_state = unbox(state).mutableConfig([state](std::string_view e) {
+        auto mutable_state = unbox(state).mutable_config([state](std::string_view e) {
             // Don't override an existing error
             if (state->last_error)
                 return;
@@ -356,7 +443,7 @@ LIBSESSION_C_API bool state_mutate_group(
     try {
         auto s_object = new mutable_state_group_object();
         auto mutable_state =
-                unbox(state).mutableConfig({pubkey_hex, 66}, [state](std::string_view e) {
+                unbox(state).mutable_config({pubkey_hex, 66}, [state](std::string_view e) {
                     // Don't override an existing error
                     if (state->last_error)
                         return;

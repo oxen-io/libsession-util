@@ -9,7 +9,9 @@ extern "C" {
 #include <stdint.h>
 
 #include "config/base.h"
+#include "config/groups/members.h"
 #include "config/namespaces.h"
+#include "config/profile_pic.h"
 #include "export.h"
 
 typedef struct state_object {
@@ -49,26 +51,12 @@ typedef struct state_config_message {
     size_t datalen;
 } state_config_message;
 
-/// API: state/state_create
-///
-/// Constructs a new state which generates it's own random ed25519 key pair.
-///
-/// When done with the object the `state_object` must be destroyed by passing the pointer to
-/// state_free().
-///
-/// Inputs:
-/// - `state` -- [out] Pointer to the state object
-/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
-/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
-/// buffer of at least 256 bytes.
-///
-/// Outputs:
-/// - `int` -- Returns 0 on success; returns a non-zero error code and write the exception message
-/// as a C-string into `error` (if not NULL) on failure.
-LIBSESSION_EXPORT bool state_create(state_object** state, char* error)
-        __attribute__((warn_unused_result));
+typedef struct state_send_response {
+    // Internal opaque object pointer; calling code should leave this alone.
+    void* internals;
+} state_send_response;
 
-/// API: state/state_create
+/// API: state/state_init
 ///
 /// Constructs a new state which generates it's own random ed25519 key pair.
 ///
@@ -151,24 +139,31 @@ LIBSESSION_EXPORT void state_set_logger(
 /// API: state/state_set_send_callback
 ///
 /// Takes a function pointer and a context pointer (which can be NULL if not needed).  The given
-/// function pointer will be invoked whenever a config `needs_push` as long as the state isn't
-/// suppressing send events.
-///
-/// The function must have signature:
-///
-/// void callback(const char*, const unsigned char*, size_t, const unsigned char*, size_t, void*);
+/// function pointer will be invoked whenever a config `needs_push`. The function pointer contains
+/// it's own callback function pointer which should be called by the client when it receives a
+/// network response to the original send request.
 ///
 /// Can be called with callback set to NULL to clear an existing hook.
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to state_object object
 /// - `callback` -- [in] Callback function
-/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
+/// - `app_ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 LIBSESSION_EXPORT bool state_set_send_callback(
         state_object* state,
         void (*callback)(
-                const char*, const unsigned char*, size_t, const unsigned char*, size_t, void*),
-        void* ctx);
+                const char* pubkey,
+                const unsigned char* data,
+                size_t data_len,
+                bool (*response_cb)(
+                        bool success,
+                        int16_t status_code,
+                        const unsigned char* res,
+                        size_t reslen,
+                        void* callback_context),
+                void* app_ctx,
+                void* callback_context),
+        void* app_ctx);
 
 /// API: state/state_set_store_callback
 ///
@@ -211,7 +206,7 @@ LIBSESSION_EXPORT void state_set_service_node_offset(state_object* state, int64_
 /// Outputs:
 /// - `int64_t` -- the delta between the current device time and service node time in the
 /// most recent API response
-LIBSESSION_EXPORT int64_t state_network_offset(state_object* state);
+LIBSESSION_EXPORT int64_t state_network_offset(const state_object* state);
 
 /// API: state/state_merge
 ///
@@ -245,6 +240,37 @@ LIBSESSION_EXPORT bool state_merge(
 /// - `current_hashes` -- [out] Pointer to an array of the current config hashes
 LIBSESSION_EXPORT bool state_current_hashes(
         state_object* state, const char* pubkey_hex_, config_string_list** current_hashes);
+
+/// API: state/state_current_hashes
+///
+/// The current config hashes; this can be empty if the current hashes are unknown or the current
+/// state is not clean (i.e. a push is needed or pending).
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to state object
+/// - `pubkey_hex` -- [in] optional pubkey to retrieve the hashes for (in hex, with prefix - 66
+/// bytes). Required for group hashes.
+/// - `current_hashes` -- [out] Pointer to an array of the current config hashes
+LIBSESSION_EXPORT bool state_current_hashes(
+        state_object* state, const char* pubkey_hex_, config_string_list** current_hashes);
+
+/// API: state/state_current_seqno
+///
+/// The current config seqno; this will return the updated seqno if there is a pending push. If
+/// an invalid pubkey is provided when trying to retrieve for a group namespace then '-1' is
+/// returned.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to state object
+/// - `pubkey_hex` -- [in] optional pubkey to retrieve the hashes for (in hex, with prefix - 66
+/// bytes). Required for group namespaces.
+/// - `namespace` -- [in] The namespace to retrieve the seqno for.
+///
+/// Outputs:
+/// - `seqno_t` -- The seqno for the config state associated with the given pubkey and namespace (or
+/// -1 if invalid).
+LIBSESSION_EXPORT seqno_t
+state_current_seqno(state_object* state, const char* pubkey_hex, NAMESPACE namespace_);
 
 /// API: state/state_dump
 ///
@@ -302,21 +328,24 @@ LIBSESSION_EXPORT bool state_dump_namespace(
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to state_object object
-/// - `pubkey_hex` -- [in] optional pubkey the dump is associated to (in hex, with prefix - 66
-/// bytes). Required for group dumps.
-/// - `response_data` -- [in] Pointer to the response from the swarm after sending the
-/// `payload_data`.
-/// - `response_data_len` -- [in] Length of the `response_data`.
 /// - `request_ctx` -- [in] Pointer to the request context data which was provided by the `send`
 /// hook.
 /// - `request_ctx_len` -- [in] Length of the `request_ctx`.
+/// - `response_data` -- [in] Pointer to the response from the swarm after sending the
+/// `payload_data`.
+/// - `response_data_len` -- [in] Length of the `response_data`.
+// LIBSESSION_EXPORT bool state_received_send_response(
+//         state_object* state,
+//         unsigned char* request_ctx,
+//         size_t request_ctx_len,
+//         unsigned char* response_data,
+//         size_t response_data_len);
+
 LIBSESSION_EXPORT bool state_received_send_response(
         state_object* state,
-        const char* pubkey_hex,
-        unsigned char* response_data,
-        size_t response_data_len,
-        unsigned char* request_ctx,
-        size_t request_ctx_len);
+        const state_send_response* callback,
+        const unsigned char* response,
+        const size_t size);
 
 /// API: state/state_get_keys
 ///
@@ -342,6 +371,20 @@ LIBSESSION_EXPORT bool state_get_keys(
         const char* pubkey_hex_,
         unsigned char** out,
         size_t* outlen);
+
+LIBSESSION_EXPORT void state_create_group(
+        state_object* state,
+        const char* name,
+        const char* description,
+        const user_profile_pic pic_,
+        const config_group_member* members_,
+        const size_t members_len,
+        void (*callback)(
+                bool success, const char* group_id, unsigned const char* group_sk, void* ctx),
+        void* ctx);
+
+LIBSESSION_EXPORT void state_approve_group(
+        state_object* state, const char* group_id, unsigned const char* group_sk);
 
 /// API: state/state_mutate_user
 ///

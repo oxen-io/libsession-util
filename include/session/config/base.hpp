@@ -1235,6 +1235,15 @@ class ConfigBase : public ConfigSig {
         assert(i < _keys.size());
         return {_keys[i].data(), _keys[i].size()};
     }
+
+    /// API: base/ConfigBase::get_seqno
+    ///
+    /// Retrieves the current seqno for the config. If there is a pending push then this will return
+    /// the updated seqno.
+    ///
+    /// Outputs:
+    /// - `seqno_t` -- current seqno
+    seqno_t get_seqno() const { return _config->seqno(); };
 };
 
 // The C++ struct we hold opaquely inside the C internals struct.  This is designed so that any

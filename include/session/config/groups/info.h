@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 
+#include "../../state.h"
 #include "../base.h"
 #include "../profile_pic.h"
 #include "../util.h"
@@ -11,50 +12,24 @@ extern "C" {
 LIBSESSION_EXPORT extern const size_t GROUP_INFO_NAME_MAX_LENGTH;
 LIBSESSION_EXPORT extern const size_t GROUP_INFO_DESCRIPTION_MAX_LENGTH;
 
-/// API: groups/groups_info_init
-///
-/// Constructs a group info config object and sets a pointer to it in `conf`.
-///
-/// When done with the object the `config_object` must be destroyed by passing the pointer to
-/// config_free() (in `session/config/base.h`).
-///
-/// Inputs:
-/// - `conf` -- [out] Pointer to the config object
-/// - `ed25519_pubkey` -- [in] 32-byte pointer to the group's public key
-/// - `ed25519_secretkey` -- [in] optional 64-byte pointer to the group's secret key
-///   (libsodium-style 64 byte value).  Pass as NULL for a non-admin member.
-/// - `dump` -- [in] if non-NULL this restores the state from the dumped byte string produced by a
-/// past instantiation's call to `dump()`.  To construct a new, empty object this should be NULL.
-/// - `dumplen` -- [in] the length of `dump` when restoring from a dump, or 0 when `dump` is NULL.
-/// - `error` -- [out] the pointer to a buffer in which we will write an error string if an error
-/// occurs; error messages are discarded if this is given as NULL.  If non-NULL this must be a
-/// buffer of at least 256 bytes.
-///
-/// Outputs:
-/// - `int` -- Returns 0 on success; returns a non-zero error code and write the exception message
-/// as a C-string into `error` (if not NULL) on failure.
-LIBSESSION_EXPORT int groups_info_init(
-        config_object** conf,
-        const unsigned char* ed25519_pubkey,
-        const unsigned char* ed25519_secretkey,
-        const unsigned char* dump,
-        size_t dumplen,
-        char* error) __attribute__((warn_unused_result));
-
-/// API: groups_info/groups_info_get_name
+/// API: groups_info/state_get_groups_info_name
 ///
 /// Returns a pointer to the currently-set name (null-terminated), or NULL if there is no name at
 /// all.  Should be copied right away as the pointer may not remain valid beyond other API calls.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `name` -- [out] the pointer to a buffer in which we will write the null-terminated name
+/// string. This must be a
+///   buffer of at least 'GROUP_INFO_NAME_MAX_LENGTH' bytes.
 ///
 /// Outputs:
-/// - `char*` -- Pointer to the currently-set name as a null-terminated string, or NULL if there is
-/// no name
-LIBSESSION_EXPORT const char* groups_info_get_name(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group name
+LIBSESSION_EXPORT bool state_get_groups_info_name(
+        const state_object* state, const char* pubkey_hex, char* name);
 
-/// API: groups_info/groups_info_set_name
+/// API: groups_info/state_set_groups_info_name
 ///
 /// Sets the group's name to the null-terminated C string.  Returns 0 on success, non-zero on
 /// error (and sets the config_object's error string).
@@ -63,28 +38,30 @@ LIBSESSION_EXPORT const char* groups_info_get_name(const config_object* conf);
 /// truncated.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `name` -- [in] Pointer to the name as a null-terminated C string
-///
-/// Outputs:
-/// - `int` -- Returns 0 on success, non-zero on error
-LIBSESSION_EXPORT int groups_info_set_name(config_object* conf, const char* name);
+LIBSESSION_EXPORT void state_set_groups_info_name(
+        mutable_state_group_object* state, const char* name);
 
-/// API: groups_info/groups_info_get_description
+/// API: groups_info/state_get_groups_info_description
 ///
 /// Returns a pointer to the currently-set description (null-terminated), or NULL if there is no
 /// description at all.  Should be copied right away as the pointer may not remain valid beyond
 /// other API calls.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `description` -- [out] the pointer to a buffer in which we will write the null-terminated
+/// description string. This must be a
+///   buffer of at least 'GROUP_INFO_DESCRIPTION_MAX_LENGTH' bytes.
 ///
 /// Outputs:
-/// - `char*` -- Pointer to the currently-set description as a null-terminated string, or NULL if
-///   there is no description
-LIBSESSION_EXPORT const char* groups_info_get_description(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group description
+LIBSESSION_EXPORT bool state_get_groups_info_description(
+        const state_object* state, const char* pubkey_hex, char* description);
 
-/// API: groups_info/groups_info_set_description
+/// API: groups_info/state_set_groups_info_description
 ///
 /// Sets the group's description to the null-terminated C string.  Returns 0 on success, non-zero on
 /// error (and sets the config_object's error string).
@@ -93,144 +70,167 @@ LIBSESSION_EXPORT const char* groups_info_get_description(const config_object* c
 /// will be truncated.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `description` -- [in] Pointer to the description as a null-terminated C string
-///
-/// Outputs:
-/// - `int` -- Returns 0 on success, non-zero on error
-LIBSESSION_EXPORT int groups_info_set_description(config_object* conf, const char* description);
+LIBSESSION_EXPORT void state_set_groups_info_description(
+        mutable_state_group_object* state, const char* description);
 
-/// API: groups_info/groups_info_get_pic
+/// API: groups_info/state_get_groups_info_pic
 ///
 /// Obtains the current profile pic.  The pointers in the returned struct will be NULL if a profile
 /// pic is not currently set, and otherwise should be copied right away (they will not be valid
 /// beyond other API calls on this config object).
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `description` -- [out] the pointer that will be set to the current profile pic (despite the
+/// "user_profile" in
+///   the struct name, this is the group's profile pic).
 ///
 /// Outputs:
-/// - `user_profile_pic` -- Pointer to the currently-set profile pic (despite the "user_profile" in
-///   the struct name, this is the group's profile pic).
-LIBSESSION_EXPORT user_profile_pic groups_info_get_pic(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group profile pic
+LIBSESSION_EXPORT bool state_get_groups_info_pic(
+        const state_object* state, const char* pubkey_hex, user_profile_pic* pic);
 
-/// API: groups_info/groups_info_set_pic
+/// API: groups_info/state_set_groups_info_pic
 ///
 /// Sets a user profile
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `pic` -- [in] Pointer to the pic
-///
-/// Outputs:
-/// - `int` -- Returns 0 on success, non-zero on error
-LIBSESSION_EXPORT int groups_info_set_pic(config_object* conf, user_profile_pic pic);
+LIBSESSION_EXPORT void state_set_groups_info_pic(
+        mutable_state_group_object* state, user_profile_pic pic);
 
-/// API: groups_info/groups_info_get_expiry_timer
+/// API: groups_info/state_get_groups_info_expiry_timer
 ///
 /// Gets the group's message expiry timer (seconds).  Returns 0 if not set.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `timer` -- [out] Pointer that will be set to the expiry timer in seconds.
 ///
 /// Outputs:
-/// - `int` -- Returns the expiry timer in seconds. Returns 0 if not set
-LIBSESSION_EXPORT int groups_info_get_expiry_timer(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group expiry timer
+LIBSESSION_EXPORT bool state_get_groups_info_expiry_timer(
+        const state_object* state, const char* pubkey_hex, int* timer);
 
-/// API: groups_info/groups_info_set_expiry_timer
+/// API: groups_info/state_set_groups_info_expiry_timer
 ///
 /// Sets the group's message expiry timer (seconds).  Setting 0 (or negative) will clear the current
 /// timer.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `expiry` -- [in] Integer of the expiry timer in seconds
-LIBSESSION_EXPORT void groups_info_set_expiry_timer(config_object* conf, int expiry);
+LIBSESSION_EXPORT void state_set_groups_info_expiry_timer(
+        mutable_state_group_object* state, int expiry);
 
-/// API: groups_info/groups_info_get_created
+/// API: groups_info/state_get_groups_info_created
 ///
 /// Returns the timestamp (unix time, in seconds) when the group was created.  Returns 0 if unset.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `created` -- [out] Pointer that will be set to the unix timestamp when the group was created
+/// (if set by an admin).
 ///
 /// Outputs:
-/// - `int64_t` -- Unix timestamp when the group was created (if set by an admin).
-LIBSESSION_EXPORT int64_t groups_info_get_created(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group created
+/// timestamp
+LIBSESSION_EXPORT bool state_get_groups_info_created(
+        const state_object* state, const char* pubkey_hex, int64_t* created);
 
-/// API: groups_info/groups_info_set_created
+/// API: groups_info/state_set_groups_info_created
 ///
 /// Sets the creation time (unix timestamp, in seconds) when the group was created.  Setting 0
 /// clears the value.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `ts` -- [in] the unix timestamp, or 0 to clear a current value.
-LIBSESSION_EXPORT void groups_info_set_created(config_object* conf, int64_t ts);
+LIBSESSION_EXPORT void groups_info_set_created(mutable_state_group_object* state, int64_t ts);
 
-/// API: groups_info/groups_info_get_delete_before
+/// API: groups_info/state_get_groups_info_delete_before
 ///
 /// Returns the delete-before timestamp (unix time, in seconds); clients should delete all messages
 /// from the group with timestamps earlier than this value, if set.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `delete_before` -- [out] Pointer that will be set to the unix timestamp before which messages
+/// should be deleted.  Returns 0 if not set.
 ///
 /// Outputs:
-/// - `int64_t` -- Unix timestamp before which messages should be deleted.  Returns 0 if not set.
-LIBSESSION_EXPORT int64_t groups_info_get_delete_before(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group deleted
+/// before value
+LIBSESSION_EXPORT bool state_get_groups_info_delete_before(
+        const state_object* state, const char* pubkey_hex, int64_t* delete_before);
 
-/// API: groups_info/groups_info_set_delete_before
+/// API: groups_info/state_set_groups_info_delete_before
 ///
 /// Sets the delete-before time (unix timestamp, in seconds) before which messages should be
 /// deleted.  Setting 0 clears the value.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `ts` -- [in] the unix timestamp, or 0 to clear a current value.
-LIBSESSION_EXPORT void groups_info_set_delete_before(config_object* conf, int64_t ts);
+LIBSESSION_EXPORT void state_set_groups_info_delete_before(
+        mutable_state_group_object* state, int64_t ts);
 
-/// API: groups_info/groups_info_get_attach_delete_before
+/// API: groups_info/state_get_groups_info_attach_delete_before
 ///
 /// Returns the delete-before timestamp (unix time, in seconds) for attachments; clients should drop
 /// all attachments from messages from the group with timestamps earlier than this value, if set.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `delete_before` -- [out] Pointer that will be set to the unix timestamp before which message
+/// attachments should be deleted.  Returns 0 if not set.
 ///
 /// Outputs:
-/// - `int64_t` -- Unix timestamp before which messages should be deleted.  Returns 0 if not set.
-LIBSESSION_EXPORT int64_t groups_info_get_attach_delete_before(const config_object* conf);
+/// - `bool` -- Flag indicating whether it was able to successfully retrieve the group deleted
+/// before value
+LIBSESSION_EXPORT bool state_get_groups_info_attach_delete_before(
+        const state_object* state, const char* pubkey_hex, int64_t* delete_before);
 
-/// API: groups_info/groups_info_set_attach_delete_before
+/// API: groups_info/state_set_groups_info_attach_delete_before
 ///
 /// Sets the delete-before time (unix timestamp, in seconds) for attachments; attachments should be
 /// dropped from messages older than this value.  Setting 0 clears the value.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the mutable state object
 /// - `ts` -- [in] the unix timestamp, or 0 to clear a current value.
-LIBSESSION_EXPORT void groups_info_set_attach_delete_before(config_object* conf, int64_t ts);
+LIBSESSION_EXPORT void state_set_groups_info_attach_delete_before(
+        mutable_state_group_object* state, int64_t ts);
 
-/// API: groups_info/groups_info_is_destroyed(const config_object* conf);
+/// API: groups_info/state_groups_info_is_destroyed
 ///
 /// Returns true if this group has been marked destroyed by an admin, which indicates to a receiving
 /// client that they should destroy it locally.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
+/// - `state` -- [in] Pointer to the state object
+/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
 ///
 /// Outputs:
 /// - `true` if the group has been nuked, `false` otherwise.
-LIBSESSION_EXPORT bool groups_info_is_destroyed(const config_object* conf);
+LIBSESSION_EXPORT bool state_groups_info_is_destroyed(
+        const state_object* state, const char* pubkey_hex);
 
-/// API: groups_info/groups_info_destroy_group(const config_object* conf);
+/// API: groups_info/state_destroy_group
 ///
 /// Nukes a group from orbit.  This is permanent (i.e. there is no removing this setting once set).
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to the config object
-LIBSESSION_EXPORT void groups_info_destroy_group(config_object* conf);
+/// - `state` -- [in] Pointer to the mutable state object
+LIBSESSION_EXPORT void state_destroy_group(mutable_state_group_object* state);
 
 #ifdef __cplusplus
 }  // extern "C"

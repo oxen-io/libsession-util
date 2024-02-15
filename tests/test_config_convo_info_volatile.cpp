@@ -342,20 +342,13 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     CHECK(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
     CHECK(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
-    auto ctx_json = nlohmann::json::parse(last_send->ctx);
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 1);
+    CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 1);
 
     // Pretend we uploaded it
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash1\"}}]}");
-    CHECK(state_received_send_response(
-            state,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send->ctx.data(),
-            last_send->ctx.size()));
+    last_send->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
 
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
@@ -414,12 +407,10 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
             "05cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
             nullptr));
     CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
-    ctx_json = nlohmann::json::parse(last_send_2->ctx);
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 2);
+    CHECK(state_current_seqno(state2, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 2);
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send_2->data);
+    auto last_send_json = nlohmann::json::parse(last_send_2->payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
@@ -437,15 +428,9 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     free(accepted);
     free(merge_data);
 
-    ctx_json = nlohmann::json::parse(last_send_2->ctx);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash123\"}}]}");
-    CHECK(state_received_send_response(
-            state2,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send_2->ctx.data(),
-            last_send_2->ctx.size()));
+    last_send_2->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send_2->callback_context);
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
 
     std::vector<std::string> seen;
@@ -689,18 +674,11 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
             &c);
 
     // Fake push:
-    auto ctx_json = nlohmann::json::parse(last_send->ctx);
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 1);
+    CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 1);
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"somehash\"}}]}");
-    CHECK(state_received_send_response(
-            state,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send->ctx.data(),
-            last_send->ctx.size()));
+    last_send->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
 
     // Load the dump:
     state_namespaced_dump* dumps = new state_namespaced_dump[1];
@@ -732,17 +710,10 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
             },
             &c);
 
-    ctx_json = nlohmann::json::parse(last_send->ctx);
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 2);
+    CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 2);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash5235\"}}]}");
-    CHECK(state_received_send_response(
-            state,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send->ctx.data(),
-            last_send->ctx.size()));
+    last_send->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
 
     // But *before* we load the push make a dirtying change to conf2 that we *don't* push (so that
     // we'll be merging into a dirty-state config):
@@ -764,7 +735,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
 
     // And now, *before* we push the dirty config, also merge the incoming push from `state`:
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send->data);
+    auto last_send_json = nlohmann::json::parse(last_send->payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
@@ -803,17 +774,10 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
             &c1);
 
     CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
-    ctx_json = nlohmann::json::parse(last_send_2->ctx);
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 4);
+    CHECK(state_current_seqno(state2, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 4);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hashz\"}}]}");
-    CHECK(state_received_send_response(
-            state2,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send_2->ctx.data(),
-            last_send_2->ctx.size()));
+    last_send_2->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send_2->callback_context);
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_dump());
 }

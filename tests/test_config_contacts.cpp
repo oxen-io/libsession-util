@@ -293,11 +293,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     CHECK((*last_send).pubkey ==
           "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61"
           "f46");
-
-    auto ctx_json = nlohmann::json::parse(last_send->ctx);
-
-    REQUIRE(ctx_json.contains("seqnos"));
-    CHECK(ctx_json["seqnos"][0] == 1);
+    CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONTACTS) == 1);
 
     state_object* state2;
     REQUIRE(state_init(&state2, ed_sk.data(), nullptr, 0, nullptr));
@@ -305,7 +301,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send->data);
+    auto last_send_json = nlohmann::json::parse(last_send->payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
@@ -325,13 +321,8 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
 
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
-    CHECK(state_received_send_response(
-            state,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f",
-            send_response.data(),
-            send_response.size(),
-            last_send->ctx.data(),
-            last_send->ctx.size()));
+    last_send->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
 
     contacts_contact c3;
     REQUIRE(state_get_contact(state2, &c3, definitely_real_id, nullptr));
@@ -361,7 +352,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
             },
             &c4);
 
-    auto last_send_json_2 = nlohmann::json::parse(last_send_2->data);
+    auto last_send_json_2 = nlohmann::json::parse(last_send_2->payload);
     REQUIRE(last_send_json_2.contains(first_request_data));
     auto last_send_data_2 = to_unsigned(
             oxenc::from_base64(last_send_json_2[first_request_data].get<std::string>()));
@@ -379,13 +370,8 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     free(merge_data);
 
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash2\"}}]}");
-    CHECK(state_received_send_response(
-            state2,
-            "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46",
-            send_response.data(),
-            send_response.size(),
-            last_send->ctx.data(),
-            last_send->ctx.size()));
+    last_send_2->response_cb(
+            true, 200, send_response.data(), send_response.size(), last_send_2->callback_context);
 
     auto messages_key = nlohmann::json::json_pointer("/params/requests/1/params/messages");
     REQUIRE(last_send_json_2.contains(messages_key));
