@@ -603,27 +603,27 @@ LIBSESSION_C_API bool state_get_or_construct_convo_info_volatile_legacy_group(
 }
 
 LIBSESSION_C_API void state_set_convo_info_volatile_1to1(
-        mutable_state_user_object* state, const convo_info_volatile_1to1* convo) {
+        mutable_user_state_object* state, const convo_info_volatile_1to1* convo) {
     unbox(state).convo_info_volatile.set(convo::one_to_one{*convo});
 }
 
 LIBSESSION_C_API void state_set_convo_info_volatile_community(
-        mutable_state_user_object* state, const convo_info_volatile_community* convo) {
+        mutable_user_state_object* state, const convo_info_volatile_community* convo) {
     unbox(state).convo_info_volatile.set(convo::community{*convo});
 }
 
 LIBSESSION_C_API void state_set_convo_info_volatile_group(
-        mutable_state_user_object* state, const convo_info_volatile_group* convo) {
+        mutable_user_state_object* state, const convo_info_volatile_group* convo) {
     unbox(state).convo_info_volatile.set(convo::group{*convo});
 }
 
 LIBSESSION_C_API void state_set_convo_info_volatile_legacy_group(
-        mutable_state_user_object* state, const convo_info_volatile_legacy_group* convo) {
+        mutable_user_state_object* state, const convo_info_volatile_legacy_group* convo) {
     unbox(state).convo_info_volatile.set(convo::legacy_group{*convo});
 }
 
 LIBSESSION_C_API bool state_erase_convo_info_volatile_1to1(
-        mutable_state_user_object* state, const char* session_id) {
+        mutable_user_state_object* state, const char* session_id) {
     try {
         return unbox(state).convo_info_volatile.erase_1to1(session_id);
     } catch (...) {
@@ -631,7 +631,7 @@ LIBSESSION_C_API bool state_erase_convo_info_volatile_1to1(
     }
 }
 LIBSESSION_C_API bool state_erase_convo_info_volatile_community(
-        mutable_state_user_object* state, const char* base_url, const char* room) {
+        mutable_user_state_object* state, const char* base_url, const char* room) {
     try {
         return unbox(state).convo_info_volatile.erase_community(base_url, room);
     } catch (...) {
@@ -639,7 +639,7 @@ LIBSESSION_C_API bool state_erase_convo_info_volatile_community(
     }
 }
 LIBSESSION_C_API bool state_erase_convo_info_volatile_group(
-        mutable_state_user_object* state, const char* group_id) {
+        mutable_user_state_object* state, const char* group_id) {
     try {
         return unbox(state).convo_info_volatile.erase_group(group_id);
     } catch (...) {
@@ -647,7 +647,7 @@ LIBSESSION_C_API bool state_erase_convo_info_volatile_group(
     }
 }
 LIBSESSION_C_API bool state_erase_convo_info_volatile_legacy_group(
-        mutable_state_user_object* state, const char* group_id) {
+        mutable_user_state_object* state, const char* group_id) {
     try {
         return unbox(state).convo_info_volatile.erase_legacy_group(group_id);
     } catch (...) {

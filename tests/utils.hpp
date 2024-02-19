@@ -10,7 +10,6 @@
 #include <string_view>
 #include <vector>
 
-#include "session/config/base.h"
 #include "session/config/namespaces.h"
 #include "session/config/namespaces.hpp"
 

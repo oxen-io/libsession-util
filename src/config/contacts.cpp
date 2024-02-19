@@ -346,12 +346,12 @@ LIBSESSION_C_API bool state_get_or_construct_contact(
 }
 
 LIBSESSION_C_API void state_set_contact(
-        mutable_state_user_object* state, const contacts_contact* contact) {
+        mutable_user_state_object* state, const contacts_contact* contact) {
     unbox(state).contacts.set(contact_info{*contact});
 }
 
 LIBSESSION_C_API bool state_erase_contact(
-        mutable_state_user_object* state, const char* session_id) {
+        mutable_user_state_object* state, const char* session_id) {
     try {
         return unbox(state).contacts.erase(session_id);
     } catch (...) {

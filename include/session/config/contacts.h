@@ -89,7 +89,7 @@ LIBSESSION_EXPORT bool state_get_or_construct_contact(
 /// - `state` -- [in, out] Pointer to the mutable state object
 /// - `contact` -- [in] Pointer containing the contact info data
 LIBSESSION_EXPORT void state_set_contact(
-        mutable_state_user_object* state, const contacts_contact* contact);
+        mutable_user_state_object* state, const contacts_contact* contact);
 
 // NB: wrappers for set_name, set_nickname, etc. C++ methods are deliberately omitted as they would
 // save very little in actual calling code.  The procedure for updating a single field without them
@@ -117,7 +117,7 @@ LIBSESSION_EXPORT void state_set_contact(
 /// Outputs:
 /// - `bool` -- True if erasing was successful
 LIBSESSION_EXPORT bool state_erase_contact(
-        mutable_state_user_object* state, const char* session_id);
+        mutable_user_state_object* state, const char* session_id);
 
 /// API: contacts/state_size_contacts
 ///

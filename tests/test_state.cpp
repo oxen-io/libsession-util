@@ -148,7 +148,7 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(state_get_profile_name(state) == nullptr);
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_profile_name(mutable_state, "Test Name");
             },
             nullptr);
@@ -157,7 +157,7 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(strlen(state_get_profile_pic(state).url) == 0);
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 auto p = user_profile_pic();
                 strcpy(p.url, "http://example.org/omg-pic-123.bmp");  // NB: length must be <
                                                                       // sizeof(p.url)!
@@ -174,7 +174,7 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(state_get_profile_blinded_msgreqs(state) == -1);
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_profile_blinded_msgreqs(mutable_state, 1);
             },
             nullptr);

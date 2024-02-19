@@ -5,7 +5,6 @@ extern "C" {
 #endif
 
 #include "../state.h"
-#include "base.h"
 #include "profile_pic.h"
 
 /// API: state/state_get_profile_name
@@ -29,7 +28,7 @@ LIBSESSION_EXPORT const char* state_get_profile_name(const state_object* state);
 /// Inputs:
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `name` -- [in] Pointer to the name as a null-terminated C string
-LIBSESSION_EXPORT void state_set_profile_name(mutable_state_user_object* state, const char* name);
+LIBSESSION_EXPORT void state_set_profile_name(mutable_user_state_object* state, const char* name);
 
 /// API: state/state_get_profile_pic
 ///
@@ -52,7 +51,7 @@ LIBSESSION_EXPORT user_profile_pic state_get_profile_pic(const state_object* sta
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `pic` -- [in] Pointer to the pic
 LIBSESSION_EXPORT void state_set_profile_pic(
-        mutable_state_user_object* state, user_profile_pic pic);
+        mutable_user_state_object* state, user_profile_pic pic);
 
 /// API: state/state_get_profile_nts_priority
 ///
@@ -75,7 +74,7 @@ LIBSESSION_EXPORT int state_get_profile_nts_priority(const state_object* state);
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `priority` -- [in] Integer of the priority
 LIBSESSION_EXPORT void state_set_profile_nts_priority(
-        mutable_state_user_object* state, int priority);
+        mutable_user_state_object* state, int priority);
 
 /// API: state/state_get_profile_nts_expiry
 ///
@@ -96,7 +95,7 @@ LIBSESSION_EXPORT int state_get_profile_nts_expiry(const state_object* state);
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
 /// - `expiry` -- [in] Integer of the expiry timer in seconds
-LIBSESSION_EXPORT void state_set_profile_nts_expiry(mutable_state_user_object* state, int expiry);
+LIBSESSION_EXPORT void state_set_profile_nts_expiry(mutable_user_state_object* state, int expiry);
 
 /// API: state/state_get_profile_blinded_msgreqs
 ///
@@ -120,7 +119,7 @@ LIBSESSION_EXPORT int state_get_profile_blinded_msgreqs(const state_object* stat
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `enabled` -- [in] true if they should be enabled, false if disabled
 LIBSESSION_EXPORT void state_set_profile_blinded_msgreqs(
-        mutable_state_user_object* state, int enabled);
+        mutable_user_state_object* state, int enabled);
 
 #ifdef __cplusplus
 }  // extern "C"

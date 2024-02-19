@@ -273,7 +273,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
 
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_contact(mutable_state, static_cast<const contacts_contact*>(ctx));
             },
             &c);
@@ -306,7 +306,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
     state_config_message* merge_data = new state_config_message[1];
-    config_string_list* accepted;
+    session_string_list* accepted;
     merge_data[0] = {
             NAMESPACE_CONTACTS,
             "fakehash1",
@@ -347,7 +347,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
 
     state_mutate_user(
             state2,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_contact(mutable_state, static_cast<const contacts_contact*>(ctx));
             },
             &c4);
@@ -414,7 +414,7 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     }
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 auto contacts_to_remove = static_cast<std::vector<std::string>*>(ctx);
 
                 for (auto& cont : *contacts_to_remove)

@@ -8,7 +8,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config/base.h"
+#include "config.h"
 #include "config/namespaces.h"
 #include "config/profile_pic.h"
 #include "export.h"
@@ -25,15 +25,15 @@ typedef struct state_object {
     char _error_buf[256];
 } state_object;
 
-typedef struct mutable_state_user_object {
+typedef struct mutable_user_state_object {
     // Internal opaque object pointer; calling code should leave this alone.
     void* internals;
-} mutable_state_user_object;
+} mutable_user_state_object;
 
-typedef struct mutable_state_group_object {
+typedef struct mutable_group_state_object {
     // Internal opaque object pointer; calling code should leave this alone.
     void* internals;
-} mutable_state_group_object;
+} mutable_group_state_object;
 
 typedef struct state_namespaced_dump {
     NAMESPACE namespace_;
@@ -54,6 +54,13 @@ typedef struct state_send_response {
     // Internal opaque object pointer; calling code should leave this alone.
     void* internals;
 } state_send_response;
+
+typedef enum state_log_level {
+    LOG_LEVEL_DEBUG = 0,
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARNING,
+    LOG_LEVEL_ERROR
+} state_log_level;
 
 /// API: state/state_init
 ///
@@ -89,7 +96,7 @@ LIBSESSION_EXPORT bool state_init(
 /// Frees a state object.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `conf` -- [in] Pointer to state_object object
 LIBSESSION_EXPORT void state_free(state_object* state);
 
 /// API: state/state_load
@@ -122,7 +129,7 @@ LIBSESSION_EXPORT bool state_load(
 ///
 /// The logging function must have signature:
 ///
-/// void log(config_log_level lvl, const char* msg, void* ctx);
+/// void log(state_log_level lvl, const char* msg, void* ctx);
 ///
 /// Can be called with callback set to NULL to clear an existing logger.
 ///
@@ -133,7 +140,7 @@ LIBSESSION_EXPORT bool state_load(
 /// - `callback` -- [in] Callback function
 /// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 LIBSESSION_EXPORT void state_set_logger(
-        state_object* state, void (*callback)(config_log_level, const char*, void*), void* ctx);
+        state_object* state, void (*callback)(state_log_level, const char*, void*), void* ctx);
 
 /// API: state/state_set_send_callback
 ///
@@ -225,7 +232,7 @@ LIBSESSION_EXPORT bool state_merge(
         const char* pubkey_hex_,
         state_config_message* configs,
         size_t count,
-        config_string_list** successful_hashes);
+        session_string_list** successful_hashes);
 
 /// API: state/state_current_hashes
 ///
@@ -238,7 +245,7 @@ LIBSESSION_EXPORT bool state_merge(
 /// bytes). Required for group hashes.
 /// - `current_hashes` -- [out] Pointer to an array of the current config hashes
 LIBSESSION_EXPORT bool state_current_hashes(
-        state_object* state, const char* pubkey_hex_, config_string_list** current_hashes);
+        state_object* state, const char* pubkey_hex_, session_string_list** current_hashes);
 
 /// API: state/state_current_hashes
 ///
@@ -251,7 +258,7 @@ LIBSESSION_EXPORT bool state_current_hashes(
 /// bytes). Required for group hashes.
 /// - `current_hashes` -- [out] Pointer to an array of the current config hashes
 LIBSESSION_EXPORT bool state_current_hashes(
-        state_object* state, const char* pubkey_hex_, config_string_list** current_hashes);
+        state_object* state, const char* pubkey_hex_, session_string_list** current_hashes);
 
 /// API: state/state_current_seqno
 ///
@@ -380,14 +387,14 @@ LIBSESSION_EXPORT bool state_get_keys(
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
-/// - `callback` -- [in] callback to be called with the `mutable_state_user_object` in order to
+/// - `callback` -- [in] callback to be called with the `mutable_user_state_object` in order to
 /// modify the user state.
 /// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 ///
 /// Outputs:
 /// - `bool` -- Whether the mutation succeeded or not
 LIBSESSION_EXPORT bool state_mutate_user(
-        state_object* state, void (*callback)(mutable_state_user_object*, void*), void* ctx);
+        state_object* state, void (*callback)(mutable_user_state_object*, void*), void* ctx);
 
 /// API: state/state_mutate_group
 ///
@@ -399,7 +406,7 @@ LIBSESSION_EXPORT bool state_mutate_user(
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
 /// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
-/// - `callback` -- [in] callback to be called with the `mutable_state_group_object` in order to
+/// - `callback` -- [in] callback to be called with the `mutable_group_state_object` in order to
 /// modify the group state.
 /// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
 ///
@@ -408,7 +415,7 @@ LIBSESSION_EXPORT bool state_mutate_user(
 LIBSESSION_EXPORT bool state_mutate_group(
         state_object* state,
         const char* pubkey_hex,
-        void (*callback)(mutable_state_group_object*, void*),
+        void (*callback)(mutable_group_state_object*, void*),
         void* ctx);
 
 /// API: state/mutable_state_user_set_error_if_empty
@@ -420,7 +427,7 @@ LIBSESSION_EXPORT bool state_mutate_group(
 /// - `err` -- [in] the error value to store in the state
 /// - `err_len` -- [in] length of 'err'
 LIBSESSION_EXPORT void mutable_state_user_set_error_if_empty(
-        mutable_state_user_object* state, const char* err, size_t err_len);
+        mutable_user_state_object* state, const char* err, size_t err_len);
 
 /// API: state/mutable_state_group_set_error_if_empty
 ///
@@ -431,7 +438,7 @@ LIBSESSION_EXPORT void mutable_state_user_set_error_if_empty(
 /// - `err` -- [in] the error value to store in the state
 /// - `err_len` -- [in] length of 'err'
 LIBSESSION_EXPORT void mutable_state_group_set_error_if_empty(
-        mutable_state_group_object* state, const char* err, size_t err_len);
+        mutable_group_state_object* state, const char* err, size_t err_len);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -8,7 +8,7 @@
 #include "../namespaces.hpp"
 #include "../profile_pic.hpp"
 
-struct config_group_member;
+struct state_group_member;
 
 namespace session::config::groups {
 
@@ -49,7 +49,7 @@ struct member {
     explicit member(std::string sid);
 
     // Internal ctor/method for C API implementations:
-    explicit member(const config_group_member& c);  // From c struct
+    explicit member(const state_group_member& c);  // From c struct
 
     /// API: groups/member::session_id
     ///
@@ -246,7 +246,7 @@ struct member {
     ///
     /// Inputs:
     /// - `m` -- Reference to C struct to fill with group member info.
-    void into(config_group_member& m) const;
+    void into(state_group_member& m) const;
 
     /// API: groups/member::set_name
     ///

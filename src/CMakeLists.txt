@@ -95,6 +95,7 @@ target_link_libraries(config
     common
     libsession::protos
     PRIVATE
+    nlohmann_json::nlohmann_json
     libsodium::sodium-internal
     libzstd::static
 )

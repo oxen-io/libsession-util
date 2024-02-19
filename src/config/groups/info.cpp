@@ -128,10 +128,10 @@ LIBSESSION_C_API const size_t GROUP_INFO_NAME_MAX_LENGTH = groups::Info::NAME_MA
 LIBSESSION_C_API const size_t GROUP_INFO_DESCRIPTION_MAX_LENGTH =
         groups::Info::DESCRIPTION_MAX_LENGTH;
 
-LIBSESSION_C_API bool state_get_groups_info_name(
-        const state_object* state, const char* pubkey_hex, char* name) {
+LIBSESSION_C_API bool state_get_group_name(
+        const state_object* state, const char* group_id, char* name) {
     try {
-        if (auto s = unbox(state).config<groups::Info>({pubkey_hex, 66}).get_name()) {
+        if (auto s = unbox(state).config<groups::Info>({group_id, 66}).get_name()) {
             std::string res = {s->data(), s->size()};
             if (res.size() > groups::Info::NAME_MAX_LENGTH)
                 res.resize(groups::Info::NAME_MAX_LENGTH);
@@ -143,15 +143,14 @@ LIBSESSION_C_API bool state_get_groups_info_name(
     return false;
 }
 
-LIBSESSION_C_API void state_set_groups_info_name(
-        mutable_state_group_object* state, const char* name) {
+LIBSESSION_C_API void state_set_group_name(mutable_group_state_object* state, const char* name) {
     unbox(state).info.set_name(name);
 }
 
-LIBSESSION_C_API bool state_get_groups_info_description(
-        const state_object* state, const char* pubkey_hex, char* description) {
+LIBSESSION_C_API bool state_get_group_description(
+        const state_object* state, const char* group_id, char* description) {
     try {
-        if (auto s = unbox(state).config<groups::Info>({pubkey_hex, 66}).get_description()) {
+        if (auto s = unbox(state).config<groups::Info>({group_id, 66}).get_description()) {
             std::string res = {s->data(), s->size()};
             if (res.size() > groups::Info::DESCRIPTION_MAX_LENGTH)
                 res.resize(groups::Info::DESCRIPTION_MAX_LENGTH);
@@ -163,15 +162,15 @@ LIBSESSION_C_API bool state_get_groups_info_description(
     return false;
 }
 
-LIBSESSION_C_API void state_set_groups_info_description(
-        mutable_state_group_object* state, const char* description) {
+LIBSESSION_C_API void state_set_group_description(
+        mutable_group_state_object* state, const char* description) {
     unbox(state).info.set_description(description);
 }
 
-LIBSESSION_C_API bool state_get_groups_info_pic(
-        const state_object* state, const char* pubkey_hex, user_profile_pic* pic) {
+LIBSESSION_C_API bool state_get_group_pic(
+        const state_object* state, const char* group_id, user_profile_pic* pic) {
     try {
-        if (auto p = unbox(state).config<groups::Info>({pubkey_hex, 66}).get_profile_pic()) {
+        if (auto p = unbox(state).config<groups::Info>({group_id, 66}).get_profile_pic()) {
             copy_c_str(pic->url, p.url);
             std::memcpy(pic->key, p.key.data(), 32);
             return true;
@@ -181,8 +180,7 @@ LIBSESSION_C_API bool state_get_groups_info_pic(
     return false;
 }
 
-LIBSESSION_C_API void state_set_groups_info_pic(
-        mutable_state_group_object* state, user_profile_pic pic) {
+LIBSESSION_C_API void state_set_group_pic(mutable_group_state_object* state, user_profile_pic pic) {
     std::string_view url{pic.url};
     ustring_view key;
     if (!url.empty())
@@ -191,11 +189,11 @@ LIBSESSION_C_API void state_set_groups_info_pic(
     unbox(state).info.set_profile_pic(url, key);
 }
 
-LIBSESSION_C_API bool state_get_groups_info_expiry_timer(
-        const state_object* state, const char* pubkey_hex, int* timer) {
+LIBSESSION_C_API bool state_get_group_expiry_timer(
+        const state_object* state, const char* group_id, int* timer) {
     try {
         *timer = unbox(state)
-                         .config<groups::Info>({pubkey_hex, 66})
+                         .config<groups::Info>({group_id, 66})
                          .get_expiry_timer()
                          .value_or(0s)
                          .count();
@@ -205,46 +203,44 @@ LIBSESSION_C_API bool state_get_groups_info_expiry_timer(
     return false;
 }
 
-LIBSESSION_C_API void state_set_groups_info_expiry_timer(
-        mutable_state_group_object* state, int expiry) {
+LIBSESSION_C_API void state_set_group_expiry_timer(mutable_group_state_object* state, int expiry) {
     unbox(state).info.set_expiry_timer(std::max(0, expiry) * 1s);
 }
 
-LIBSESSION_C_API bool state_get_groups_info_created(
-        const state_object* state, const char* pubkey_hex, int64_t* created) {
+LIBSESSION_C_API bool state_get_group_created(
+        const state_object* state, const char* group_id, int64_t* created) {
     try {
-        *created = unbox(state).config<groups::Info>({pubkey_hex, 66}).get_created().value_or(0);
+        *created = unbox(state).config<groups::Info>({group_id, 66}).get_created().value_or(0);
         return true;
     } catch (...) {
     }
     return false;
 }
 
-LIBSESSION_C_API void groups_info_set_created(mutable_state_group_object* state, int64_t ts) {
+LIBSESSION_C_API void state_set_group_created(mutable_group_state_object* state, int64_t ts) {
     unbox(state).info.set_created(std::max<int64_t>(0, ts));
 }
 
-LIBSESSION_C_API bool state_get_groups_info_delete_before(
-        const state_object* state, const char* pubkey_hex, int64_t* delete_before) {
+LIBSESSION_C_API bool state_get_group_delete_before(
+        const state_object* state, const char* group_id, int64_t* delete_before) {
     try {
         *delete_before =
-                unbox(state).config<groups::Info>({pubkey_hex, 66}).get_delete_before().value_or(0);
+                unbox(state).config<groups::Info>({group_id, 66}).get_delete_before().value_or(0);
         return true;
     } catch (...) {
     }
     return false;
 }
 
-LIBSESSION_C_API void state_set_groups_info_delete_before(
-        mutable_state_group_object* state, int64_t ts) {
+LIBSESSION_C_API void state_set_group_delete_before(mutable_group_state_object* state, int64_t ts) {
     unbox(state).info.set_delete_before(std::max<int64_t>(0, ts));
 }
 
-LIBSESSION_C_API bool state_get_groups_info_attach_delete_before(
-        const state_object* state, const char* pubkey_hex, int64_t* delete_before) {
+LIBSESSION_C_API bool state_get_group_attach_delete_before(
+        const state_object* state, const char* group_id, int64_t* delete_before) {
     try {
         *delete_before = unbox(state)
-                                 .config<groups::Info>({pubkey_hex, 66})
+                                 .config<groups::Info>({group_id, 66})
                                  .get_delete_attach_before()
                                  .value_or(0);
         return true;
@@ -253,15 +249,14 @@ LIBSESSION_C_API bool state_get_groups_info_attach_delete_before(
     return false;
 }
 
-LIBSESSION_C_API void state_set_groups_info_attach_delete_before(
-        mutable_state_group_object* state, int64_t ts) {
+LIBSESSION_C_API void state_set_group_attach_delete_before(
+        mutable_group_state_object* state, int64_t ts) {
     unbox(state).info.set_delete_attach_before(std::max<int64_t>(0, ts));
 }
 
-LIBSESSION_C_API bool state_groups_info_is_destroyed(
-        const state_object* state, const char* pubkey_hex) {
+LIBSESSION_C_API bool state_group_is_destroyed(const state_object* state, const char* group_id) {
     try {
-        if (unbox(state).config<groups::Info>({pubkey_hex, 66}).is_destroyed()) {
+        if (unbox(state).config<groups::Info>({group_id, 66}).is_destroyed()) {
             return true;
         }
     } catch (...) {
@@ -269,7 +264,7 @@ LIBSESSION_C_API bool state_groups_info_is_destroyed(
     return false;
 }
 
-LIBSESSION_C_API void state_destroy_group(mutable_state_group_object* state) {
+LIBSESSION_C_API void state_destroy_group(mutable_group_state_object* state) {
     unbox(state).info.destroy_group();
 }
 

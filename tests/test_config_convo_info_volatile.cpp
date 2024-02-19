@@ -329,7 +329,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     std::pair<convo_info_volatile_1to1*, convo_info_volatile_community*> convos = {&c, &og};
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 auto convos = static_cast<
                         std::pair<convo_info_volatile_1to1*, convo_info_volatile_community*>*>(ctx);
                 state_set_convo_info_volatile_1to1(mutable_state, convos->first);
@@ -393,7 +393,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     std::pair<convo_info_volatile_1to1*, convo_info_volatile_legacy_group*> convos2 = {&c2, &cg};
     state_mutate_user(
             state2,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 auto convos = static_cast<
                         std::pair<convo_info_volatile_1to1*, convo_info_volatile_legacy_group*>*>(
                         ctx);
@@ -415,7 +415,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
     state_config_message* merge_data = new state_config_message[1];
-    config_string_list* accepted;
+    session_string_list* accepted;
     merge_data[0] = {
             NAMESPACE_CONVO_INFO_VOLATILE,
             "hash123",
@@ -472,7 +472,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_erase_convo_info_volatile_1to1(
                         mutable_state,
                         "052000000000000000000000000000000000000000000000000000000000000000");
@@ -481,7 +481,7 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_erase_convo_info_volatile_1to1(
                         mutable_state,
                         "055000000000000000000000000000000000000000000000000000000000000000");
@@ -667,7 +667,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
                           .count();
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_convo_info_volatile_1to1(
                         mutable_state, static_cast<convo_info_volatile_1to1*>(ctx));
             },
@@ -704,7 +704,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
                           .count();
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_convo_info_volatile_1to1(
                         mutable_state, static_cast<convo_info_volatile_1to1*>(ctx));
             },
@@ -727,7 +727,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
                           .count();
     state_mutate_user(
             state2,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 state_set_convo_info_volatile_1to1(
                         mutable_state, static_cast<convo_info_volatile_1to1*>(ctx));
             },
@@ -740,7 +740,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
     state_config_message* merge_data = new state_config_message[1];
-    config_string_list* accepted;
+    session_string_list* accepted;
     merge_data[0] = {
             NAMESPACE_CONVO_INFO_VOLATILE,
             "hash5235",
@@ -767,7 +767,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     // because of the above dirty->merge->dirty (without an intermediate push) pattern.
     state_mutate_user(
             state2,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 REQUIRE_NOTHROW(state_set_convo_info_volatile_1to1(
                         mutable_state, static_cast<convo_info_volatile_1to1*>(ctx)));
             },

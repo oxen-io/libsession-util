@@ -5,7 +5,6 @@ extern "C" {
 #endif
 
 #include "../state.h"
-#include "base.h"
 #include "profile_pic.h"
 
 typedef struct convo_info_volatile_1to1 {
@@ -262,7 +261,7 @@ LIBSESSION_EXPORT bool state_get_or_construct_convo_info_volatile_legacy_group(
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `convo` -- [in] Pointer to conversation info structure
 LIBSESSION_EXPORT void state_set_convo_info_volatile_1to1(
-        mutable_state_user_object* state, const convo_info_volatile_1to1* convo);
+        mutable_user_state_object* state, const convo_info_volatile_1to1* convo);
 
 /// API: convo_info_volatile/state_set_convo_info_volatile_community
 ///
@@ -272,7 +271,7 @@ LIBSESSION_EXPORT void state_set_convo_info_volatile_1to1(
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `convo` -- [in] Pointer to community info structure
 LIBSESSION_EXPORT void state_set_convo_info_volatile_community(
-        mutable_state_user_object* state, const convo_info_volatile_community* convo);
+        mutable_user_state_object* state, const convo_info_volatile_community* convo);
 
 /// API: convo_info_volatile/state_set_convo_info_volatile_group
 ///
@@ -282,7 +281,7 @@ LIBSESSION_EXPORT void state_set_convo_info_volatile_community(
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `convo` -- [in] Pointer to group info structure
 LIBSESSION_EXPORT void state_set_convo_info_volatile_group(
-        mutable_state_user_object* state, const convo_info_volatile_group* convo);
+        mutable_user_state_object* state, const convo_info_volatile_group* convo);
 
 /// API: convo_info_volatile/state_set_convo_info_volatile_legacy_group
 ///
@@ -292,7 +291,7 @@ LIBSESSION_EXPORT void state_set_convo_info_volatile_group(
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `convo` -- [in] Pointer to legacy group info structure
 LIBSESSION_EXPORT void state_set_convo_info_volatile_legacy_group(
-        mutable_state_user_object* state, const convo_info_volatile_legacy_group* convo);
+        mutable_user_state_object* state, const convo_info_volatile_legacy_group* convo);
 
 /// API: convo_info_volatile/state_erase_convo_info_volatile_1to1
 ///
@@ -307,7 +306,7 @@ LIBSESSION_EXPORT void state_set_convo_info_volatile_legacy_group(
 /// Outputs:
 /// - `bool` - Returns true if conversation was found and removed
 LIBSESSION_EXPORT bool state_erase_convo_info_volatile_1to1(
-        mutable_state_user_object* state, const char* session_id);
+        mutable_user_state_object* state, const char* session_id);
 
 /// API: convo_info_volatile/state_erase_convo_info_volatile_community
 ///
@@ -323,7 +322,7 @@ LIBSESSION_EXPORT bool state_erase_convo_info_volatile_1to1(
 /// Outputs:
 /// - `bool` - Returns true if community was found and removed
 LIBSESSION_EXPORT bool state_erase_convo_info_volatile_community(
-        mutable_state_user_object* state, const char* base_url, const char* room);
+        mutable_user_state_object* state, const char* base_url, const char* room);
 
 /// API: convo_info_volatile/state_erase_convo_info_volatile_group
 ///
@@ -337,7 +336,7 @@ LIBSESSION_EXPORT bool state_erase_convo_info_volatile_community(
 /// Outputs:
 /// - `bool` - Returns true if group was found and removed
 LIBSESSION_EXPORT bool state_erase_convo_info_volatile_group(
-        mutable_state_user_object* state, const char* group_id);
+        mutable_user_state_object* state, const char* group_id);
 
 /// API: convo_info_volatile/state_erase_convo_info_volatile_legacy_group
 ///
@@ -352,7 +351,7 @@ LIBSESSION_EXPORT bool state_erase_convo_info_volatile_group(
 /// Outputs:
 /// - `bool` - Returns true if group was found and removed
 LIBSESSION_EXPORT bool state_erase_convo_info_volatile_legacy_group(
-        mutable_state_user_object* state, const char* group_id);
+        mutable_user_state_object* state, const char* group_id);
 
 /// API: convo_info_volatile/state_size_convo_info_volatile
 ///

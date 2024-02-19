@@ -5,7 +5,6 @@ extern "C" {
 #endif
 
 #include "../state.h"
-#include "base.h"
 #include "notify.h"
 #include "util.h"
 
@@ -246,7 +245,7 @@ LIBSESSION_EXPORT bool state_get_or_construct_ugroups_legacy_group(
 /// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a community group info object
 LIBSESSION_EXPORT void state_set_ugroups_community(
-        mutable_state_user_object* state, const ugroups_community_info* group);
+        mutable_user_state_object* state, const ugroups_community_info* group);
 
 /// API: user_groups/state_set_ugroups_group
 ///
@@ -256,7 +255,7 @@ LIBSESSION_EXPORT void state_set_ugroups_community(
 /// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a group info object
 LIBSESSION_EXPORT void state_set_ugroups_group(
-        mutable_state_user_object* state, const ugroups_group_info* group);
+        mutable_user_state_object* state, const ugroups_group_info* group);
 
 /// API: user_groups/state_set_ugroups_legacy_group
 ///
@@ -269,7 +268,7 @@ LIBSESSION_EXPORT void state_set_ugroups_group(
 /// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a legacy group info object
 LIBSESSION_EXPORT void state_set_ugroups_legacy_group(
-        mutable_state_user_object* state, const ugroups_legacy_group_info* group);
+        mutable_user_state_object* state, const ugroups_legacy_group_info* group);
 
 /// API: user_groups/state_set_free_ugroups_legacy_group
 ///
@@ -281,7 +280,7 @@ LIBSESSION_EXPORT void state_set_ugroups_legacy_group(
 /// - `state` -- [in] Pointer to mutable state object
 /// - `group` -- [in] Pointer to a legacy group info object
 LIBSESSION_EXPORT void state_set_free_ugroups_legacy_group(
-        mutable_state_user_object* state, ugroups_legacy_group_info* group);
+        mutable_user_state_object* state, ugroups_legacy_group_info* group);
 
 /// API: user_groups/state_erase_ugroups_community
 ///
@@ -297,7 +296,7 @@ LIBSESSION_EXPORT void state_set_free_ugroups_legacy_group(
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
 LIBSESSION_EXPORT bool state_erase_ugroups_community(
-        mutable_state_user_object* state, const char* base_url, const char* room);
+        mutable_user_state_object* state, const char* base_url, const char* room);
 
 /// API: user_groups/state_erase_ugroups_group
 ///
@@ -312,7 +311,7 @@ LIBSESSION_EXPORT bool state_erase_ugroups_community(
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
 LIBSESSION_EXPORT bool state_erase_ugroups_group(
-        mutable_state_user_object* state, const char* group_id);
+        mutable_user_state_object* state, const char* group_id);
 
 /// API: user_groups/state_erase_ugroups_legacy_group
 ///
@@ -327,7 +326,7 @@ LIBSESSION_EXPORT bool state_erase_ugroups_group(
 /// Outputs:
 /// - `bool` -- Returns True if conversation was found and removed
 LIBSESSION_EXPORT bool state_erase_ugroups_legacy_group(
-        mutable_state_user_object* state, const char* group_id);
+        mutable_user_state_object* state, const char* group_id);
 
 /// API: user_groups/ugroups_group_set_kicked
 ///
@@ -573,7 +572,7 @@ LIBSESSION_EXPORT size_t state_size_ugroups_groups(const state_object* state);
 /// Returns the number of legacy group conversations.
 ///
 /// Inputs:
-/// - `conf` -- [in] Pointer to config_object object
+/// - `state` -- [in] Pointer to state object
 ///
 /// Outputs:
 /// - `size_t` -- Returns the number of conversations

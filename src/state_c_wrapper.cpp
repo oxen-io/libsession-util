@@ -104,12 +104,12 @@ LIBSESSION_C_API bool state_load(
 }
 
 LIBSESSION_C_API void state_set_logger(
-        state_object* state, void (*callback)(config_log_level, const char*, void*), void* ctx) {
+        state_object* state, void (*callback)(state_log_level, const char*, void*), void* ctx) {
     if (!callback)
         unbox(state).logger = nullptr;
     else {
         unbox(state).logger = [callback, ctx](session::config::LogLevel lvl, std::string msg) {
-            callback(static_cast<config_log_level>(static_cast<int>(lvl)), msg.c_str(), ctx);
+            callback(static_cast<state_log_level>(static_cast<int>(lvl)), msg.c_str(), ctx);
         };
     }
 }
@@ -235,7 +235,7 @@ LIBSESSION_C_API bool state_merge(
         const char* pubkey_hex_,
         state_config_message* configs,
         size_t count,
-        config_string_list** successful_hashes) {
+        session_string_list** successful_hashes) {
     try {
         std::optional<std::string_view> pubkey_hex;
         if (pubkey_hex_)
@@ -261,7 +261,7 @@ LIBSESSION_C_API bool state_merge(
 }
 
 LIBSESSION_C_API bool state_current_hashes(
-        state_object* state, const char* pubkey_hex_, config_string_list** current_hashes) {
+        state_object* state, const char* pubkey_hex_, session_string_list** current_hashes) {
     try {
         std::optional<std::string_view> pubkey_hex;
         if (pubkey_hex_)
@@ -369,14 +369,25 @@ LIBSESSION_C_API bool state_get_keys(
 LIBSESSION_C_API void state_create_group(
         state_object* state,
         const char* name,
-        const char* description,
+        size_t name_len,
+        const char* description_,
+        size_t description_len,
         const user_profile_pic pic_,
-        const config_group_member* members_,
+        const state_group_member* members_,
         const size_t members_len,
         void (*callback)(
-                bool success, const char* group_id, unsigned const char* group_sk, void* ctx),
+                const char* group_id,
+                unsigned const char* group_sk,
+                const char* error,
+                const size_t error_len,
+                void* ctx),
         void* ctx) {
+    assert(name);
     try {
+        std::optional<std::string_view> description;
+        if (description_)
+            description = {description_, description_len};
+
         std::string_view url{pic_.url};
         ustring_view key;
         if (!url.empty())
@@ -391,16 +402,20 @@ LIBSESSION_C_API void state_create_group(
         }
 
         unbox(state).create_group(
-                name,
+                {name, name_len},
                 description,
                 pic,
                 members,
-                [callback, ctx](bool success, std::string_view group_id, ustring_view group_sk) {
-                    callback(success, group_id.data(), group_sk.data(), ctx);
+                [callback, ctx](
+                        std::string_view group_id,
+                        ustring_view group_sk,
+                        std::optional<std::string_view> error) {
+                    callback(group_id.data(), group_sk.data(), error->data(), error->size(), ctx);
                 });
     } catch (const std::exception& e) {
-        set_error(state, e.what());
-        callback(false, nullptr, nullptr, ctx);
+        std::string_view err = e.what();
+        set_error(state, err);
+        callback(nullptr, nullptr, e.what(), err.size(), ctx);
     }
 }
 
@@ -418,9 +433,9 @@ LIBSESSION_EXPORT void state_approve_group(
 }
 
 LIBSESSION_C_API bool state_mutate_user(
-        state_object* state, void (*callback)(mutable_state_user_object*, void*), void* ctx) {
+        state_object* state, void (*callback)(mutable_user_state_object*, void*), void* ctx) {
     try {
-        auto s_object = new mutable_state_user_object();
+        auto s_object = new mutable_user_state_object();
         auto mutable_state = unbox(state).mutable_config([state](std::string_view e) {
             // Don't override an existing error
             if (state->last_error)
@@ -439,10 +454,10 @@ LIBSESSION_C_API bool state_mutate_user(
 LIBSESSION_C_API bool state_mutate_group(
         state_object* state,
         const char* pubkey_hex,
-        void (*callback)(mutable_state_group_object*, void*),
+        void (*callback)(mutable_group_state_object*, void*),
         void* ctx) {
     try {
-        auto s_object = new mutable_state_group_object();
+        auto s_object = new mutable_group_state_object();
         auto mutable_state =
                 unbox(state).mutable_config({pubkey_hex, 66}, [state](std::string_view e) {
                     // Don't override an existing error
@@ -460,13 +475,13 @@ LIBSESSION_C_API bool state_mutate_group(
 }
 
 LIBSESSION_C_API void mutable_state_user_set_error_if_empty(
-        mutable_state_user_object* state, const char* err, size_t err_len) {
+        mutable_user_state_object* state, const char* err, size_t err_len) {
     if (auto set_error = unbox(state).set_error; set_error.has_value())
         set_error.value()({err, err_len});
 }
 
 LIBSESSION_C_API void mutable_state_group_set_error_if_empty(
-        mutable_state_group_object* state, const char* err, size_t err_len) {
+        mutable_group_state_object* state, const char* err, size_t err_len) {
     if (auto set_error = unbox(state).set_error; set_error.has_value())
         set_error.value()({err, err_len});
 }

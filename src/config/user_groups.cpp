@@ -723,27 +723,27 @@ LIBSESSION_C_API bool state_get_or_construct_ugroups_legacy_group(
 }
 
 LIBSESSION_C_API void state_set_ugroups_community(
-        mutable_state_user_object* state, const ugroups_community_info* comm) {
+        mutable_user_state_object* state, const ugroups_community_info* comm) {
     unbox(state).user_groups.set(community_info{*comm});
 }
 
 LIBSESSION_C_API void state_set_ugroups_group(
-        mutable_state_user_object* state, const ugroups_group_info* group) {
+        mutable_user_state_object* state, const ugroups_group_info* group) {
     unbox(state).user_groups.set(group_info{*group});
 }
 
 LIBSESSION_C_API void state_set_ugroups_legacy_group(
-        mutable_state_user_object* state, const ugroups_legacy_group_info* group) {
+        mutable_user_state_object* state, const ugroups_legacy_group_info* group) {
     unbox(state).user_groups.set(legacy_group_info{*group});
 }
 
 LIBSESSION_C_API void state_set_free_ugroups_legacy_group(
-        mutable_state_user_object* state, ugroups_legacy_group_info* group) {
+        mutable_user_state_object* state, ugroups_legacy_group_info* group) {
     unbox(state).user_groups.set(legacy_group_info{std::move(*group)});
 }
 
 LIBSESSION_C_API bool state_erase_ugroups_community(
-        mutable_state_user_object* state, const char* base_url, const char* room) {
+        mutable_user_state_object* state, const char* base_url, const char* room) {
     try {
         return unbox(state).user_groups.erase_community(base_url, room);
     } catch (...) {
@@ -752,7 +752,7 @@ LIBSESSION_C_API bool state_erase_ugroups_community(
 }
 
 LIBSESSION_C_API bool state_erase_ugroups_group(
-        mutable_state_user_object* state, const char* group_id) {
+        mutable_user_state_object* state, const char* group_id) {
     try {
         return unbox(state).user_groups.erase_group(group_id);
     } catch (...) {
@@ -761,7 +761,7 @@ LIBSESSION_C_API bool state_erase_ugroups_group(
 }
 
 LIBSESSION_C_API bool state_erase_ugroups_legacy_group(
-        mutable_state_user_object* state, const char* group_id) {
+        mutable_user_state_object* state, const char* group_id) {
     try {
         return unbox(state).user_groups.erase_legacy_group(group_id);
     } catch (...) {

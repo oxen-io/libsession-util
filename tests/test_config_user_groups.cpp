@@ -675,7 +675,7 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     // Non-freeing, so we can keep using `group`; this is less common:
     state_mutate_user(
             state,
-            [](mutable_state_user_object* mutable_state, void* ctx) {
+            [](mutable_user_state_object* mutable_state, void* ctx) {
                 auto group = static_cast<ugroups_legacy_group_info*>(ctx);
                 state_set_ugroups_legacy_group(mutable_state, group);
 
@@ -686,7 +686,7 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
             },
             group);
 
-    config_string_list* hashes;
+    session_string_list* hashes;
     REQUIRE(state_current_hashes(state, nullptr, &hashes));
     CHECK(hashes->len == 0);
     free(hashes);
@@ -726,7 +726,7 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
     state_config_message* merge_data = new state_config_message[1];
-    config_string_list* accepted;
+    session_string_list* accepted;
     merge_data[0] = {
             NAMESPACE_USER_GROUPS,
             "fakehash1",

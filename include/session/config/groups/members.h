@@ -5,14 +5,13 @@ extern "C" {
 #endif
 
 #include "../../state.h"
-#include "../base.h"
 #include "../profile_pic.h"
 #include "../util.h"
 
 enum groups_members_invite_status { INVITE_SENT = 1, INVITE_FAILED = 2 };
 enum groups_members_remove_status { REMOVED_MEMBER = 1, REMOVED_MEMBER_AND_MESSAGES = 2 };
 
-typedef struct config_group_member {
+typedef struct state_group_member {
     char session_id[67];  // in hex; 66 hex chars + null terminator.
 
     // These two will be 0-length strings when unset:
@@ -26,7 +25,7 @@ typedef struct config_group_member {
                    // member and their messages
     bool supplement;
 
-} config_group_member;
+} state_group_member;
 
 /// API: groups/state_get_group_member
 ///
@@ -48,7 +47,7 @@ typedef struct config_group_member {
 LIBSESSION_EXPORT bool state_get_group_member(
         const state_object* state,
         const char* pubkey_hex,
-        config_group_member* member,
+        state_group_member* member,
         const char* session_id,
         char* error) __attribute__((warn_unused_result));
 
@@ -68,7 +67,7 @@ LIBSESSION_EXPORT bool state_get_group_member(
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
-/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
 /// - `member` -- [out] the member info data
 /// - `session_id` -- [in] null terminated hex string
 ///
@@ -77,8 +76,8 @@ LIBSESSION_EXPORT bool state_get_group_member(
 ///   invalid session_id).
 LIBSESSION_EXPORT bool state_get_or_construct_group_member(
         const state_object* state,
-        const char* pubkey_hex,
-        config_group_member* member,
+        const char* group_id,
+        state_group_member* member,
         const char* session_id,
         char* error) __attribute__((warn_unused_result));
 
@@ -90,7 +89,7 @@ LIBSESSION_EXPORT bool state_get_or_construct_group_member(
 /// - `state` -- [in, out] Pointer to the mutable state object
 /// - `member` -- [in] Pointer containing the member info data
 LIBSESSION_EXPORT void state_set_group_member(
-        mutable_state_group_object* state, const config_group_member* member);
+        mutable_group_state_object* state, const state_group_member* member);
 
 /// API: groups/state_erase_group_member
 ///
@@ -108,7 +107,7 @@ LIBSESSION_EXPORT void state_set_group_member(
 /// Outputs:
 /// - `bool` -- True if erasing was successful
 LIBSESSION_EXPORT bool state_erase_group_member(
-        mutable_state_group_object* state, const char* session_id);
+        mutable_group_state_object* state, const char* session_id);
 
 /// API: groups/state_size_group_members
 ///
@@ -116,13 +115,12 @@ LIBSESSION_EXPORT bool state_erase_group_member(
 ///
 /// Inputs:
 /// - `state` -- [in] - Pointer to the state object
-/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
 ///
 /// Outputs:
 /// - `size_t` -- number of members in the group (will be 0 if the group doesn't exist or the
-/// 'pubkey_hex' is invalid)
-LIBSESSION_EXPORT size_t
-state_size_group_members(const state_object* state, const char* pubkey_hex);
+/// 'group_id' is invalid)
+LIBSESSION_EXPORT size_t state_size_group_members(const state_object* state, const char* group_id);
 
 typedef struct groups_members_iterator {
     void* _internals;
@@ -145,12 +143,12 @@ typedef struct groups_members_iterator {
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to the state object
-/// - `pubkey_hex` -- [in] the group's public key (in hex, including prefix - 66 bytes)
+/// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
 ///
 /// Outputs:
 /// - `groups_members_iterator*` -- pointer to the new iterator
 LIBSESSION_EXPORT groups_members_iterator* groups_members_iterator_new(
-        const state_object* state, const char* pubkey_hex);
+        const state_object* state, const char* group_id);
 
 /// API: groups/groups_members_iterator_free
 ///
@@ -167,12 +165,12 @@ LIBSESSION_EXPORT void groups_members_iterator_free(groups_members_iterator* it)
 ///
 /// Inputs:
 /// - `it` -- [in] Pointer to the groups_members_iterator
-/// - `m` -- [out] Pointer to the config_group_member, will be populated if false is returned
+/// - `m` -- [out] Pointer to the state_group_member, will be populated if false is returned
 ///
 /// Outputs:
 /// - `bool` -- True if iteration has reached the end
 LIBSESSION_EXPORT bool groups_members_iterator_done(
-        groups_members_iterator* it, config_group_member* m);
+        groups_members_iterator* it, state_group_member* m);
 
 /// API: groups/groups_members_iterator_advance
 ///

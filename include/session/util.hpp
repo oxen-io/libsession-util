@@ -73,6 +73,10 @@ inline std::basic_string_view<Char> to_sv(const std::array<Char, N>& v) {
     return {v.data(), N};
 }
 
+inline ustring_view operator""_usv(const char* __str, size_t __len) {
+    return {to_unsigned(__str), __len};
+}
+
 inline uint64_t get_timestamp() {
     return std::chrono::steady_clock::now().time_since_epoch().count();
 }

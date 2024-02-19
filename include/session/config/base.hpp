@@ -11,7 +11,6 @@
 #include <variant>
 #include <vector>
 
-#include "base.h"
 #include "namespaces.hpp"
 
 namespace session::config {
@@ -1278,31 +1277,6 @@ struct internals final {
     ConfigT& operator*() { return *operator->(); }
     const ConfigT& operator*() const { return *operator->(); }
 };
-
-template <typename T = ConfigBase, std::enable_if_t<std::is_base_of_v<ConfigBase, T>, int> = 0>
-inline internals<T>& unbox(config_object* conf) {
-    return *static_cast<internals<T>*>(conf->internals);
-}
-template <typename T = ConfigBase, std::enable_if_t<std::is_base_of_v<ConfigBase, T>, int> = 0>
-inline const internals<T>& unbox(const config_object* conf) {
-    return *static_cast<const internals<T>*>(conf->internals);
-}
-
-// Sets an error message in the internals.error string and updates the last_error pointer in the
-// outer (C) config_object struct to point at it.
-void set_error(config_object* conf, std::string e);
-
-// Same as above, but gets the error string out of an exception and passed through a return value.
-// Intended to simplify catch-and-return-error such as:
-//     try {
-//         whatever();
-//     } catch (const std::exception& e) {
-//         return set_error(conf, LIB_SESSION_ERR_OHNOES, e);
-//     }
-inline int set_error(config_object* conf, int errcode, const std::exception& e) {
-    set_error(conf, e.what());
-    return errcode;
-}
 
 // Copies a value contained in a string into a new malloced char buffer, returning the buffer and
 // size via the two pointer arguments.

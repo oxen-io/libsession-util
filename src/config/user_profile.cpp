@@ -84,7 +84,7 @@ LIBSESSION_C_API const char* state_get_profile_name(const state_object* state) {
     return nullptr;
 }
 
-LIBSESSION_C_API void state_set_profile_name(mutable_state_user_object* state, const char* name) {
+LIBSESSION_C_API void state_set_profile_name(mutable_user_state_object* state, const char* name) {
     unbox(state).user_profile.set_name(name);
 }
 
@@ -100,7 +100,7 @@ LIBSESSION_C_API user_profile_pic state_get_profile_pic(const state_object* stat
 }
 
 LIBSESSION_C_API void state_set_profile_pic(
-        mutable_state_user_object* state, user_profile_pic pic) {
+        mutable_user_state_object* state, user_profile_pic pic) {
     std::string_view url{pic.url};
     ustring_view key;
     if (!url.empty())
@@ -114,7 +114,7 @@ LIBSESSION_C_API int state_get_profile_nts_priority(const state_object* state) {
 }
 
 LIBSESSION_C_API void state_set_profile_nts_priority(
-        mutable_state_user_object* state, int priority) {
+        mutable_user_state_object* state, int priority) {
     unbox(state).user_profile.set_nts_priority(priority);
 }
 
@@ -122,7 +122,7 @@ LIBSESSION_C_API int state_get_profile_nts_expiry(const state_object* state) {
     return unbox(state).config<UserProfile>().get_nts_expiry().value_or(0s).count();
 }
 
-LIBSESSION_C_API void state_set_profile_nts_expiry(mutable_state_user_object* state, int expiry) {
+LIBSESSION_C_API void state_set_profile_nts_expiry(mutable_user_state_object* state, int expiry) {
     unbox(state).user_profile.set_nts_expiry(std::max(0, expiry) * 1s);
 }
 
@@ -133,7 +133,7 @@ LIBSESSION_C_API int state_get_profile_blinded_msgreqs(const state_object* state
 }
 
 LIBSESSION_C_API void state_set_profile_blinded_msgreqs(
-        mutable_state_user_object* state, int enabled) {
+        mutable_user_state_object* state, int enabled) {
     std::optional<bool> val;
     if (enabled >= 0)
         val = static_cast<bool>(enabled);

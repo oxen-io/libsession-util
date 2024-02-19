@@ -14,6 +14,7 @@
 
 #include <chrono>
 #include <iterator>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -22,6 +23,8 @@
 #include "session/config/groups/keys.h"
 #include "session/config/groups/members.hpp"
 #include "session/multi_encrypt.hpp"
+#include "session/state.h"
+#include "session/state.hpp"
 #include "session/xed25519.hpp"
 
 using namespace std::literals;
@@ -536,6 +539,39 @@ ustring Keys::key_supplement(const std::vector<std::string>& sids) const {
     d.append_signature("~", [this](ustring_view to_sign) { return sign(to_sign); });
 
     return ustring{to_unsigned_sv(d.view())};
+}
+
+std::pair<std::string, ustring> Keys::prepare_supplement_payload(
+        ustring supplement_msg, std::chrono::milliseconds timestamp) const {
+    if (!admin())
+        throw std::runtime_error{"prepare_supplement_payload: Failed to sign; user is not admin"};
+    if (!_sign_pk)
+        throw std::runtime_error{"prepare_supplement_payload: Missing group pubkey"};
+
+    // Ed25519 signature of `("store" || namespace || timestamp)`, where namespace and
+    // `timestamp` are the base10 expression of the namespace and `timestamp` values
+    std::array<unsigned char, 64> sig;
+    ustring verification = to_unsigned("store") + static_cast<unsigned char>(storage_namespace()) +
+                           static_cast<unsigned char>(timestamp.count());
+
+    if (0 !=
+        crypto_sign_ed25519_detached(
+                sig.data(), nullptr, verification.data(), verification.size(), _sign_sk.data()))
+        throw std::runtime_error{
+                "config_changed: Failed to sign; perhaps the secret key is invalid?"};
+
+    auto group_id = "03" + oxenc::to_hex(_sign_pk->begin(), _sign_pk->end());
+    nlohmann::json params{
+            {"namespace", storage_namespace()},
+            {"pubkey", group_id},
+            {"ttl", default_ttl().count()},
+            {"timestamp", timestamp.count()},
+            {"data", oxenc::to_base64(supplement_msg)},
+            {"signature", oxenc::to_base64(sig.begin(), sig.end())},
+    };
+    nlohmann::json request_json{{"method", "store"}, {"params", params}};
+
+    return {group_id, to_unsigned(request_json.dump())};
 }
 
 // Blinding factor for subaccounts: H(sessionid || groupid) mod L, where H is 64-byte blake2b, using
@@ -1371,270 +1407,149 @@ std::pair<std::string, ustring> Keys::decrypt_message(ustring_view ciphertext) c
 
 using namespace session;
 using namespace session::config;
+using namespace session::state;
 
-namespace {
-groups::Keys& unbox(config_group_keys* conf) {
-    assert(conf && conf->internals);
-    return *static_cast<groups::Keys*>(conf->internals);
-}
-const groups::Keys& unbox(const config_group_keys* conf) {
-    assert(conf && conf->internals);
-    return *static_cast<const groups::Keys*>(conf->internals);
-}
+extern "C" {
 
-void set_error(config_group_keys* conf, std::string_view e) {
-    if (e.size() > 255)
-        e.remove_suffix(e.size() - 255);
-    std::memcpy(conf->_error_buf, e.data(), e.size());
-    conf->_error_buf[e.size()] = 0;
-    conf->last_error = conf->_error_buf;
-}
-}  // namespace
-
-LIBSESSION_C_API int groups_keys_init(
-        config_group_keys** conf,
-        const unsigned char* user_ed25519_secretkey,
-        const unsigned char* group_ed25519_pubkey,
-        const unsigned char* group_ed25519_secretkey,
-        config_object* cinfo,
-        config_object* cmembers,
-        const unsigned char* dump,
-        size_t dumplen,
-        char* error) {
-
-    assert(user_ed25519_secretkey && group_ed25519_pubkey && cinfo && cmembers);
-
-    ustring_view user_sk{user_ed25519_secretkey, 64};
-    ustring_view group_pk{group_ed25519_pubkey, 32};
-    std::optional<ustring_view> group_sk;
-    if (group_ed25519_secretkey)
-        group_sk.emplace(group_ed25519_secretkey, 64);
-    std::optional<ustring_view> dumped;
-    if (dump && dumplen)
-        dumped.emplace(dump, dumplen);
-
-    auto& info = *unbox<groups::Info>(cinfo);
-    auto& members = *unbox<groups::Members>(cmembers);
-    auto c_conf = std::make_unique<config_group_keys>();
-
+LIBSESSION_C_API size_t state_size_group_keys(const state_object* state, const char* group_id) {
     try {
-        c_conf->internals = new groups::Keys{user_sk, group_pk, group_sk, dumped, info, members};
-    } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return SESSION_ERR_INVALID_DUMP;
-    }
-
-    c_conf->last_error = nullptr;
-    *conf = c_conf.release();
-    return SESSION_ERR_NONE;
-}
-
-LIBSESSION_C_API size_t groups_keys_size(const config_group_keys* conf) {
-    return unbox(conf).size();
-}
-
-LIBSESSION_C_API const unsigned char* group_keys_get_key(const config_group_keys* conf, size_t N) {
-    auto keys = unbox(conf).group_keys();
-    if (N >= keys.size())
-        return nullptr;
-    return keys[N].data();
-}
-
-LIBSESSION_C_API bool groups_keys_is_admin(const config_group_keys* conf) {
-    return unbox(conf).admin();
-}
-
-LIBSESSION_C_API bool groups_keys_load_admin_key(
-        config_group_keys* conf,
-        const unsigned char* secret,
-        config_object* info,
-        config_object* members) {
-    try {
-        unbox(conf).load_admin_key(
-                ustring_view{secret, 32},
-                *unbox<groups::Info>(info),
-                *unbox<groups::Members>(members));
-    } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
-    }
-    return true;
-}
-
-LIBSESSION_C_API bool groups_keys_rekey(
-        config_group_keys* conf,
-        config_object* info,
-        config_object* members,
-        const unsigned char** out,
-        size_t* outlen) {
-    assert(info && members && out && outlen);
-    auto& keys = unbox(conf);
-    ustring_view to_push;
-    try {
-        to_push = keys.rekey(*unbox<groups::Info>(info), *unbox<groups::Members>(members));
-    } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
-    }
-    *out = to_push.data();
-    *outlen = to_push.size();
-    return true;
-}
-
-LIBSESSION_C_API bool groups_keys_pending_config(
-        const config_group_keys* conf, const unsigned char** out, size_t* outlen) {
-    assert(out && outlen);
-    if (auto pending = unbox(conf).pending_config()) {
-        *out = pending->data();
-        *outlen = pending->size();
-        return true;
-    }
-    return false;
-}
-
-LIBSESSION_C_API bool groups_keys_load_message(
-        config_group_keys* conf,
-        const char* msg_hash,
-        const unsigned char* data,
-        size_t datalen,
-        int64_t timestamp_ms,
-        config_object* info,
-        config_object* members) {
-    assert(data && info && members);
-    try {
-        unbox(conf).load_key_message(
-                msg_hash,
-                ustring_view{data, datalen},
-                timestamp_ms,
-                *unbox<groups::Info>(info),
-                *unbox<groups::Members>(members));
-    } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
-    }
-    return true;
-}
-
-LIBSESSION_C_API config_string_list* groups_keys_current_hashes(const config_group_keys* conf) {
-    return make_string_list(unbox(conf).current_hashes());
-}
-
-LIBSESSION_C_API bool groups_keys_needs_rekey(const config_group_keys* conf) {
-    return unbox(conf).needs_rekey();
-}
-
-LIBSESSION_C_API bool groups_keys_needs_dump(const config_group_keys* conf) {
-    return unbox(conf).needs_dump();
-}
-
-LIBSESSION_C_API void groups_keys_dump(
-        config_group_keys* conf, unsigned char** out, size_t* outlen) {
-    assert(out && outlen);
-    auto dump = unbox(conf).dump();
-    *out = static_cast<unsigned char*>(std::malloc(dump.size()));
-    std::memcpy(*out, dump.data(), dump.size());
-    *outlen = dump.size();
-}
-
-LIBSESSION_C_API void groups_keys_encrypt_message(
-        const config_group_keys* conf,
-        const unsigned char* plaintext_in,
-        size_t plaintext_len,
-        unsigned char** ciphertext_out,
-        size_t* ciphertext_len) {
-    assert(plaintext_in && ciphertext_out && ciphertext_len);
-
-    ustring ciphertext;
-    try {
-        ciphertext = unbox(conf).encrypt_message(ustring_view{plaintext_in, plaintext_len});
-        *ciphertext_out = static_cast<unsigned char*>(std::malloc(ciphertext.size()));
-        std::memcpy(*ciphertext_out, ciphertext.data(), ciphertext.size());
-        *ciphertext_len = ciphertext.size();
+        return unbox(state).config<groups::Keys>(group_id).size();
     } catch (...) {
-        *ciphertext_out = nullptr;
-        *ciphertext_len = 0;
+        return 0;
     }
 }
 
-LIBSESSION_C_API bool groups_keys_decrypt_message(
-        config_group_keys* conf,
-        const unsigned char* ciphertext_in,
-        size_t ciphertext_len,
-        char* session_id,
-        unsigned char** plaintext_out,
-        size_t* plaintext_len) {
-    assert(ciphertext_in && plaintext_out && plaintext_len);
-
+LIBSESSION_C_API const unsigned char* state_get_group_key(
+        const state_object* state, const char* group_id, size_t N) {
     try {
-        auto [sid, plaintext] =
-                unbox(conf).decrypt_message(ustring_view{ciphertext_in, ciphertext_len});
-        std::memcpy(session_id, sid.c_str(), sid.size() + 1);
-        *plaintext_out = static_cast<unsigned char*>(std::malloc(plaintext.size()));
-        std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());
-        *plaintext_len = plaintext.size();
+        auto keys = unbox(state).config<groups::Keys>(group_id).group_keys();
+        if (N >= keys.size())
+            return nullptr;
+        return keys[N].data();
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+LIBSESSION_C_API bool state_is_group_admin(const state_object* state, const char* group_id) {
+    try {
+        return unbox(state).config<groups::Keys>(group_id).admin();
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool state_load_group_admin_key(
+        mutable_group_state_object* state, const unsigned char* secret) {
+    try {
+        unbox(state).keys.load_admin_key(
+                ustring_view{secret, 32}, unbox(state).info, unbox(state).members);
         return true;
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
+        if (auto set_error = unbox(state).set_error; set_error.has_value())
+            set_error.value()(e.what());
+        return false;
     }
-    return false;
 }
 
-LIBSESSION_C_API bool groups_keys_key_supplement(
-        config_group_keys* conf,
+LIBSESSION_C_API bool state_group_needs_rekey(const state_object* state, const char* group_id) {
+    try {
+        return unbox(state).config<groups::Keys>(group_id).needs_rekey();
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool state_rekey_group(mutable_group_state_object* state) {
+    try {
+        unbox(state).keys.rekey(unbox(state).info, unbox(state).members);
+        return true;
+    } catch (const std::exception& e) {
+        if (auto set_error = unbox(state).set_error; set_error.has_value())
+            set_error.value()(e.what());
+        return false;
+    }
+}
+
+LIBSESSION_C_API void state_supplement_group_key(
+        mutable_group_state_object* state,
         const char** sids,
         size_t sids_len,
-        unsigned char** message,
-        size_t* message_len) {
-    assert(sids && message && message_len);
-
+        void (*callback)(
+                bool success,
+                int16_t status_code,
+                const unsigned char* res,
+                size_t reslen,
+                void* ctx),
+        void* ctx) {
+    assert(sids);
     std::vector<std::string> session_ids;
     for (size_t i = 0; i < sids_len; i++)
         session_ids.emplace_back(sids[i]);
+
     try {
-        auto msg = unbox(conf).key_supplement(session_ids);
-        *message = static_cast<unsigned char*>(malloc(msg.size()));
-        *message_len = msg.size();
-        std::memcpy(*message, msg.data(), msg.size());
-        return true;
+        auto msg = unbox(state).keys.key_supplement(session_ids);
+        std::chrono::milliseconds timestamp =
+                (std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::system_clock::now().time_since_epoch()) +
+                 unbox(state).get_network_offset());
+        auto [pubkey, payload] = unbox(state).keys.prepare_supplement_payload(msg, timestamp);
+
+        unbox(state).manual_send(
+                pubkey,
+                payload,
+                [callback, ctx](bool success, int16_t status_code, ustring response) {
+                    if (callback)
+                        callback(success, status_code, response.data(), response.size(), ctx);
+                });
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
+        if (auto set_error = unbox(state).set_error; set_error.has_value())
+            set_error.value()(e.what());
+        if (callback)
+            callback(false, -1, nullptr, 0, ctx);
     }
 }
 
-LIBSESSION_EXPORT int groups_keys_current_generation(config_group_keys* conf) {
-    return unbox(conf).current_generation();
+LIBSESSION_EXPORT int state_get_current_group_generation(
+        const state_object* state, const char* group_id) {
+    try {
+        return unbox(state).config<groups::Keys>(group_id).current_generation();
+    } catch (...) {
+        return 0;
+    }
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_make_subaccount_flags(
-        config_group_keys* conf,
+LIBSESSION_C_API bool state_make_group_swarm_subaccount_flags(
+        const state_object* state,
+        const char* group_id,
         const char* session_id,
         bool write,
         bool del,
-        unsigned char* sign_value) {
+        unsigned char* sign_value,
+        char* error) {
     assert(sign_value);
     try {
-        auto val = unbox(conf).swarm_make_subaccount(session_id, write, del);
+        auto val = unbox(state).config<groups::Keys>(group_id).swarm_make_subaccount(
+                session_id, write, del);
         assert(val.size() == 100);
         std::memcpy(sign_value, val.data(), val.size());
         return true;
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_make_subaccount(
-        config_group_keys* conf, const char* session_id, unsigned char* sign_value) {
-    return groups_keys_swarm_make_subaccount_flags(conf, session_id, true, false, sign_value);
+LIBSESSION_C_API bool state_make_group_swarm_subaccount(
+        const state_object* state,
+        const char* group_id,
+        const char* session_id,
+        unsigned char* sign_value,
+        char* error) {
+    return state_make_group_swarm_subaccount_flags(
+            state, group_id, session_id, true, false, sign_value, error);
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount_flags(
+LIBSESSION_C_API bool verify_group_swarm_subaccount_flags(
         const char* group_id,
         const unsigned char* session_ed25519_secretkey,
         const unsigned char* signing_value,
@@ -1652,7 +1567,7 @@ LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount_flags(
     }
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount(
+LIBSESSION_C_API bool verify_group_swarm_subaccount(
         const char* group_id,
         const unsigned char* session_ed25519_secretkey,
         const unsigned char* signing_value) {
@@ -1662,18 +1577,20 @@ LIBSESSION_C_API bool groups_keys_swarm_verify_subaccount(
             ustring_view{signing_value, 100});
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign(
-        config_group_keys* conf,
+LIBSESSION_C_API bool state_sign_group_swarm_subaccount(
+        const state_object* state,
+        const char* group_id,
         const unsigned char* msg,
         size_t msg_len,
         const unsigned char* signing_value,
 
         char* subaccount,
         char* subaccount_sig,
-        char* signature) {
+        char* signature,
+        char* error) {
     assert(msg && signing_value && subaccount && subaccount_sig && signature);
     try {
-        auto auth = unbox(conf).swarm_subaccount_sign(
+        auto auth = unbox(state).config<groups::Keys>(group_id).swarm_subaccount_sign(
                 ustring_view{msg, msg_len}, ustring_view{signing_value, 100});
         assert(auth.subaccount.size() == 48);
         assert(auth.subaccount_sig.size() == 88);
@@ -1683,23 +1600,24 @@ LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign(
         std::memcpy(signature, auth.signature.c_str(), auth.signature.size() + 1);
         return true;
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign_binary(
-        config_group_keys* conf,
+LIBSESSION_C_API bool state_sign_group_swarm_subaccount_binary(
+        const state_object* state,
+        const char* group_id,
         const unsigned char* msg,
         size_t msg_len,
         const unsigned char* signing_value,
 
         unsigned char* subaccount,
         unsigned char* subaccount_sig,
-        unsigned char* signature) {
+        unsigned char* signature,
+        char* error) {
     assert(msg && signing_value && subaccount && subaccount_sig && signature);
     try {
-        auto auth = unbox(conf).swarm_subaccount_sign(
+        auto auth = unbox(state).config<groups::Keys>(group_id).swarm_subaccount_sign(
                 ustring_view{msg, msg_len}, ustring_view{signing_value, 100}, true);
         assert(auth.subaccount.size() == 36);
         assert(auth.subaccount_sig.size() == 64);
@@ -1709,29 +1627,83 @@ LIBSESSION_C_API bool groups_keys_swarm_subaccount_sign_binary(
         std::memcpy(signature, auth.signature.data(), 64);
         return true;
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_subaccount_token_flags(
-        config_group_keys* conf,
+LIBSESSION_C_API bool state_get_group_swarm_subaccount_token_flags(
+        const state_object* state,
+        const char* group_id,
         const char* session_id,
         bool write,
         bool del,
-        unsigned char* token) {
+        unsigned char* token,
+        char* error) {
     try {
-        auto tok = unbox(conf).swarm_subaccount_token(session_id, write, del);
+        auto tok = unbox(state).config<groups::Keys>(group_id).swarm_subaccount_token(
+                session_id, write, del);
         assert(tok.size() == 36);
         std::memcpy(token, tok.data(), 36);
         return true;
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool groups_keys_swarm_subaccount_token(
-        config_group_keys* conf, const char* session_id, unsigned char* token) {
-    return groups_keys_swarm_subaccount_token_flags(conf, session_id, true, false, token);
+LIBSESSION_C_API bool state_get_group_swarm_subaccount_token(
+        const state_object* state,
+        const char* group_id,
+        const char* session_id,
+        unsigned char* token,
+        char* error) {
+    return state_get_group_swarm_subaccount_token_flags(
+            state, group_id, session_id, true, false, token, error);
 }
+
+LIBSESSION_C_API void state_encrypt_group_message(
+        const state_object* state,
+        const char* group_id,
+        const unsigned char* plaintext_in,
+        size_t plaintext_len,
+        unsigned char** ciphertext_out,
+        size_t* ciphertext_len) {
+    assert(plaintext_in && ciphertext_out && ciphertext_len);
+
+    ustring ciphertext;
+    try {
+        ciphertext = unbox(state).config<groups::Keys>(group_id).encrypt_message(
+                ustring_view{plaintext_in, plaintext_len});
+        *ciphertext_out = static_cast<unsigned char*>(std::malloc(ciphertext.size()));
+        std::memcpy(*ciphertext_out, ciphertext.data(), ciphertext.size());
+        *ciphertext_len = ciphertext.size();
+    } catch (...) {
+        *ciphertext_out = nullptr;
+        *ciphertext_len = 0;
+    }
+}
+
+LIBSESSION_C_API bool state_decrypt_group_message(
+        const state_object* state,
+        const char* group_id,
+        const unsigned char* ciphertext_in,
+        size_t ciphertext_len,
+        char* session_id,
+        unsigned char** plaintext_out,
+        size_t* plaintext_len,
+        char* error) {
+    assert(ciphertext_in && plaintext_out && plaintext_len);
+
+    try {
+        auto [sid, plaintext] = unbox(state).config<groups::Keys>(group_id).decrypt_message(
+                ustring_view{ciphertext_in, ciphertext_len});
+        std::memcpy(session_id, sid.c_str(), sid.size() + 1);
+        *plaintext_out = static_cast<unsigned char*>(std::malloc(plaintext.size()));
+        std::memcpy(*plaintext_out, plaintext.data(), plaintext.size());
+        *plaintext_len = plaintext.size();
+        return true;
+    } catch (const std::exception& e) {
+        return set_error_value(error, e.what());
+    }
+}
+
+}  // extern "C"

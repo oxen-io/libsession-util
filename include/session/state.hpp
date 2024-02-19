@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "config/contacts.hpp"
 #include "config/convo_info_volatile.hpp"
 #include "config/groups/info.hpp"
@@ -67,11 +68,11 @@ class MutableUserConfigs {
 
 class MutableGroupConfigs {
   private:
-    State* parent_state;
+    State& parent_state;
 
   public:
     MutableGroupConfigs(
-            State* state,
+            State& state,
             session::config::groups::Info& info,
             session::config::groups::Members& members,
             session::config::groups::Keys& keys,
@@ -82,6 +83,13 @@ class MutableGroupConfigs {
     session::config::groups::Members& members;
     session::config::groups::Keys& keys;
     std::optional<std::function<void(std::string_view err)>> set_error;
+
+    std::chrono::milliseconds get_network_offset() const;
+    void manual_send(
+            std::string pubkey_hex,
+            ustring payload,
+            std::function<void(bool success, int16_t status_code, ustring response)>
+                    received_response) const;
 
     ~MutableGroupConfigs();
 };
@@ -146,7 +154,7 @@ class State {
     std::unique_ptr<session::config::ConvoInfoVolatile> _config_convo_info_volatile;
     std::unique_ptr<session::config::UserGroups> _config_user_groups;
     std::unique_ptr<session::config::UserProfile> _config_user_profile;
-    std::map<std::string_view, std::unique_ptr<GroupConfigs>> _config_groups;
+    std::map<std::string, std::unique_ptr<GroupConfigs>> _config_groups;
 
   protected:
     Ed25519PubKey _user_pk;
@@ -199,7 +207,7 @@ class State {
                        std::string prefixed_pubkey,
                        uint64_t timestamp_ms,
                        ustring data)> hook) {
-        _store = hook;
+        _store = std::move(hook);
 
         if (!hook)
             return;
@@ -224,7 +232,7 @@ class State {
                       ustring payload,
                       std::function<void(bool success, int16_t status_code, ustring response)>
                               received_response)> hook) {
-        _send = hook;
+        _send = std::move(hook);
 
         if (!hook)
             return;
@@ -272,6 +280,24 @@ class State {
             std::optional<std::string_view> pubkey_hex = std::nullopt,
             bool allow_store = true,
             bool allow_send = true);
+
+    /// API: state/State::manual_send
+    ///
+    /// This allows for manually triggering the `_send` hook as there are some operations (eg.
+    /// supplement group keys) which won't be detected as changes and need to be explicitly sent.
+    ///
+    /// Inputs:
+    /// - `pubkey` -- the pubkey (in hex) for the swarm where the data should be sent.
+    /// - `payload` -- payload which should be sent to the API.
+    /// - `received_response` -- callback which should be called with the response from the send
+    /// request.
+    ///
+    /// Outputs: None
+    void manual_send(
+            std::string pubkey_hex,
+            ustring payload,
+            std::function<void(bool success, int16_t status_code, ustring response)>
+                    received_response) const;
 
     /// API: state/State::merge
     ///
@@ -377,8 +403,10 @@ class State {
             std::optional<std::string_view> description,
             std::optional<config::profile_pic> pic,
             std::vector<config::groups::member> members,
-            std::function<void(bool success, std::string_view group_id, ustring_view group_sk)>
-                    callback);
+            std::function<
+                    void(std::string_view group_id,
+                         ustring_view group_sk,
+                         std::optional<std::string> error)> callback);
 
     void approve_group(std::string_view group_id, std::optional<ustring_view> group_sk);
 
@@ -415,7 +443,6 @@ class State {
             bool success,
             uint16_t status_code,
             ustring response);
-    void validate_group_pubkey(std::string_view pubkey_hex) const;
 };
 
 inline State& unbox(state_object* state) {
@@ -426,11 +453,11 @@ inline const State& unbox(const state_object* state) {
     assert(state && state->internals);
     return *static_cast<const State*>(state->internals);
 }
-inline MutableUserConfigs& unbox(mutable_state_user_object* state) {
+inline MutableUserConfigs& unbox(mutable_user_state_object* state) {
     assert(state && state->internals);
     return *static_cast<MutableUserConfigs*>(state->internals);
 }
-inline MutableGroupConfigs& unbox(mutable_state_group_object* state) {
+inline MutableGroupConfigs& unbox(mutable_group_state_object* state) {
     assert(state && state->internals);
     return *static_cast<MutableGroupConfigs*>(state->internals);
 }
