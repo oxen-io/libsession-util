@@ -209,7 +209,7 @@ class State {
                        ustring data)> hook) {
         _store = std::move(hook);
 
-        if (!hook)
+        if (!_store)
             return;
 
         config_changed(std::nullopt, true, false);
@@ -234,7 +234,7 @@ class State {
                               received_response)> hook) {
         _send = std::move(hook);
 
-        if (!hook)
+        if (!_send)
             return;
 
         config_changed(std::nullopt, false, true);
@@ -261,6 +261,15 @@ class State {
             config::Namespace namespace_,
             std::optional<std::string_view> pubkey_hex,
             ustring_view dump);
+
+    /// API: state/State::has_pending_send
+    ///
+    /// Returns whether the state currently has local changes which are waiting to be sent.
+    ///
+    /// Outputs:
+    /// - `bool` -- Flag indicating whether the state has local changes which are waiting to be
+    /// sent.
+    bool has_pending_send() const;
 
     /// API: state/State::config_changed
     ///
@@ -398,6 +407,26 @@ class State {
     std::vector<ustring_view> get_keys(
             config::Namespace namespace_, std::optional<std::string_view> pubkey_hex_);
 
+    /// API: groups/State::create_group
+    ///
+    /// Creates a new group with the provided values defining the initial state. Triggers the
+    /// callback upon success or error, if an error occurred the `error` value will be populated,
+    /// otherwise the `group_id` and `group_sk` will be populated.
+    ///
+    /// This function will add the updated group into the user groups config and setup the initial
+    /// group configs. The '_send' and '_store' hooks will be triggered for the newly
+    /// created/updated config messages.
+    ///
+    /// Note: This function **does not** send invitations to the group members so the clients will
+    /// still need to do so. Any members provided to this funciton will be included in the initial
+    /// keys generation.
+    ///
+    /// Inputs:
+    /// - `name` -- the name of the group.
+    /// - `description` -- optional description for the group.
+    /// - `pic` -- optional display picture for the group.
+    /// - `members` -- initial members to be added to the group.
+    /// - `callback` -- a callback to be triggered upon success/failure of the group creation.
     void create_group(
             std::string_view name,
             std::optional<std::string_view> description,
@@ -408,7 +437,37 @@ class State {
                          ustring_view group_sk,
                          std::optional<std::string> error)> callback);
 
+    /// API: groups/State::approve_group
+    ///
+    /// Approves a group invitation, this will update the 'invited' flag in the user groups config
+    /// and create the initial group state.
+    ///
+    /// Inputs:
+    /// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
+    /// - `group_sk` -- optional 64-byte secret key for the group.
     void approve_group(std::string_view group_id, std::optional<ustring_view> group_sk);
+
+    /// API: groups/State::load_group_admin_key
+    ///
+    /// Loads the admin keys into a group, upgrading the user from a member to an admin within the
+    /// keys and members objects, and storing the group secret key within the user groups config.
+    ///
+    /// Inputs:
+    /// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
+    /// - `secret` -- the group's 64-byte secret key or 32-byte seed
+    ///
+    /// Outputs: nothing.  After a successful call, `admin()` will return true.  Throws if the given
+    /// secret key does not match the group's pubkey.
+    void load_group_admin_key(std::string_view group_id, ustring_view secret);
+
+    /// API: groups/State::erase_group
+    ///
+    /// Removes the group state and, if specified, removes the group from the user groups config.
+    ///
+    /// Inputs:
+    /// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
+    /// - `remove_user_record` -- flag to indicate whether the user groups entry should be removed.
+    void erase_group(std::string_view group_id, bool remove_user_record);
 
     // Retrieves a read-only version of the user config
     template <typename ConfigType>
@@ -436,7 +495,8 @@ class State {
     PreparedPush prepare_push(
             std::string pubkey_hex,
             std::chrono::milliseconds timestamp,
-            std::vector<config::ConfigBase*> configs);
+            std::vector<config::ConfigBase*> configs,
+            std::optional<ustring> group_sk = std::nullopt);
     void handle_config_push_response(
             std::string pubkey,
             std::vector<std::pair<config::Namespace, seqno_t>> namespace_seqnos,

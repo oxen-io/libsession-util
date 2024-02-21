@@ -116,6 +116,12 @@ LIBSESSION_C_API void state_set_logger(
 
 using response_callback_t =
         std::function<void(bool success, int16_t status_code, ustring response)>;
+struct response_callback_info {
+    state_object* state;
+    response_callback_t cb;
+
+    response_callback_info(state_object* state, response_callback_t cb) : state{state}, cb{cb} {}
+};
 
 LIBSESSION_C_API bool state_set_send_callback(
         state_object* state,
@@ -136,14 +142,14 @@ LIBSESSION_C_API bool state_set_send_callback(
         if (!callback)
             unbox(state).on_send(nullptr);
         else {
-            unbox(state).on_send([callback, app_ctx](
+            unbox(state).on_send([state, callback, app_ctx](
                                          std::string pubkey,
                                          ustring data,
                                          response_callback_t received_response) {
                 // We leak ownership of this std::function below in the `.release()` call, then we
                 // recapture it inside the inner response callback below.
-                auto on_response =
-                        std::make_unique<response_callback_t>(std::move(received_response));
+                auto on_response = std::make_unique<response_callback_info>(
+                        state, std::move(received_response));
 
                 callback(
                         pubkey.c_str(),
@@ -154,15 +160,15 @@ LIBSESSION_C_API bool state_set_send_callback(
                            const unsigned char* res,
                            size_t reslen,
                            void* callback_context) {
+                            // Recapture the std::function callback here in a unique_ptr so that
+                            // we clean it up at the end of this lambda.
+                            std::unique_ptr<response_callback_info> info{
+                                    static_cast<response_callback_info*>(callback_context)};
                             try {
-                                // Recapture the std::function callback here in a unique_ptr so that
-                                // we clean it up at the end of this lambda.
-                                std::unique_ptr<response_callback_t> cb{
-                                        static_cast<response_callback_t*>(callback_context)};
-                                (*cb)(success, status_code, {res, reslen});
+                                info->cb(success, status_code, {res, reslen});
                                 return true;
-                            } catch (...) {
-                                return false;
+                            } catch (const std::exception& e) {
+                                return set_error(info->state, e.what());
                             }
                         },
                         app_ctx,
@@ -170,22 +176,6 @@ LIBSESSION_C_API bool state_set_send_callback(
             });
         }
 
-        return true;
-    } catch (const std::exception& e) {
-        return set_error(state, e.what());
-    }
-}
-
-LIBSESSION_C_API bool state_received_send_response(
-        state_object* state,
-        const state_send_response* callback,
-        const unsigned char* response,
-        const size_t size) {
-    try {
-        assert(callback && callback->internals);
-        auto received_response =
-                *static_cast<std::function<void(ustring response)>*>(callback->internals);
-        received_response({response, size});
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
@@ -228,6 +218,10 @@ LIBSESSION_C_API void state_set_service_node_offset(state_object* state, int64_t
 
 LIBSESSION_C_API int64_t state_network_offset(const state_object* state) {
     return unbox(state).network_offset.count();
+}
+
+LIBSESSION_C_API bool state_has_pending_send(const state_object* state) {
+    return unbox(state).has_pending_send();
 }
 
 LIBSESSION_C_API bool state_merge(
@@ -419,7 +413,7 @@ LIBSESSION_C_API void state_create_group(
     }
 }
 
-LIBSESSION_EXPORT void state_approve_group(
+LIBSESSION_C_API void state_approve_group(
         state_object* state, const char* group_id, unsigned const char* group_sk) {
     try {
         std::optional<ustring_view> ed_sk;
@@ -427,8 +421,26 @@ LIBSESSION_EXPORT void state_approve_group(
             ed_sk = {group_sk, 64};
 
         unbox(state).approve_group({group_id, 66}, ed_sk);
+    } catch (...) {
+    }
+}
+
+LIBSESSION_C_API bool state_load_group_admin_key(
+        state_object* state, const char* group_id, unsigned const char* seed) {
+    try {
+        std::string gid = {group_id, 66};
+        unbox(state).load_group_admin_key({group_id, 66}, ustring_view{seed, 32});
+        return true;
     } catch (const std::exception& e) {
-        set_error(state, e.what());
+        return set_error(state, e.what());
+    }
+}
+
+LIBSESSION_C_API void state_erase_group(
+        state_object* state, const char* group_id, bool remove_user_record) {
+    try {
+        unbox(state).erase_group({group_id, 66}, remove_user_record);
+    } catch (...) {
     }
 }
 
@@ -474,13 +486,13 @@ LIBSESSION_C_API bool state_mutate_group(
     }
 }
 
-LIBSESSION_C_API void mutable_state_user_set_error_if_empty(
+LIBSESSION_C_API void mutable_user_state_set_error_if_empty(
         mutable_user_state_object* state, const char* err, size_t err_len) {
     if (auto set_error = unbox(state).set_error; set_error.has_value())
         set_error.value()({err, err_len});
 }
 
-LIBSESSION_C_API void mutable_state_group_set_error_if_empty(
+LIBSESSION_C_API void mutable_group_state_set_error_if_empty(
         mutable_group_state_object* state, const char* err, size_t err_len) {
     if (auto set_error = unbox(state).set_error; set_error.has_value())
         set_error.value()({err, err_len});

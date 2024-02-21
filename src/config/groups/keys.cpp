@@ -1439,19 +1439,6 @@ LIBSESSION_C_API bool state_is_group_admin(const state_object* state, const char
     }
 }
 
-LIBSESSION_C_API bool state_load_group_admin_key(
-        mutable_group_state_object* state, const unsigned char* secret) {
-    try {
-        unbox(state).keys.load_admin_key(
-                ustring_view{secret, 32}, unbox(state).info, unbox(state).members);
-        return true;
-    } catch (const std::exception& e) {
-        if (auto set_error = unbox(state).set_error; set_error.has_value())
-            set_error.value()(e.what());
-        return false;
-    }
-}
-
 LIBSESSION_C_API bool state_group_needs_rekey(const state_object* state, const char* group_id) {
     try {
         return unbox(state).config<groups::Keys>(group_id).needs_rekey();
@@ -1475,12 +1462,7 @@ LIBSESSION_C_API void state_supplement_group_key(
         mutable_group_state_object* state,
         const char** sids,
         size_t sids_len,
-        void (*callback)(
-                bool success,
-                int16_t status_code,
-                const unsigned char* res,
-                size_t reslen,
-                void* ctx),
+        void (*callback)(bool success, void* ctx),
         void* ctx) {
     assert(sids);
     std::vector<std::string> session_ids;
@@ -1500,13 +1482,13 @@ LIBSESSION_C_API void state_supplement_group_key(
                 payload,
                 [callback, ctx](bool success, int16_t status_code, ustring response) {
                     if (callback)
-                        callback(success, status_code, response.data(), response.size(), ctx);
+                        callback(success, ctx);
                 });
     } catch (const std::exception& e) {
         if (auto set_error = unbox(state).set_error; set_error.has_value())
             set_error.value()(e.what());
         if (callback)
-            callback(false, -1, nullptr, 0, ctx);
+            callback(false, ctx);
     }
 }
 

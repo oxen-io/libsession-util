@@ -63,24 +63,6 @@ LIBSESSION_EXPORT const unsigned char* state_get_group_key(
 /// - `true` if we have admin keys, `false` otherwise.
 LIBSESSION_EXPORT bool state_is_group_admin(const state_object* state, const char* group_id);
 
-/// API: groups/state_load_group_admin_key
-///
-/// Loads the admin keys, effectively upgrading this keys object from a member to an admin.
-///
-/// This does nothing if the keys object already has admin keys.
-///
-/// Inputs:
-/// - `state` -- Pointer to the mutable state object
-/// - `secret` -- pointer to the 32-byte group seed.  (This a 64-byte libsodium "secret key" begins
-///   with the seed, this can also be a given a pointer to such a value).
-///
-/// Outputs:
-/// - `true` if the object has been upgraded to admin status, or was already admin status; `false`
-///   if the given seed value does not match the group's public key.  If this returns `true` then
-///   after the call a call to `state_is_group_admin` would also return `true`.
-LIBSESSION_EXPORT bool state_load_group_admin_key(
-        mutable_group_state_object* state, const unsigned char* secret);
-
 /// API: groups/state_group_needs_rekey
 ///
 /// Checks whether a rekey is required (for instance, because of key generation conflict).  Note
@@ -140,12 +122,7 @@ LIBSESSION_EXPORT void state_supplement_group_key(
         mutable_group_state_object* state,
         const char** sids,
         size_t sids_len,
-        void (*callback)(
-                bool success,
-                int16_t status_code,
-                const unsigned char* res,
-                size_t reslen,
-                void* ctx),
+        void (*callback)(bool success, void* ctx),
         void* ctx);
 
 /// API: groups/state_get_current_group_generation
@@ -348,8 +325,8 @@ LIBSESSION_EXPORT bool state_sign_group_swarm_subaccount_binary(
 ///
 /// Constructs the subaccount token for a session id.  The main use of this is to submit a swarm
 /// token revocation; for issuing subaccount tokens you want to use
-/// `groups_keys_swarm_make_subaccount` instead.  This will produce the same subaccount token that
-/// `groups_keys_swarm_make_subaccount` implicitly creates that can be passed to a swarm to add a
+/// `state_make_group_swarm_subaccount` instead.  This will produce the same subaccount token that
+/// `state_make_group_swarm_subaccount` implicitly creates that can be passed to a swarm to add a
 /// revocation for that subaccount.
 ///
 /// This is recommended to be used when removing a non-admin member to prevent their access.
@@ -461,8 +438,8 @@ LIBSESSION_EXPORT void state_encrypt_group_message(
 /// Outputs:
 /// - `bool` -- True if the message was successfully decrypted, false if decryption (or parsing or
 ///   decompression) failed with all of our known keys.  If (and only if) true is returned then
-///   `plaintext_out` must be freed when done with it.  If false is returned then `conf.last_error`
-///   will contain a diagnostic message describing why the decryption failed.
+///   `plaintext_out` must be freed when done with it.  If false is returned then `error` will
+///   contain a diagnostic message describing why the decryption failed.
 LIBSESSION_EXPORT bool state_decrypt_group_message(
         const state_object* state,
         const char* group_id,

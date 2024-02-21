@@ -214,6 +214,17 @@ LIBSESSION_EXPORT void state_set_service_node_offset(state_object* state, int64_
 /// most recent API response
 LIBSESSION_EXPORT int64_t state_network_offset(const state_object* state);
 
+/// API: state/state_has_pending_send
+///
+/// Returns whether the state currently has local changes which are waiting to be sent.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to state object
+///
+/// Outputs:
+/// - `bool` -- Flag indicating whether the state has local changes which are waiting to be sent.
+LIBSESSION_EXPORT bool state_has_pending_send(const state_object* state);
+
 /// API: state/state_merge
 ///
 /// Takes an pointer to an array of `state_config_message`, sorts them and merges them into the
@@ -241,19 +252,6 @@ LIBSESSION_EXPORT bool state_merge(
 ///
 /// Inputs:
 /// - `state` -- [in] Pointer to state_object object
-/// - `pubkey_hex` -- [in] optional pubkey to retrieve the hashes for (in hex, with prefix - 66
-/// bytes). Required for group hashes.
-/// - `current_hashes` -- [out] Pointer to an array of the current config hashes
-LIBSESSION_EXPORT bool state_current_hashes(
-        state_object* state, const char* pubkey_hex_, session_string_list** current_hashes);
-
-/// API: state/state_current_hashes
-///
-/// The current config hashes; this can be empty if the current hashes are unknown or the current
-/// state is not clean (i.e. a push is needed or pending).
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to state object
 /// - `pubkey_hex` -- [in] optional pubkey to retrieve the hashes for (in hex, with prefix - 66
 /// bytes). Required for group hashes.
 /// - `current_hashes` -- [out] Pointer to an array of the current config hashes
@@ -327,32 +325,6 @@ LIBSESSION_EXPORT bool state_dump_namespace(
         unsigned char** out,
         size_t* outlen);
 
-/// API: state/state_received_send_response
-///
-/// Takes the network respons and request context from sending the data from the `send` hook and
-/// processes the response updating the state as needed.
-///
-/// Inputs:
-/// - `state` -- [in] Pointer to state_object object
-/// - `request_ctx` -- [in] Pointer to the request context data which was provided by the `send`
-/// hook.
-/// - `request_ctx_len` -- [in] Length of the `request_ctx`.
-/// - `response_data` -- [in] Pointer to the response from the swarm after sending the
-/// `payload_data`.
-/// - `response_data_len` -- [in] Length of the `response_data`.
-// LIBSESSION_EXPORT bool state_received_send_response(
-//         state_object* state,
-//         unsigned char* request_ctx,
-//         size_t request_ctx_len,
-//         unsigned char* response_data,
-//         size_t response_data_len);
-
-LIBSESSION_EXPORT bool state_received_send_response(
-        state_object* state,
-        const state_send_response* callback,
-        const unsigned char* response,
-        const size_t size);
-
 /// API: state/state_get_keys
 ///
 /// Obtains the current group decryption keys.
@@ -418,7 +390,7 @@ LIBSESSION_EXPORT bool state_mutate_group(
         void (*callback)(mutable_group_state_object*, void*),
         void* ctx);
 
-/// API: state/mutable_state_user_set_error_if_empty
+/// API: state/mutable_user_state_set_error_if_empty
 ///
 /// Updates the `state->last_error` value to the provided message if it is currently empty.
 ///
@@ -426,10 +398,10 @@ LIBSESSION_EXPORT bool state_mutate_group(
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `err` -- [in] the error value to store in the state
 /// - `err_len` -- [in] length of 'err'
-LIBSESSION_EXPORT void mutable_state_user_set_error_if_empty(
+LIBSESSION_EXPORT void mutable_user_state_set_error_if_empty(
         mutable_user_state_object* state, const char* err, size_t err_len);
 
-/// API: state/mutable_state_group_set_error_if_empty
+/// API: state/mutable_group_state_set_error_if_empty
 ///
 /// Updates the `state->last_error` value to the provided message if it is currently empty.
 ///
@@ -437,7 +409,7 @@ LIBSESSION_EXPORT void mutable_state_user_set_error_if_empty(
 /// - `state` -- [in] Pointer to the mutable state object
 /// - `err` -- [in] the error value to store in the state
 /// - `err_len` -- [in] length of 'err'
-LIBSESSION_EXPORT void mutable_state_group_set_error_if_empty(
+LIBSESSION_EXPORT void mutable_group_state_set_error_if_empty(
         mutable_group_state_object* state, const char* err, size_t err_len);
 
 #ifdef __cplusplus
