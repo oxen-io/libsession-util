@@ -423,9 +423,10 @@ PreparedPush State::prepare_push(
             // Ed25519 signature of `("store" || namespace || timestamp)`, where namespace and
             // `timestamp` are the base10 expression of the namespace and `timestamp` values
             std::array<unsigned char, 64> sig;
-            ustring verification = to_unsigned("store") +
-                                   static_cast<unsigned char>(config->storage_namespace()) +
-                                   static_cast<unsigned char>(timestamp.count());
+            ustring verification = to_unsigned("store");
+            verification +=
+                    to_unsigned_sv(std::to_string(static_cast<int>(config->storage_namespace())));
+            verification += to_unsigned_sv(std::to_string(timestamp.count()));
 
             if (0 != crypto_sign_ed25519_detached(
                              sig.data(),
