@@ -127,20 +127,6 @@ struct config_message {
             uint64_t timestamp_ms,
             ustring_view data) :
             namespace_{namespace_}, hash{hash}, timestamp_ms{timestamp_ms}, data{data} {};
-
-    config_message() = delete;
-    config_message(config_message&&) = default;
-    config_message(const config_message&) = default;
-    config_message& operator=(config_message&&) = default;
-    config_message& operator=(const config_message&) = default;
-
-    auto cmpval() const { return std::tie(namespace_, hash, timestamp_ms, data); }
-    bool operator<(const config_message& b) const { return cmpval() < b.cmpval(); }
-    bool operator>(const config_message& b) const { return cmpval() > b.cmpval(); }
-    bool operator<=(const config_message& b) const { return cmpval() <= b.cmpval(); }
-    bool operator>=(const config_message& b) const { return cmpval() >= b.cmpval(); }
-    bool operator==(const config_message& b) const { return cmpval() == b.cmpval(); }
-    bool operator!=(const config_message& b) const { return cmpval() != b.cmpval(); }
 };
 
 struct PreparedPush {
@@ -212,10 +198,10 @@ class State {
         if (!_store)
             return;
 
-        config_changed(std::nullopt, true, false);
+        config_changed(std::nullopt, true, false, std::nullopt);
 
         for (auto& [key, val] : _config_groups)
-            config_changed(key, true, false);
+            config_changed(key, true, false, std::nullopt);
     };
 
     /// Hook which will be called whenever config messages need to be sent via the API. The hook
@@ -237,10 +223,10 @@ class State {
         if (!_send)
             return;
 
-        config_changed(std::nullopt, false, true);
+        config_changed(std::nullopt, false, true, std::nullopt);
 
         for (auto& [key, val] : _config_groups)
-            config_changed(key, false, true);
+            config_changed(key, false, true, std::nullopt);
     };
 
     /// API: state/State::load
@@ -283,12 +269,13 @@ class State {
     /// bytes). Required for group changes.
     /// - `allow_store` -- boolean value to specify whether this change can trigger the store hook.
     /// - `allow_send` -- boolean value to specify whether this change can trigger the send hook.
-    ///
-    /// Outputs: None
+    /// - `server_timestamp_ms` -- timestamp value provided when the change was triggered from a
+    /// merge rather than a user action.
     void config_changed(
-            std::optional<std::string_view> pubkey_hex = std::nullopt,
-            bool allow_store = true,
-            bool allow_send = true);
+            std::optional<std::string_view> pubkey_hex,
+            bool allow_store,
+            bool allow_send,
+            std::optional<uint64_t> server_timestamp_ms);
 
     /// API: state/State::manual_send
     ///
@@ -332,13 +319,7 @@ class State {
     ///    Required for group dumps.
     /// - `configs` -- vector of `config_message` types which include the data needed to properly
     /// merge.
-    ///
-    /// Outputs:
-    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
-    ///   that it changed the config, merely that the returned hash was properly parsed and
-    ///   processed as a config message, even if it was too old to be useful (or was already known
-    ///   to be included).  The hashes will be in the same order as in the input vector.
-    std::vector<std::string> merge(
+    void merge(
             std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs);
 
     /// API: state/State::current_hashes

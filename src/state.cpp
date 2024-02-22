@@ -215,7 +215,10 @@ bool State::has_pending_send() const {
 }
 
 void State::config_changed(
-        std::optional<std::string_view> pubkey_hex, bool allow_store, bool allow_send) {
+        std::optional<std::string_view> pubkey_hex,
+        bool allow_store,
+        bool allow_send,
+        std::optional<uint64_t> server_timestamp_ms) {
     auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
     std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
 
@@ -281,6 +284,9 @@ void State::config_changed(
 
     // Call the hook to store the dump if needed
     if (_store && needs_dump && allow_store) {
+        std::chrono::milliseconds store_timestamp =
+                std::chrono::milliseconds(server_timestamp_ms.value_or(timestamp.count()));
+
         for (auto& config : configs) {
             if (!config->needs_dump())
                 continue;
@@ -288,7 +294,7 @@ void State::config_changed(
                 "config_changed: call 'store' for " + namespace_name(config->storage_namespace()));
             _store(config->storage_namespace(),
                    target_pubkey_hex,
-                   timestamp.count(),
+                   store_timestamp.count(),
                    config->dump());
         }
 
@@ -300,7 +306,7 @@ void State::config_changed(
 
             _store(keys_config->storage_namespace(),
                    target_pubkey_hex,
-                   timestamp.count(),
+                   store_timestamp.count(),
                    keys_config->dump());
         }
     }
@@ -318,7 +324,7 @@ void State::config_changed(
                           pubkey, push.namespace_seqno, success, status_code, response);
 
                   // Now that we have confirmed the push we need to store the configs again
-                  config_changed(pubkey, true, false);
+                  config_changed(pubkey, true, false, std::nullopt);
               });
     }
     log(LogLevel::debug, "config_changed: Complete");
@@ -509,11 +515,38 @@ PreparedPush State::prepare_push(
     return {to_unsigned(payload.dump()), namespace_seqnos};
 }
 
-std::vector<std::string> State::merge(
+std::optional<uint64_t> max_merged_timestamp(
+        const std::vector<config_message>& messages,
+        const std::vector<std::string>& merged_hashes) {
+    // Filter messages based on merged_hashes
+    std::vector<config_message> merged_messages;
+    std::copy_if(
+            messages.begin(),
+            messages.end(),
+            std::back_inserter(merged_messages),
+            [&merged_hashes](const config_message& msg) {
+                return std::find(merged_hashes.begin(), merged_hashes.end(), msg.hash) !=
+                       merged_hashes.end();
+            });
+    auto max_timestamp_message = std::max_element(
+            merged_messages.begin(),
+            merged_messages.end(),
+            [](const config_message& msg1, const config_message& msg2) {
+                return msg1.timestamp_ms < msg2.timestamp_ms;
+            });
+
+    if (max_timestamp_message != messages.end()) {
+        return max_timestamp_message->timestamp_ms;
+    }
+
+    return std::nullopt;
+}
+
+void State::merge(
         std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs) {
     log(LogLevel::debug, "merge: Called with " + std::to_string(configs.size()) + " configs");
     if (configs.empty())
-        return {};
+        return;
 
     // Sort the namespaces based on the order they should be merged in to minimise conflicts between
     // different config messages
@@ -523,8 +556,7 @@ std::vector<std::string> State::merge(
     });
 
     bool is_group_merge = false;
-    std::vector<std::string> good_hashes;
-    std::vector<std::pair<std::string, ustring_view>> pending_configs;
+    std::vector<config_message> pending_configs;
     auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
     std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
 
@@ -538,7 +570,7 @@ std::vector<std::string> State::merge(
             (i > 0 && config.namespace_ != sorted_configs[i - 1].namespace_))
             pending_configs.clear();
 
-        pending_configs.emplace_back(config.hash, config.data);
+        pending_configs.emplace_back(config);
 
         // If this is not a GroupKeys config, the last config or the next config is not in the same
         // namespace then go to the next loop so we can batch-merge the configs in a later loop
@@ -550,31 +582,48 @@ std::vector<std::string> State::merge(
         log(LogLevel::debug,
             "merge: Merging " + namespace_name(config.namespace_) + " config (" +
                     std::string(target_pubkey_hex) + ")");
+        std::vector<std::pair<std::string, ustring_view>> to_merge;
+        to_merge.reserve(pending_configs.size());
+        std::transform(
+                pending_configs.begin(),
+                pending_configs.end(),
+                std::back_inserter(to_merge),
+                [](const config_message& msg) {
+                    return std::pair<std::string, ustring_view>{msg.hash, msg.data};
+                });
 
         std::vector<std::string> merged_hashes;
         switch (config.namespace_) {
             case Namespace::Contacts:
-                merged_hashes = _config_contacts->merge(pending_configs);
-                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
-                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
+                merged_hashes = _config_contacts->merge(to_merge);
+
+                // Immediately store changes if a merge was successful
+                if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
+                    config_changed(target_pubkey_hex, true, false, timestamp_ms);
                 continue;
 
             case Namespace::ConvoInfoVolatile:
-                merged_hashes = _config_convo_info_volatile->merge(pending_configs);
-                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
-                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
+                merged_hashes = _config_convo_info_volatile->merge(to_merge);
+
+                // Immediately store changes if a merge was successful
+                if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
+                    config_changed(target_pubkey_hex, true, false, timestamp_ms);
                 continue;
 
             case Namespace::UserGroups:
-                merged_hashes = _config_user_groups->merge(pending_configs);
-                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
-                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
+                merged_hashes = _config_user_groups->merge(to_merge);
+
+                // Immediately store changes if a merge was successful
+                if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
+                    config_changed(target_pubkey_hex, true, false, timestamp_ms);
                 continue;
 
             case Namespace::UserProfile:
-                merged_hashes = _config_user_profile->merge(pending_configs);
-                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
-                config_changed(target_pubkey_hex, true, false);  // Immediately store changes
+                merged_hashes = _config_user_profile->merge(to_merge);
+
+                // Immediately store changes if a merge was successful
+                if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
+                    config_changed(target_pubkey_hex, true, false, timestamp_ms);
                 continue;
 
             default: break;
@@ -592,30 +641,42 @@ std::vector<std::string> State::merge(
         auto members = group->members.get();
         is_group_merge = true;
 
-        if (config.namespace_ == Namespace::GroupInfo) {
-            merged_hashes = info->merge(pending_configs);
-            good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
-        } else if (config.namespace_ == Namespace::GroupMembers) {
-            merged_hashes = members->merge(pending_configs);
-            good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
-        } else if (config.namespace_ == Namespace::GroupKeys) {
-            // GroupKeys doesn't support merging multiple messages at once so do them individually
-            if (group->keys->load_key_message(
-                        config.hash, config.data, config.timestamp_ms, *info, *members)) {
-                good_hashes.emplace_back(config.hash);
-            }
-        } else
-            throw std::runtime_error{"merge: Attempted to merge from unknown namespace"};
+        switch (config.namespace_) {
+            case Namespace::GroupInfo:
+                merged_hashes = info->merge(to_merge);
 
-        config_changed(target_pubkey_hex, true, false);  // Immediately store changes
+                // Immediately store changes if a merge was successful
+                if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
+                    config_changed(target_pubkey_hex, true, false, timestamp_ms);
+                continue;
+
+            case Namespace::GroupMembers:
+                merged_hashes = members->merge(to_merge);
+
+                // Immediately store changes if a merge was successful
+                if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
+                    config_changed(target_pubkey_hex, true, false, timestamp_ms);
+                continue;
+
+            case Namespace::GroupKeys:
+                // GroupKeys doesn't support merging multiple messages at once so do them
+                // individually
+                if (group->keys->load_key_message(
+                            config.hash, config.data, config.timestamp_ms, *info, *members)) {
+                    config_changed(target_pubkey_hex, true, false, config.timestamp_ms);
+                }
+                continue;
+
+            default: throw std::runtime_error{"merge: Attempted to merge from unknown namespace"};
+        }
     }
 
     // Now that all of the merges have been completed we want to trigger the `send` hook if
-    // there is a pending push
-    config_changed(target_pubkey_hex, false, true);
+    // there is a pending push (the 'server_timestamp_ms' is only needed for the `store` hook
+    // so no need to pass here)
+    config_changed(target_pubkey_hex, false, true, std::nullopt);
 
     log(LogLevel::debug, "merge: Complete");
-    return good_hashes;
 }
 
 std::vector<std::string> State::current_hashes(std::optional<std::string_view> pubkey_hex) {
@@ -963,12 +1024,12 @@ void State::create_group(
                   // Manually trigger 'config_changed' because we modified '_config_user_groups'
                   // directly rather than via the 'MutableUserConfigs' so it won't automatically get
                   // triggered
-                  config_changed();
+                  config_changed(std::nullopt, true, true, std::nullopt);
 
                   // Now that we have a `_config_user_groups` entry for the group and have confirmed
                   // the push we need to store the group configs (we can't do this until after the
                   // `_config_user_groups` has been updated)
-                  config_changed(gid, true, false);
+                  config_changed(gid, true, false, std::nullopt);
 
                   // Lastly trigger the 'callback' to communicate the group was successfully created
                   cb(gid, secretkey, std::nullopt);
@@ -1001,7 +1062,7 @@ void State::approve_group(std::string_view group_id, std::optional<ustring_view>
     // Trigger the 'config_changed' callback directly since we aren't using 'MutableUserConfig' (We
     // don't call it for the group config because there is no data so it's likely we are creating
     // the initial state upon accepting an invite so have no data yet)
-    config_changed();
+    config_changed(std::nullopt, true, true, std::nullopt);
 }
 
 void State::load_group_admin_key(std::string_view group_id, ustring_view secret) {
@@ -1036,8 +1097,8 @@ void State::load_group_admin_key(std::string_view group_id, ustring_view secret)
     // Trigger the 'config_changed' callbacks directly since we aren't using 'MutableUserConfig' (We
     // don't call it for the group config because there is no data so it's likely we are creating
     // the initial state upon accepting an invite so have no data yet)
-    config_changed();
-    config_changed(group_id);
+    config_changed(std::nullopt, true, true, std::nullopt);
+    config_changed(group_id, true, true, std::nullopt);
 }
 
 void State::erase_group(std::string_view group_id, bool remove_user_record) {
@@ -1055,7 +1116,7 @@ void State::erase_group(std::string_view group_id, bool remove_user_record) {
     // Trigger the 'config_changed' callback directly since we aren't using 'MutableUserConfig' (We
     // don't call it for the group config because there is no data so it's likely we are creating
     // the initial state upon accepting an invite so have no data yet)
-    config_changed();
+    config_changed(std::nullopt, true, true, std::nullopt);
 }
 
 // Template functions
@@ -1128,7 +1189,7 @@ MutableUserConfigs State::mutable_config(
 };
 
 MutableUserConfigs::~MutableUserConfigs() {
-    parent_state->config_changed();
+    parent_state->config_changed(std::nullopt, true, true, std::nullopt);
 };
 
 MutableGroupConfigs State::mutable_config(
@@ -1159,7 +1220,7 @@ void MutableGroupConfigs::manual_send(
 };
 
 MutableGroupConfigs::~MutableGroupConfigs() {
-    parent_state.config_changed(info.id);
+    parent_state.config_changed(info.id, true, true, std::nullopt);
 };
 
 }  // namespace session::state

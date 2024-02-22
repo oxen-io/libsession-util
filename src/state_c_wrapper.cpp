@@ -225,11 +225,7 @@ LIBSESSION_C_API bool state_has_pending_send(const state_object* state) {
 }
 
 LIBSESSION_C_API bool state_merge(
-        state_object* state,
-        const char* pubkey_hex_,
-        state_config_message* configs,
-        size_t count,
-        session_string_list** successful_hashes) {
+        state_object* state, const char* pubkey_hex_, state_config_message* configs, size_t count) {
     try {
         std::optional<std::string_view> pubkey_hex;
         if (pubkey_hex_)
@@ -245,9 +241,7 @@ LIBSESSION_C_API bool state_merge(
                     configs[i].timestamp_ms,
                     ustring{configs[i].data, configs[i].datalen});
 
-        auto result = unbox(state).merge(pubkey_hex, confs);
-        unbox(state).log(LogLevel::info, "Merged " + std::to_string(result.size()));
-        *successful_hashes = make_string_list(result);
+        unbox(state).merge(pubkey_hex, confs);
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
