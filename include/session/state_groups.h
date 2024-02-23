@@ -85,6 +85,32 @@ LIBSESSION_EXPORT void state_approve_group(
 LIBSESSION_EXPORT bool state_load_group_admin_key(
         state_object* state, const char* group_id, unsigned const char* seed);
 
+/// API: groups/state_add_group_members
+///
+/// Adds members to Members for the group and performs either a key rotation or a key supplement.
+/// Only admins can call this.
+///
+/// Invite details, auth signature, etc. will still need to be sent separately to the new user.
+///
+/// Inputs:
+/// - `state` -- [in] Pointer to the state object.
+/// - `group_id` -- [in] the group id/pubkey, in hex, beginning with "03".
+/// - `supplemental_rotation` -- [in] flag to control whether a supplemental (when true) or full
+/// (when false) key rotation should be performed. Doing a supplemental rotation will distributes
+/// the existing active keys so that the new members can access existing key, configs and messages.
+/// - `members` -- [in] array of members to add to the group.
+/// - `members_len` -- [in] length of the `members` array
+/// - `callback` -- [in] Callback function called once the send process completes
+/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
+LIBSESSION_EXPORT void state_add_group_members(
+        state_object* state,
+        const char* group_id,
+        const bool supplemental_rotation,
+        const state_group_member** members,
+        const size_t members_len,
+        void (*callback)(const char* error, void* ctx),
+        void* ctx);
+
 /// API: groups/state_erase_group
 ///
 /// Removes the group state and, if specified, removes the group from the user groups config.

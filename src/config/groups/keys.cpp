@@ -1458,40 +1458,6 @@ LIBSESSION_C_API bool state_rekey_group(mutable_group_state_object* state) {
     }
 }
 
-LIBSESSION_C_API void state_supplement_group_key(
-        mutable_group_state_object* state,
-        const char** sids,
-        size_t sids_len,
-        void (*callback)(bool success, void* ctx),
-        void* ctx) {
-    assert(sids);
-    std::vector<std::string> session_ids;
-    for (size_t i = 0; i < sids_len; i++)
-        session_ids.emplace_back(sids[i]);
-
-    try {
-        auto msg = unbox(state).keys.key_supplement(session_ids);
-        std::chrono::milliseconds timestamp =
-                (std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::system_clock::now().time_since_epoch()) +
-                 unbox(state).get_network_offset());
-        auto [pubkey, payload] = unbox(state).keys.prepare_supplement_payload(msg, timestamp);
-
-        unbox(state).manual_send(
-                pubkey,
-                payload,
-                [callback, ctx](bool success, int16_t status_code, ustring response) {
-                    if (callback)
-                        callback(success, ctx);
-                });
-    } catch (const std::exception& e) {
-        if (auto set_error = unbox(state).set_error; set_error.has_value())
-            set_error.value()(e.what());
-        if (callback)
-            callback(false, ctx);
-    }
-}
-
 LIBSESSION_EXPORT int state_get_current_group_generation(
         const state_object* state, const char* group_id) {
     try {

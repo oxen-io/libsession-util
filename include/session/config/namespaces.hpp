@@ -74,7 +74,7 @@ namespace {
     /// Returns a number indicating the order that the config messages should be sent in, we need to
     /// send the `GroupKeys` config _before_ the `GroupInfo` and `GroupMembers` configs as they both
     /// get encrypted with the latest key and we want to avoid weird edge-cases
-    int namespace_store_order(const Namespace& n) {
+    int namespace_send_order(const Namespace& n) {
         if (n == Namespace::GroupKeys)
             return 0;
         return 1;

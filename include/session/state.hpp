@@ -85,11 +85,6 @@ class MutableGroupConfigs {
     std::optional<std::function<void(std::string_view err)>> set_error;
 
     std::chrono::milliseconds get_network_offset() const;
-    void manual_send(
-            std::string pubkey_hex,
-            ustring payload,
-            std::function<void(bool success, int16_t status_code, ustring response)>
-                    received_response) const;
 
     ~MutableGroupConfigs();
 };
@@ -275,25 +270,9 @@ class State {
             std::optional<std::string_view> pubkey_hex,
             bool allow_store,
             bool allow_send,
-            std::optional<uint64_t> server_timestamp_ms);
-
-    /// API: state/State::manual_send
-    ///
-    /// This allows for manually triggering the `_send` hook as there are some operations (eg.
-    /// supplement group keys) which won't be detected as changes and need to be explicitly sent.
-    ///
-    /// Inputs:
-    /// - `pubkey` -- the pubkey (in hex) for the swarm where the data should be sent.
-    /// - `payload` -- payload which should be sent to the API.
-    /// - `received_response` -- callback which should be called with the response from the send
-    /// request.
-    ///
-    /// Outputs: None
-    void manual_send(
-            std::string pubkey_hex,
-            ustring payload,
-            std::function<void(bool success, int16_t status_code, ustring response)>
-                    received_response) const;
+            std::optional<uint64_t> server_timestamp_ms,
+            std::optional<std::function<void(bool success, int16_t status_code, ustring response)>>
+                    after_send = std::nullopt);
 
     /// API: state/State::merge
     ///
@@ -319,7 +298,13 @@ class State {
     ///    Required for group dumps.
     /// - `configs` -- vector of `config_message` types which include the data needed to properly
     /// merge.
-    void merge(
+    ///
+    /// Outputs:
+    /// - vector of successfully parsed hashes.  Note that this does not mean the hash was recent or
+    ///   that it changed the config, merely that the returned hash was properly parsed and
+    ///   processed as a config message, even if it was too old to be useful (or was already known
+    ///   to be included).  The hashes will be in the same order as in the input vector.
+    std::vector<std::string> merge(
             std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs);
 
     /// API: state/State::current_hashes
@@ -440,6 +425,27 @@ class State {
     /// Outputs: nothing.  After a successful call, `admin()` will return true.  Throws if the given
     /// secret key does not match the group's pubkey.
     void load_group_admin_key(std::string_view group_id, ustring_view secret);
+
+    /// API: groups/add_group_members
+    ///
+    /// Adds members to Members for the group and performs either a key rotation or a key
+    /// supplement.  Only admins can call this.
+    ///
+    /// Invite details, auth signature, etc. will still need to be sent separately to the new user.
+    ///
+    /// Inputs:
+    /// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
+    /// - `supplemental_rotation` -- flag to control whether a supplemental (when true) or full
+    /// (when false) key rotation should be performed. Doing a supplemental rotation will
+    /// distributes the existing active keys so that the new members can access existing key,
+    /// configs and messages.
+    /// - `members` -- vector of members to add to the group.
+    /// - `callback` -- Callback function called once the send process completes.
+    void add_group_members(
+            std::string_view group_id,
+            bool supplemental_rotation,
+            const std::vector<config::groups::member> members,
+            std::function<void(std::optional<std::string_view> error)> callback);
 
     /// API: groups/State::erase_group
     ///

@@ -96,35 +96,6 @@ LIBSESSION_EXPORT bool state_group_needs_rekey(const state_object* state, const 
 LIBSESSION_EXPORT bool state_rekey_group(mutable_group_state_object* state)
         __attribute__((warn_unused_result));
 
-/// API: groups/state_supplement_group_key
-///
-/// Generates a supplemental key message for one or more session IDs.  This is used to distribute
-/// existing active keys to a new member so that that member can access existing keys, configs, and
-/// messages.  Only admins can call this.
-///
-/// The recommended order of operations for adding such a member is:
-/// - add the member to Members
-/// - generate the key supplement
-/// - push new members & key supplement (ideally in a batch)
-/// - send invite details, auth signature, etc. to the new user
-///
-/// To add a member *without* giving them access to old messages you would use groups_keys_rekey()
-/// instead of this method.
-///
-/// Inputs:
-/// - `state` -- [in] - Pointer to the mutable state object
-/// - `sids` -- array of session IDs of the members to generate a supplemental key for; each element
-///   must be an ordinary (null-terminated) C string containing the 66-character session id.
-/// - `sids_len` -- length of the `sids` array
-/// - `callback` -- [in] Callback function called once the send process completes
-/// - `ctx` --- [in, optional] Pointer to an optional context. Set to NULL if unused
-LIBSESSION_EXPORT void state_supplement_group_key(
-        mutable_group_state_object* state,
-        const char** sids,
-        size_t sids_len,
-        void (*callback)(bool success, void* ctx),
-        void* ctx);
-
 /// API: groups/state_get_current_group_generation
 ///
 /// Returns the current generation number for the latest keys message.

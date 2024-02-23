@@ -236,8 +236,14 @@ LIBSESSION_EXPORT bool state_has_pending_send(const state_object* state);
 /// bytes). Required for group dumps.
 /// - `configs` -- [in] Pointer to an array of `state_config_message` objects
 /// - `count` -- [in] Number of objects in `configs`
+/// - `successful_hashes` -- [out] Pointer to an array of message hashes that were successfully
+/// merged
 LIBSESSION_EXPORT bool state_merge(
-        state_object* state, const char* pubkey_hex_, state_config_message* configs, size_t count);
+        state_object* state,
+        const char* pubkey_hex_,
+        state_config_message* configs,
+        size_t count,
+        session_string_list** successful_hashes);
 
 /// API: state/state_current_hashes
 ///

@@ -225,7 +225,11 @@ LIBSESSION_C_API bool state_has_pending_send(const state_object* state) {
 }
 
 LIBSESSION_C_API bool state_merge(
-        state_object* state, const char* pubkey_hex_, state_config_message* configs, size_t count) {
+        state_object* state,
+        const char* pubkey_hex_,
+        state_config_message* configs,
+        size_t count,
+        session_string_list** successful_hashes) {
     try {
         std::optional<std::string_view> pubkey_hex;
         if (pubkey_hex_)
@@ -241,7 +245,10 @@ LIBSESSION_C_API bool state_merge(
                     configs[i].timestamp_ms,
                     ustring{configs[i].data, configs[i].datalen});
 
-        unbox(state).merge(pubkey_hex, confs);
+        auto result = unbox(state).merge(pubkey_hex, confs);
+
+        if (successful_hashes)
+            *successful_hashes = make_string_list(result);
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
@@ -427,6 +434,40 @@ LIBSESSION_C_API bool state_load_group_admin_key(
         return true;
     } catch (const std::exception& e) {
         return set_error(state, e.what());
+    }
+}
+
+LIBSESSION_C_API void state_add_group_members(
+        state_object* state,
+        const char* group_id,
+        const bool supplemental_rotation,
+        const state_group_member** members_,
+        const size_t members_len,
+        void (*callback)(const char* error, void* ctx),
+        void* ctx) {
+    assert(members_);
+    try {
+        std::vector<groups::member> members;
+        for (size_t i = 0; i < members_len; i++)
+            members.emplace_back(groups::member{*members_[i]});
+
+        unbox(state).add_group_members(
+                {group_id, 66},
+                supplemental_rotation,
+                members,
+                [cb = std::move(callback), ctx](std::optional<std::string_view> error) {
+                    if (cb) {
+                        if (error)
+                            (*cb)(error->data(), ctx);
+                        else
+                            (*cb)(nullptr, ctx);
+                    }
+                });
+    } catch (const std::exception& e) {
+        set_error(state, e.what());
+
+        if (callback)
+            callback(e.what(), ctx);
     }
 }
 

@@ -218,7 +218,9 @@ void State::config_changed(
         std::optional<std::string_view> pubkey_hex,
         bool allow_store,
         bool allow_send,
-        std::optional<uint64_t> server_timestamp_ms) {
+        std::optional<uint64_t> server_timestamp_ms,
+        std::optional<std::function<void(bool success, int16_t status_code, ustring response)>>
+                after_send) {
     auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
     std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
 
@@ -286,28 +288,30 @@ void State::config_changed(
     if (_store && needs_dump && allow_store) {
         std::chrono::milliseconds store_timestamp =
                 std::chrono::milliseconds(server_timestamp_ms.value_or(timestamp.count()));
+        std::vector<std::pair<Namespace, ustring>> sorted_stores;
 
         for (auto& config : configs) {
-            if (!config->needs_dump())
-                continue;
-            log(LogLevel::debug,
-                "config_changed: call 'store' for " + namespace_name(config->storage_namespace()));
-            _store(config->storage_namespace(),
-                   target_pubkey_hex,
-                   store_timestamp.count(),
-                   config->dump());
+            if (config->needs_dump())
+                sorted_stores.emplace_back(config->storage_namespace(), config->dump());
         }
 
         // GroupKeys needs special handling as it's not a `ConfigBase`
         if (is_group_pubkey && _config_groups[target_pubkey_hex]->keys->needs_dump()) {
-            log(LogLevel::debug,
-                "config_changed: Group Keys config for " + target_pubkey_hex + " needs_dump");
-            auto keys_config = _config_groups[target_pubkey_hex]->keys.get();
+            auto config = _config_groups[target_pubkey_hex]->keys.get();
+            sorted_stores.emplace_back(config->storage_namespace(), config->dump());
+        }
 
-            _store(keys_config->storage_namespace(),
-                   target_pubkey_hex,
-                   store_timestamp.count(),
-                   keys_config->dump());
+        // Sort the namespaces based on the order they should be merged in to minimise the chance
+        // that config messages dependant on others are saved before their dependencies
+        std::sort(sorted_stores.begin(), sorted_stores.end(), [](const auto& a, const auto& b) {
+            return namespace_merge_order(a.first) < namespace_merge_order(b.first);
+        });
+
+        for (auto& info : sorted_stores) {
+            log(LogLevel::debug,
+                "config_changed: call 'store' for " + namespace_name(info.first) + " in " +
+                        target_pubkey_hex);
+            _store(info.first, target_pubkey_hex, store_timestamp.count(), info.second);
         }
     }
 
@@ -318,25 +322,23 @@ void State::config_changed(
         log(LogLevel::debug, "config_changed: Call 'send'");
         _send(target_pubkey_hex,
               push.payload,
-              [this, pubkey = std::move(target_pubkey_hex), push](
+              [this,
+               pubkey = std::move(target_pubkey_hex),
+               push,
+               after_send = std::move(after_send)](
                       bool success, uint16_t status_code, ustring response) {
                   handle_config_push_response(
                           pubkey, push.namespace_seqno, success, status_code, response);
 
                   // Now that we have confirmed the push we need to store the configs again
                   config_changed(pubkey, true, false, std::nullopt);
+
+                  // Call the 'after_send' callback if provided
+                  if (after_send)
+                      (*after_send)(success, status_code, response);
               });
     }
     log(LogLevel::debug, "config_changed: Complete");
-}
-
-void State::manual_send(
-        std::string pubkey_hex,
-        ustring payload,
-        std::function<void(bool success, int16_t status_code, ustring response)> received_response)
-        const {
-    if (_send)
-        _send(pubkey_hex, payload, received_response);
 }
 
 PreparedPush State::prepare_push(
@@ -465,8 +467,8 @@ PreparedPush State::prepare_push(
     // that config messages dependant on others are stored before their dependencies
     auto sorted_requests = requests;
     std::sort(sorted_requests.begin(), sorted_requests.end(), [](const auto& a, const auto& b) {
-        return namespace_store_order(static_cast<Namespace>(a["namespace"])) <
-               namespace_store_order(static_cast<Namespace>(b["namespace"]));
+        return namespace_send_order(static_cast<Namespace>(a["namespace"])) <
+               namespace_send_order(static_cast<Namespace>(b["namespace"]));
     });
 
     std::vector<std::pair<Namespace, seqno_t>> namespace_seqnos;
@@ -486,7 +488,7 @@ PreparedPush State::prepare_push(
         // Ed25519 signature of `("delete" || messages...)`
         std::array<unsigned char, 64> sig;
         ustring verification = to_unsigned("delete");
-        log(LogLevel::debug, "config_changed: has obsolete hashes");
+        log(LogLevel::debug, "prepare_push: has obsolete hashes");
         for (auto& hash : obsolete_hashes)
             verification += to_unsigned_sv(hash);
 
@@ -494,7 +496,7 @@ PreparedPush State::prepare_push(
             crypto_sign_ed25519_detached(
                     sig.data(), nullptr, verification.data(), verification.size(), seckey.data()))
             throw std::runtime_error{
-                    "config_changed: Failed to sign; perhaps the secret key is invalid?"};
+                    "prepare_push: Failed to sign; perhaps the secret key is invalid?"};
 
         nlohmann::json params{
                 {"messages", obsolete_hashes},
@@ -542,11 +544,11 @@ std::optional<uint64_t> max_merged_timestamp(
     return std::nullopt;
 }
 
-void State::merge(
+std::vector<std::string> State::merge(
         std::optional<std::string_view> pubkey_hex, const std::vector<config_message>& configs) {
     log(LogLevel::debug, "merge: Called with " + std::to_string(configs.size()) + " configs");
     if (configs.empty())
-        return;
+        return {};
 
     // Sort the namespaces based on the order they should be merged in to minimise conflicts between
     // different config messages
@@ -556,9 +558,14 @@ void State::merge(
     });
 
     bool is_group_merge = false;
+    std::vector<std::string> good_hashes;
     std::vector<config_message> pending_configs;
     auto is_group_pubkey = (pubkey_hex && !pubkey_hex->empty() && pubkey_hex->substr(0, 2) != "05");
     std::string target_pubkey_hex = (is_group_pubkey ? std::string(*pubkey_hex) : _user_x_pk_hex);
+
+    // Sanity check the size of the pubkey
+    if (target_pubkey_hex.size() != 66)
+        throw std::invalid_argument{"merge: Invalid pubkey_hex - expected 66 bytes"};
 
     for (size_t i = 0; i < sorted_configs.size(); ++i) {
         auto& config = sorted_configs[i];
@@ -596,6 +603,7 @@ void State::merge(
         switch (config.namespace_) {
             case Namespace::Contacts:
                 merged_hashes = _config_contacts->merge(to_merge);
+                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
 
                 // Immediately store changes if a merge was successful
                 if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
@@ -604,6 +612,7 @@ void State::merge(
 
             case Namespace::ConvoInfoVolatile:
                 merged_hashes = _config_convo_info_volatile->merge(to_merge);
+                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
 
                 // Immediately store changes if a merge was successful
                 if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
@@ -612,6 +621,7 @@ void State::merge(
 
             case Namespace::UserGroups:
                 merged_hashes = _config_user_groups->merge(to_merge);
+                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
 
                 // Immediately store changes if a merge was successful
                 if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
@@ -620,6 +630,7 @@ void State::merge(
 
             case Namespace::UserProfile:
                 merged_hashes = _config_user_profile->merge(to_merge);
+                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
 
                 // Immediately store changes if a merge was successful
                 if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
@@ -633,8 +644,6 @@ void State::merge(
         if (!pubkey_hex)
             throw std::invalid_argument{
                     "merge: Invalid pubkey_hex - required for group config namespaces"};
-        if (target_pubkey_hex.size() != 66)
-            throw std::invalid_argument{"merge: Invalid pubkey_hex - expected 66 bytes"};
 
         auto& group = _config_groups.at(target_pubkey_hex);
         auto info = group->info.get();
@@ -644,6 +653,7 @@ void State::merge(
         switch (config.namespace_) {
             case Namespace::GroupInfo:
                 merged_hashes = info->merge(to_merge);
+                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
 
                 // Immediately store changes if a merge was successful
                 if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
@@ -652,6 +662,7 @@ void State::merge(
 
             case Namespace::GroupMembers:
                 merged_hashes = members->merge(to_merge);
+                good_hashes.insert(good_hashes.end(), merged_hashes.begin(), merged_hashes.end());
 
                 // Immediately store changes if a merge was successful
                 if (auto timestamp_ms = max_merged_timestamp(pending_configs, merged_hashes))
@@ -663,6 +674,7 @@ void State::merge(
                 // individually
                 if (group->keys->load_key_message(
                             config.hash, config.data, config.timestamp_ms, *info, *members)) {
+                    good_hashes.emplace_back(config.hash);
                     config_changed(target_pubkey_hex, true, false, config.timestamp_ms);
                 }
                 continue;
@@ -671,12 +683,26 @@ void State::merge(
         }
     }
 
-    // Now that all of the merges have been completed we want to trigger the `send` hook if
-    // there is a pending push (the 'server_timestamp_ms' is only needed for the `store` hook
-    // so no need to pass here)
+    // If two admins rekeyed for different member changes at the same time then there is a "key
+    // collision" and the "needs rekey" function will return true to indicate that a 3rd `rekey`
+    // needs to be made to have a final set of keys which includes all members
+    if (is_group_merge) {
+        auto& group = _config_groups.at(target_pubkey_hex);
+
+        if (group->keys->needs_rekey()) {
+            auto info = group->info.get();
+            auto members = group->members.get();
+            group->keys->rekey(*info, *members);
+        }
+    }
+
+    // Now that all of the merges have been completed we want to trigger the `send` hook just in
+    // case if there is a pending push (the 'server_timestamp_ms' is only needed for the `store`
+    // hook so no need to pass here)
     config_changed(target_pubkey_hex, false, true, std::nullopt);
 
     log(LogLevel::debug, "merge: Complete");
+    return good_hashes;
 }
 
 std::vector<std::string> State::current_hashes(std::optional<std::string_view> pubkey_hex) {
@@ -780,18 +806,79 @@ ustring State::dump(config::Namespace namespace_, std::optional<std::string_view
     }
 }
 
+std::optional<std::string> extract_error(int status_code, ustring response) {
+    if (response.empty())
+        return std::nullopt;
+
+    std::string response_string = {from_unsigned(response.data()), response.size()};
+
+    try {
+        auto response_json = nlohmann::json::parse(response);
+
+        // If the status code for the root request failed then try to extract the 'reason',
+        // otherwise just return the response as the error
+        if (status_code < 200 || status_code > 299) {
+            if (response_json.contains("reason"))
+                return response_json["reason"].get<std::string>();
+            else
+                return response_string;
+        }
+
+        // If it wasn't a batch/sequence request then assume it was successful and return no error
+        if (!response_json.contains("results"))
+            return std::nullopt;
+
+        auto results = response_json["results"];
+
+        // Check if all of the results has the same status code
+        int single_status_code = -1;
+        std::optional<std::string> error_body;
+        for (const auto& result : results.items()) {
+            // Invalid subresponse, just return the response as the error
+            if (!result.value().contains("code"))
+                return response_string;
+
+            auto code = result.value()["code"].get<int>();
+
+            // If the code was different from all former codes then there wasn't a single error (ie.
+            // it needs specific handling) so return no error
+            if (single_status_code != -1 && code != single_status_code)
+                return std::nullopt;
+
+            single_status_code = code;
+
+            if (result.value().contains("body") && result.value()["body"].is_string())
+                error_body = result.value()["body"].get<std::string>();
+        }
+
+        // Return the error if all results failed with the same error
+        if (single_status_code < 200 || single_status_code > 299) {
+            // Custom handle a clock out of sync error (v4 returns '425' but included the '406' just
+            // in case)
+            if (single_status_code == 406 || single_status_code == 425)
+                return "The user's clock is out of sync with the service node network.";
+
+            return error_body.value_or(
+                    "Failed with status code: " + std::to_string(single_status_code) + ".");
+        }
+
+        return std::nullopt;
+    } catch (...) {
+        return response_string;
+    }
+}
+
 void State::handle_config_push_response(
         std::string pubkey,
         std::vector<std::pair<Namespace, seqno_t>> namespace_seqnos,
         bool success,
         uint16_t status_code,
         ustring response) {
-    std::string response_string = {from_unsigned(response.data()), response.size()};
-
     // If the request failed then just error
-    if (!success || (status_code < 200 && status_code > 299))
-        throw std::invalid_argument{
-                "handle_config_push_response: Request failed with data - " + response_string};
+    if (auto error = extract_error(status_code, response); error)
+        throw std::runtime_error{*error};
+
+    log(LogLevel::debug, "handle_config_push_response: No simple error detected.");
 
     // Otherwise process the response data
     auto response_json = nlohmann::json::parse(response);
@@ -804,52 +891,9 @@ void State::handle_config_push_response(
         throw std::invalid_argument{
                 "handle_config_push_response: Invalid response - 'results' array is empty"};
 
+    // If the response includes a timestamp value then we should update the network offset
     auto results = response_json["results"];
 
-    // Check if all of the results has the same status code
-    int single_status_code = -1;
-    std::optional<std::string> error_body;
-    for (const auto& result : results.items()) {
-        if (!result.value().contains("code"))
-            throw std::invalid_argument{
-                    "handle_config_push_response: Invalid result - expected to contain 'code'" +
-                    result.value().dump()};
-
-        // If the code was different from all former codes then break the loop
-        auto code = result.value()["code"].get<int>();
-
-        if (single_status_code != -1 && code != single_status_code) {
-            single_status_code = 200;
-            error_body = std::nullopt;
-            break;
-        }
-
-        single_status_code = code;
-
-        if (result.value().contains("body") && result.value()["body"].is_string())
-            error_body = result.value()["body"].get<std::string>();
-    }
-
-    // Throw if all results failed with the same error
-    if (single_status_code < 200 || single_status_code > 299) {
-        auto error = "Failed with status code: " + std::to_string(single_status_code) + ".";
-
-        // Custom handle a clock out of sync error (v4 returns '425' but included the '406' just in
-        // case)
-        if (single_status_code == 406 || single_status_code == 425)
-            error = "The user's clock is out of sync with the service node network.";
-        else if (single_status_code == 401)
-            error = "Unauthorised (signature verification failed).";
-
-        if (error_body)
-            error += " Server error: " + *error_body + ".";
-
-        throw std::runtime_error{error};
-    }
-    log(LogLevel::debug,
-        "handle_config_push_response: Doesn't have a consistent error across requests");
-
-    // If the response includes a timestamp value then we should update the network offset
     if (auto first_result = results[0];
         first_result.contains("body") && first_result["body"].contains("t"))
         network_offset =
@@ -1101,6 +1145,86 @@ void State::load_group_admin_key(std::string_view group_id, ustring_view secret)
     config_changed(group_id, true, true, std::nullopt);
 }
 
+void State::add_group_members(
+        std::string_view group_id,
+        bool supplemental_rotation,
+        const std::vector<groups::member> members,
+        std::function<void(std::optional<std::string_view> error)> callback) {
+    if (members.empty()) {
+        callback(std::nullopt);
+        return;
+    }
+
+    std::string gid = {group_id.data(), group_id.size()};
+    auto& group = _config_groups.at(gid);
+    std::chrono::milliseconds timestamp =
+            (std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::system_clock::now().time_since_epoch()) +
+             network_offset);
+
+    // Add the members to Members
+    for (auto m : members)
+        group->members->set(m);
+
+    // If it's not a supplemental rotation then do a rekey
+    if (!supplemental_rotation) {
+        auto info = _config_groups[gid]->info.get();
+        auto members = _config_groups[gid]->members.get();
+        group->keys->rekey(*info, *members);
+    }
+
+    // Prepare the push payload for the group configs
+    std::vector<config::ConfigBase*> configs = {group->info.get(), group->members.get()};
+    auto push = prepare_push(gid, timestamp, configs);
+
+    // If it is a supplemental rotation then we want to include the key supplement within the batch
+    // request we are going to send
+    if (supplemental_rotation) {
+        std::vector<std::string> sids;
+        std::transform(
+                members.begin(),
+                members.end(),
+                std::back_inserter(sids),
+                [](const groups::member& m) { return m.session_id; });
+        auto msg = group->keys->key_supplement(sids);
+        auto [pubkey, payload] = group->keys->prepare_supplement_payload(msg, timestamp);
+
+        // We need to update the current payload (we want to insert the supplement to the beginning
+        // of the batch requests)
+        auto updated_namespace_seqnos = push.namespace_seqno;
+        auto updated_payload = nlohmann::json::parse(push.payload);
+        auto payload_json = nlohmann::json::parse(payload);
+        auto requests_ptr = nlohmann::json::json_pointer("/params/requests");
+
+        if (!updated_payload.contains(requests_ptr))
+            throw std::runtime_error{"add_group_members: Prepared payload structure is invalid."};
+
+        // No seqno for keys messages
+        auto updated_requests = updated_payload[requests_ptr];
+        updated_requests.insert(updated_requests.begin(), payload_json);
+        updated_payload[requests_ptr] = updated_requests;
+        updated_namespace_seqnos.insert(
+                updated_namespace_seqnos.begin(), {group->keys->storage_namespace(), 0});
+        push = {to_unsigned(updated_payload.dump()), updated_namespace_seqnos};
+    }
+
+    _send(gid,
+          push.payload,
+          [this,
+           gid = std::move(gid),
+           namespace_seqno = push.namespace_seqno,
+           cb = std::move(callback)](bool success, int16_t status_code, ustring response) {
+              try {
+                  // Call through to the default 'handle_config_push_response' first to update it's
+                  // state correctly (this will also result in the configs getting stored to disk)
+                  handle_config_push_response(gid, namespace_seqno, success, status_code, response);
+                  cb(std::nullopt);
+              } catch (const std::exception& e) {
+                  cb(e.what());
+              }
+          });
+}
+
 void State::erase_group(std::string_view group_id, bool remove_user_record) {
     std::string gid = {group_id.data(), group_id.size()};
 
@@ -1209,14 +1333,6 @@ MutableGroupConfigs State::mutable_config(
 
 std::chrono::milliseconds MutableGroupConfigs::get_network_offset() const {
     return parent_state.network_offset;
-};
-
-void MutableGroupConfigs::manual_send(
-        std::string pubkey_hex,
-        ustring payload,
-        std::function<void(bool success, int16_t status_code, ustring response)> received_response)
-        const {
-    parent_state.manual_send(pubkey_hex, payload, received_response);
 };
 
 MutableGroupConfigs::~MutableGroupConfigs() {
