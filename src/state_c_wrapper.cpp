@@ -441,15 +441,17 @@ LIBSESSION_C_API void state_add_group_members(
         state_object* state,
         const char* group_id,
         const bool supplemental_rotation,
-        const state_group_member** members_,
+        const state_group_member* members_,
         const size_t members_len,
-        void (*callback)(const char* error, void* ctx),
+        void (*callback)(const char* error, size_t error_len, void* ctx),
         void* ctx) {
     assert(members_);
     try {
         std::vector<groups::member> members;
+        members.reserve(members_len);
+
         for (size_t i = 0; i < members_len; i++)
-            members.emplace_back(groups::member{*members_[i]});
+            members.emplace_back(groups::member{members_[i]});
 
         unbox(state).add_group_members(
                 {group_id, 66},
@@ -458,16 +460,16 @@ LIBSESSION_C_API void state_add_group_members(
                 [cb = std::move(callback), ctx](std::optional<std::string_view> error) {
                     if (cb) {
                         if (error)
-                            (*cb)(error->data(), ctx);
+                            (*cb)(error->data(), error->size(), ctx);
                         else
-                            (*cb)(nullptr, ctx);
+                            (*cb)(nullptr, 0, ctx);
                     }
                 });
     } catch (const std::exception& e) {
-        set_error(state, e.what());
+        std::string_view error = e.what();
 
         if (callback)
-            callback(e.what(), ctx);
+            callback(e.what(), error.size(), ctx);
     }
 }
 

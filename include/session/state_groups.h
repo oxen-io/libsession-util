@@ -106,9 +106,9 @@ LIBSESSION_EXPORT void state_add_group_members(
         state_object* state,
         const char* group_id,
         const bool supplemental_rotation,
-        const state_group_member** members,
+        const state_group_member* members,
         const size_t members_len,
-        void (*callback)(const char* error, void* ctx),
+        void (*callback)(const char* error, const size_t error_len, void* ctx),
         void* ctx);
 
 /// API: groups/state_erase_group
