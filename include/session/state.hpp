@@ -125,8 +125,15 @@ struct config_message {
 };
 
 struct PreparedPush {
+    struct Info {
+        bool is_config_push;
+        bool requires_response;
+        config::Namespace namespace_;
+        seqno_t seqno;
+    };
+
     ustring payload;
-    std::vector<std::pair<config::Namespace, seqno_t>> namespace_seqno;
+    std::vector<Info> info;
 };
 
 class State {
@@ -410,8 +417,7 @@ class State {
     ///
     /// Inputs:
     /// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
-    /// - `group_sk` -- optional 64-byte secret key for the group.
-    void approve_group(std::string_view group_id, std::optional<ustring_view> group_sk);
+    void approve_group(std::string_view group_id);
 
     /// API: groups/State::load_group_admin_key
     ///
@@ -486,7 +492,7 @@ class State {
             std::optional<ustring> group_sk = std::nullopt);
     void handle_config_push_response(
             std::string pubkey,
-            std::vector<std::pair<config::Namespace, seqno_t>> namespace_seqnos,
+            std::vector<PreparedPush::Info> push_info,
             bool success,
             uint16_t status_code,
             ustring response);

@@ -733,7 +733,7 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
             created_ts,
             last_send_data.data(),
             last_send_data.size()};
-    CHECK(state_merge(state2, nullptr, merge_data, 1, &accepted));
+    REQUIRE(state_merge(state2, nullptr, merge_data, 1, &accepted));
     REQUIRE(accepted->len == 1);
     CHECK(accepted->value[0] == "fakehash1"sv);
     free(accepted);

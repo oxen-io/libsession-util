@@ -251,10 +251,6 @@ void State::config_changed(
         // Other namespaces are unique for a given pubkey_hex_
         if (target_pubkey_hex.size() != 66)
             throw std::invalid_argument{"config_changed: Invalid pubkey_hex - expected 66 bytes"};
-        if (!_config_groups.count(target_pubkey_hex))
-            throw std::runtime_error{
-                    "config_changed: Change trigger in group configs with no state: " +
-                    target_pubkey_hex};
 
         // Ensure we have the admin key for the group
         auto user_group_info = _config_user_groups->get_group(target_pubkey_hex);
@@ -327,8 +323,7 @@ void State::config_changed(
                push,
                after_send = std::move(after_send)](
                       bool success, uint16_t status_code, ustring response) {
-                  handle_config_push_response(
-                          pubkey, push.namespace_seqno, success, status_code, response);
+                  handle_config_push_response(pubkey, push.info, success, status_code, response);
 
                   // Now that we have confirmed the push we need to store the configs again
                   config_changed(pubkey, true, false, std::nullopt);
@@ -471,12 +466,12 @@ PreparedPush State::prepare_push(
                namespace_send_order(static_cast<Namespace>(b["namespace"]));
     });
 
-    std::vector<std::pair<Namespace, seqno_t>> namespace_seqnos;
+    std::vector<PreparedPush::Info> push_info;
     nlohmann::json sequence_params;
 
     for (auto& request : sorted_requests) {
-        namespace_seqnos.push_back(
-                {request["namespace"].get<Namespace>(), request["seqno"].get<seqno_t>()});
+        push_info.push_back(
+                {true, true, request["namespace"].get<Namespace>(), request["seqno"].get<seqno_t>()});
         request.erase("seqno");  // Erase the 'seqno' as it shouldn't be in the request payload
 
         nlohmann::json request_json{{"method", "store"}, {"params", request}};
@@ -489,6 +484,7 @@ PreparedPush State::prepare_push(
         std::array<unsigned char, 64> sig;
         ustring verification = to_unsigned("delete");
         log(LogLevel::debug, "prepare_push: has obsolete hashes");
+
         for (auto& hash : obsolete_hashes)
             verification += to_unsigned_sv(hash);
 
@@ -510,11 +506,14 @@ PreparedPush State::prepare_push(
 
         nlohmann::json request_json{{"method", "delete"}, {"params", params}};
         sequence_params["requests"].push_back(request_json);
+
+        // Not strictly needed but means the request count will match
+        push_info.push_back({false, false, Namespace::UserProfile, 0});
     }
 
     nlohmann::json payload{{"method", "sequence"}, {"params", sequence_params}};
 
-    return {to_unsigned(payload.dump()), namespace_seqnos};
+    return {to_unsigned(payload.dump()), push_info};
 }
 
 std::optional<uint64_t> max_merged_timestamp(
@@ -870,7 +869,7 @@ std::optional<std::string> extract_error(int status_code, ustring response) {
 
 void State::handle_config_push_response(
         std::string pubkey,
-        std::vector<std::pair<Namespace, seqno_t>> namespace_seqnos,
+        std::vector<PreparedPush::Info> push_info,
         bool success,
         uint16_t status_code,
         ustring response) {
@@ -901,12 +900,19 @@ void State::handle_config_push_response(
                  std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::system_clock::now().time_since_epoch()));
 
-    if (results.size() < namespace_seqnos.size())
+    size_t required_response_count =
+            std::count_if(push_info.begin(), push_info.end(), [](const PreparedPush::Info& info) {
+                return info.requires_response;
+            });
+    if (results.size() != required_response_count)
         throw std::invalid_argument{
                 "handle_config_push_response: Invalid response - Number of responses doesn't match "
-                "the number of requests."};
+                "the number of requests requiring responses."};
 
     for (int i = 0, n = results.size(); i < n; ++i) {
+        if (!push_info[i].is_config_push)
+            continue;
+
         auto result_code = results[i]["code"].get<int>();
 
         if (result_code < 200 || result_code > 299 || !results[i].contains("body") ||
@@ -914,17 +920,19 @@ void State::handle_config_push_response(
             continue;
 
         auto hash = results[i]["body"]["hash"].get<std::string>();
-        auto seqno = namespace_seqnos[i].second;
-        auto namespace_ = namespace_seqnos[i].first;
 
-        switch (namespace_) {
-            case Namespace::Contacts: _config_contacts->confirm_pushed(seqno, hash); continue;
-            case Namespace::ConvoInfoVolatile:
-                _config_convo_info_volatile->confirm_pushed(seqno, hash);
+        switch (push_info[i].namespace_) {
+            case Namespace::Contacts:
+                _config_contacts->confirm_pushed(push_info[i].seqno, hash);
                 continue;
-            case Namespace::UserGroups: _config_user_groups->confirm_pushed(seqno, hash); continue;
+            case Namespace::ConvoInfoVolatile:
+                _config_convo_info_volatile->confirm_pushed(push_info[i].seqno, hash);
+                continue;
+            case Namespace::UserGroups:
+                _config_user_groups->confirm_pushed(push_info[i].seqno, hash);
+                continue;
             case Namespace::UserProfile:
-                _config_user_profile->confirm_pushed(seqno, hash);
+                _config_user_profile->confirm_pushed(push_info[i].seqno, hash);
                 continue;
             default: break;
         }
@@ -932,9 +940,13 @@ void State::handle_config_push_response(
         // Other namespaces are unique for a given pubkey
         auto& group = _config_groups.at(pubkey);
 
-        switch (namespace_) {
-            case Namespace::GroupInfo: group->info->confirm_pushed(seqno, hash);
-            case Namespace::GroupMembers: group->members->confirm_pushed(seqno, hash);
+        switch (push_info[i].namespace_) {
+            case Namespace::GroupInfo:
+                group->info->confirm_pushed(push_info[i].seqno, hash);
+                continue;
+            case Namespace::GroupMembers:
+                group->members->confirm_pushed(push_info[i].seqno, hash);
+                continue;
             case Namespace::GroupKeys: continue;  // No need to do anything here
             default:
                 throw std::runtime_error{
@@ -1046,7 +1058,7 @@ void State::create_group(
           push.payload,
           [this,
            gid = std::move(group_id),
-           namespace_seqno = push.namespace_seqno,
+           push_info = push.info,
            secretkey = std::move(ed_sk),
            n = std::move(name),
            timestamp,
@@ -1054,7 +1066,7 @@ void State::create_group(
               try {
                   // Call through to the default 'handle_config_push_response' first to update it's
                   // state correctly (this will also result in the configs getting stored to disk)
-                  handle_config_push_response(gid, namespace_seqno, success, status_code, response);
+                  handle_config_push_response(gid, push_info, success, status_code, response);
 
                   // Retrieve the group configs for this pubkey and setup an entry in the user
                   // groups config for it (the 'at' call will throw if the group doesn't exist)
@@ -1083,7 +1095,7 @@ void State::create_group(
           });
 }
 
-void State::approve_group(std::string_view group_id, std::optional<ustring_view> group_sk) {
+void State::approve_group(std::string_view group_id) {
     std::string gid = {group_id.data(), group_id.size()};
 
     // If we don't already have GroupConfigs then create them
@@ -1091,16 +1103,12 @@ void State::approve_group(std::string_view group_id, std::optional<ustring_view>
         auto ed_pk_data = oxenc::from_hex(group_id.begin() + 2, group_id.end());
         auto ed_pk = to_unsigned_sv(ed_pk_data);
         _config_groups[gid] =
-                std::make_unique<GroupConfigs>(ed_pk, to_unsigned_sv(_user_sk), group_sk);
+                std::make_unique<GroupConfigs>(ed_pk, to_unsigned_sv(_user_sk), std::nullopt);
     }
 
     // Update the USER_GROUPS config to have the group marked as approved
     auto group = _config_user_groups->get_or_construct_group(group_id);
     group.invited = false;
-
-    if (group_sk)
-        group.secretkey = {group_sk->data(), group_sk->size()};
-
     _config_user_groups->set(group);
 
     // Trigger the 'config_changed' callback directly since we aren't using 'MutableUserConfig' (We
@@ -1132,6 +1140,7 @@ void State::load_group_admin_key(std::string_view group_id, ustring_view secret)
     member.admin = true;
     member.invite_status = 0;  // Just in case
     member.promotion_status = 0;
+    group->members->set(member);
 
     // Update the user groups record to include the admin key
     auto user_group = _config_user_groups->get_or_construct_group(group_id);
@@ -1166,8 +1175,13 @@ void State::add_group_members(
     for (auto m : members)
         group->members->set(m);
 
-    // If it's not a supplemental rotation then do a rekey
-    if (!supplemental_rotation) {
+    // Don't bother rotating the keys if there are only admins
+    size_t non_admin_count = std::count_if(members.begin(), members.end(), [](const groups::member& m) {
+        return !m.admin;
+    });
+
+    // If there are non-admins and it's not a supplemental rotation then do a rekey
+    if (non_admin_count > 0 && !supplemental_rotation) {
         auto info = _config_groups[gid]->info.get();
         auto members = _config_groups[gid]->members.get();
         group->keys->rekey(*info, *members);
@@ -1177,9 +1191,9 @@ void State::add_group_members(
     std::vector<config::ConfigBase*> configs = {group->info.get(), group->members.get()};
     auto push = prepare_push(gid, timestamp, configs);
 
-    // If it is a supplemental rotation then we want to include the key supplement within the batch
+    // If there are non-admins and it's a supplemental rotation then we want to include the key supplement within the batch
     // request we are going to send
-    if (supplemental_rotation) {
+    if (non_admin_count > 0 && supplemental_rotation) {
         std::vector<std::string> sids;
         std::transform(
                 members.begin(),
@@ -1191,7 +1205,7 @@ void State::add_group_members(
 
         // We need to update the current payload (we want to insert the supplement to the beginning
         // of the batch requests)
-        auto updated_namespace_seqnos = push.namespace_seqno;
+        auto updated_push_info = push.info;
         auto updated_payload = nlohmann::json::parse(push.payload);
         auto payload_json = nlohmann::json::parse(payload);
         auto requests_ptr = nlohmann::json::json_pointer("/params/requests");
@@ -1203,21 +1217,18 @@ void State::add_group_members(
         auto updated_requests = updated_payload[requests_ptr];
         updated_requests.insert(updated_requests.begin(), payload_json);
         updated_payload[requests_ptr] = updated_requests;
-        updated_namespace_seqnos.insert(
-                updated_namespace_seqnos.begin(), {group->keys->storage_namespace(), 0});
-        push = {to_unsigned(updated_payload.dump()), updated_namespace_seqnos};
+        updated_push_info.insert(updated_push_info.begin(), {false, true, Namespace::UserProfile, 0});
+        push = {to_unsigned(updated_payload.dump()), updated_push_info};
     }
 
     _send(gid,
           push.payload,
-          [this,
-           gid = std::move(gid),
-           namespace_seqno = push.namespace_seqno,
-           cb = std::move(callback)](bool success, int16_t status_code, ustring response) {
+          [this, gid = std::move(gid), push_info = push.info, cb = std::move(callback)](
+                  bool success, int16_t status_code, ustring response) {
               try {
                   // Call through to the default 'handle_config_push_response' first to update it's
                   // state correctly (this will also result in the configs getting stored to disk)
-                  handle_config_push_response(gid, namespace_seqno, success, status_code, response);
+                  handle_config_push_response(gid, push_info, success, status_code, response);
                   cb(std::nullopt);
               } catch (const std::exception& e) {
                   cb(e.what());

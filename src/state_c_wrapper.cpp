@@ -377,7 +377,7 @@ LIBSESSION_C_API void state_create_group(
                 const size_t error_len,
                 void* ctx),
         void* ctx) {
-    assert(name);
+    assert(name && callback);
     try {
         std::optional<std::string_view> description;
         if (description_)
@@ -405,7 +405,15 @@ LIBSESSION_C_API void state_create_group(
                         std::string_view group_id,
                         ustring_view group_sk,
                         std::optional<std::string_view> error) {
-                    callback(group_id.data(), group_sk.data(), error->data(), error->size(), ctx);
+                    if (error)
+                        callback(
+                                group_id.data(),
+                                group_sk.data(),
+                                error->data(),
+                                error->size(),
+                                ctx);
+                    else
+                        callback(group_id.data(), group_sk.data(), nullptr, 0, ctx);
                 });
     } catch (const std::exception& e) {
         std::string_view err = e.what();
@@ -414,14 +422,9 @@ LIBSESSION_C_API void state_create_group(
     }
 }
 
-LIBSESSION_C_API void state_approve_group(
-        state_object* state, const char* group_id, unsigned const char* group_sk) {
+LIBSESSION_C_API void state_approve_group(state_object* state, const char* group_id) {
     try {
-        std::optional<ustring_view> ed_sk;
-        if (group_sk)
-            ed_sk = {group_sk, 64};
-
-        unbox(state).approve_group({group_id, 66}, ed_sk);
+        unbox(state).approve_group({group_id, 66});
     } catch (...) {
     }
 }
@@ -429,7 +432,6 @@ LIBSESSION_C_API void state_approve_group(
 LIBSESSION_C_API bool state_load_group_admin_key(
         state_object* state, const char* group_id, unsigned const char* seed) {
     try {
-        std::string gid = {group_id, 66};
         unbox(state).load_group_admin_key({group_id, 66}, ustring_view{seed, 32});
         return true;
     } catch (const std::exception& e) {
@@ -445,7 +447,7 @@ LIBSESSION_C_API void state_add_group_members(
         const size_t members_len,
         void (*callback)(const char* error, size_t error_len, void* ctx),
         void* ctx) {
-    assert(members_);
+    assert(members_ && callback);
     try {
         std::vector<groups::member> members;
         members.reserve(members_len);
@@ -457,13 +459,11 @@ LIBSESSION_C_API void state_add_group_members(
                 {group_id, 66},
                 supplemental_rotation,
                 members,
-                [cb = std::move(callback), ctx](std::optional<std::string_view> error) {
-                    if (cb) {
-                        if (error)
-                            (*cb)(error->data(), error->size(), ctx);
-                        else
-                            (*cb)(nullptr, 0, ctx);
-                    }
+                [callback, ctx](std::optional<std::string_view> error) {
+                    if (error)
+                        callback(error->data(), error->size(), ctx);
+                    else
+                        callback(nullptr, 0, ctx);
                 });
     } catch (const std::exception& e) {
         std::string_view error = e.what();

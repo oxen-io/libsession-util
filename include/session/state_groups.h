@@ -64,9 +64,7 @@ LIBSESSION_EXPORT void state_create_group(
 /// Inputs:
 /// - `state` -- Pointer to the mutable state object
 /// - `group_id` -- the group id/pubkey, in hex, beginning with "03".
-/// - `group_sk` -- optional 64-byte secret key for the group.
-LIBSESSION_EXPORT void state_approve_group(
-        state_object* state, const char* group_id, unsigned const char* group_sk);
+LIBSESSION_EXPORT void state_approve_group(state_object* state, const char* group_id);
 
 /// API: groups/state_load_group_admin_key
 ///

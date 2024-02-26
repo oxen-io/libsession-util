@@ -591,11 +591,12 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 if (group_sk_) {
                     auto gsk = *group_sk_;
                     secret_key = gsk;
-                    state_approve_group(state, gid.c_str(), gsk.data());
+                    state_approve_group(state, gid.c_str());
+                    state_load_group_admin_key(state, gid.c_str(), gsk.data());
                     return;
                 }
 
-                state_approve_group(state, gid.c_str(), nullptr);
+                state_approve_group(state, gid.c_str());
                 return;
             }
 
@@ -614,8 +615,7 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                        const char* error,
                        const size_t error_len,
                        void* ctx) {
-                        if (error_len > 0)
-                            REQUIRE(error == ""sv);
+                        REQUIRE(error_len == 0);
 
                         auto client = static_cast<pseudo_client*>(ctx);
 
@@ -631,8 +631,8 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                     ctx);
             ustring send_response = session::to_unsigned(
                     "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}},{\"code\":200,"
-                    "\"body\":{\"hash\":\"fakehash1\"}},{\"code\":200,\"body\":{\"hash\":"
-                    "\"fakehash1\"}}]}");
+                    "\"body\":{\"hash\":\"fakehash2\"}},{\"code\":200,\"body\":{\"hash\":"
+                    "\"fakehash3\"}}]}");
             last_send->response_cb(
                     true,
                     200,
@@ -682,12 +682,12 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
 
     auto& admin2 = admins[1];
     REQUIRE(state_size_group_members(admin1.state, admin1.group_id.c_str()) == 1);
-    REQUIRE(state_size_group_members(admin2.state, admin2.group_id.c_str()) == 0);
+    REQUIRE(state_size_group_members(admin2.state, admin2.group_id.c_str()) == 1);
 
     for (const auto& m : members)
         REQUIRE(state_size_group_members(m.state, m.group_id.c_str()) == 0);
 
-    // Add member, re-key, distribute
+    // Manually add member, re-key, distribute
     auto& member1 = members[0];
     state_group_member new_member1;
     REQUIRE(state_get_or_construct_group_member(
@@ -713,6 +713,16 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_INFO) == 2);
     CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_MEMBERS) == 2);
     REQUIRE(admin1.last_send.has_value());
+    ustring send_response = session::to_unsigned(
+            "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}},{\"code\":200,"
+            "\"body\":{\"hash\":\"fakehash2\"}},{\"code\":200,\"body\":{\"hash\":\"fakehash3\"}"
+            "}]}");
+    admin1.last_send->response_cb(
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            admin1.last_send->callback_context);
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
     auto second_request_data = nlohmann::json::json_pointer("/params/requests/1/params/data");
@@ -763,6 +773,9 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     /*  Even though we have only added one admin, admin2 will still be able to see group info
         like group size and merge all configs. This is because they have loaded the key config
         message, which they can decrypt with the group secret key.
+
+        We also need to merge for admin1 here because the Keys config won't update it's state
+        until it actually merges the updated keys
     */
     for (auto& a : admins) {
         session_string_list* accepted;
@@ -772,20 +785,11 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
         CHECK(accepted->value[1] == "fakehash2"sv);
         CHECK(accepted->value[2] == "fakehash3"sv);
         free(accepted);
-
-        ustring send_response = session::to_unsigned(
-                "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}},{\"code\":200,"
-                "\"body\":{\"hash\":\"fakehash2\"}},{\"code\":200,\"body\":{\"hash\":\"fakehash3\"}"
-                "}]}");
-        a.last_send->response_cb(
-                true,
-                200,
-                send_response.data(),
-                send_response.size(),
-                a.last_send->callback_context);
-
-        REQUIRE(state_size_group_members(a.state, a.group_id.c_str()) == 2);
     }
+    
+    // Due to the 'load_admin_key' behaviour admin2 will contain both admin1 and admin2
+    REQUIRE(state_size_group_members(admin1.state, admin1.group_id.c_str()) == 2);
+    REQUIRE(state_size_group_members(admin2.state, admin2.group_id.c_str()) == 3);
 
     /* Non-admins */
     for (auto& m : members) {
@@ -817,6 +821,10 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     free(merge_data_no_keys);
     free(merge_data);
 
+    CHECK_FALSE(session::state::unbox(admin1.state).config<groups::Info>(admin1.group_id).needs_push());
+    CHECK_FALSE(session::state::unbox(admin1.state).config<groups::Members>(admin1.group_id).needs_push());
+    CHECK_FALSE(session::state::unbox(admin1.state).config<groups::Keys>(admin1.group_id).pending_config().has_value());
+
     std::vector<state_group_member> new_members;
     new_members.reserve(members.size());
 
@@ -832,37 +840,38 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
         new_members.push_back(new_mem);
     }
 
-    state_mutate_group(
+    // Add members via 'add_member' using supplemental rotation instead of manually
+    state_add_group_members(
             admin1.state,
             admin1.group_id.c_str(),
-            [](mutable_group_state_object* state, void* ctx) {
-                auto new_members = static_cast<std::vector<state_group_member>*>(ctx);
-
-                for (auto new_mem : *new_members) {
-                    state_set_group_member(state, &new_mem);
-                }
-
-                REQUIRE(state_rekey_group(state));
+            true,
+            new_members.data(),
+            new_members.size(),
+            [](const char* error, size_t error_len, void* ctx) {
+                REQUIRE(error_len == 0);
             },
-            &new_members);
+            nullptr);
+    
+    send_response = session::to_unsigned(
+            "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash4\"}},{\"code\":200,"
+            "\"body\":{\"hash\":\"fakehash5\"}}]}");
+    admin1.last_send->response_cb(
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            admin1.last_send->callback_context);
 
-    CHECK(session::state::unbox(admin1.state)
-                  .config<groups::Members>(admin1.group_id)
-                  .needs_push());
-    CHECK(session::state::unbox(admin1.state).config<groups::Info>(admin1.group_id).needs_push());
-    CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_INFO) == 3);
     CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_MEMBERS) == 3);
 
     last_send_json = nlohmann::json::parse(admin1.last_send->payload);
+    REQUIRE(last_send_json.contains(first_request_data));
     REQUIRE(last_send_json.contains(second_request_data));
-    REQUIRE(last_send_json.contains(third_request_data));
     last_send_data_0 = session::to_unsigned(
             oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
     last_send_data_1 = session::to_unsigned(
             oxenc::from_base64(last_send_json[second_request_data].get<std::string>()));
-    last_send_data_2 = session::to_unsigned(
-            oxenc::from_base64(last_send_json[third_request_data].get<std::string>()));
-    merge_data = new state_config_message[3];
+    merge_data = new state_config_message[2];
     merge_data[0] = {
             NAMESPACE_GROUP_KEYS,
             "fakehash4",
@@ -870,39 +879,35 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
             last_send_data_0.data(),
             last_send_data_0.size()};
     merge_data[1] = {
-            NAMESPACE_GROUP_INFO,
+            NAMESPACE_GROUP_MEMBERS,
             "fakehash5",
             created_ts,
             last_send_data_1.data(),
             last_send_data_1.size()};
-    merge_data[2] = {
-            NAMESPACE_GROUP_MEMBERS,
-            "fakehash6",
-            created_ts,
-            last_send_data_2.data(),
-            last_send_data_2.size()};
 
+    /*  Admins will store the hash for supplemental keys messages but won't actually consider them merged so the 'accepted' array won't contain the hash */
     for (auto& a : admins) {
         session_string_list* accepted;
-        REQUIRE(state_merge(a.state, a.group_id.c_str(), merge_data, 3, &accepted));
-        REQUIRE(accepted->len == 3);
+        REQUIRE(state_merge(a.state, a.group_id.c_str(), merge_data, 2, &accepted));
+        REQUIRE(accepted->len == 1);
+        CHECK(accepted->value[0] == "fakehash5"sv);
+        free(accepted);
+    }
+
+    // Due to the 'load_admin_key' behaviour admin2 will contain both admin1 and admin2
+    REQUIRE(state_size_group_members(admin1.state, admin1.group_id.c_str()) == 5);
+    REQUIRE(state_size_group_members(admin2.state, admin2.group_id.c_str()) == 6);
+
+    /* Non-admins */
+    for (auto& m : members) {
+        session_string_list* accepted;
+        REQUIRE(state_merge(m.state, m.group_id.c_str(), merge_data, 2, &accepted));
+        REQUIRE(accepted->len == 2);
         CHECK(accepted->value[0] == "fakehash4"sv);
         CHECK(accepted->value[1] == "fakehash5"sv);
-        CHECK(accepted->value[2] == "fakehash6"sv);
         free(accepted);
 
-        ustring send_response = session::to_unsigned(
-                "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash4\"}},{\"code\":200,"
-                "\"body\":{\"hash\":\"fakehash5\"}},{\"code\":200,\"body\":{\"hash\":\"fakehash6\"}"
-                "}]}");
-        a.last_send->response_cb(
-                true,
-                200,
-                send_response.data(),
-                send_response.size(),
-                a.last_send->callback_context);
-
-        REQUIRE(state_size_group_members(a.state, a.group_id.c_str()) == 5);
+        REQUIRE(state_size_group_members(m.state, m.group_id.c_str()) == 5);
     }
 
     free(merge_data);
