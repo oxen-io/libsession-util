@@ -519,6 +519,9 @@ PreparedPush State::prepare_push(
 std::optional<uint64_t> max_merged_timestamp(
         const std::vector<config_message>& messages,
         const std::vector<std::string>& merged_hashes) {
+    if (messages.empty() || merged_hashes.empty())
+        return std::nullopt;
+
     // Filter messages based on merged_hashes
     std::vector<config_message> merged_messages;
     std::copy_if(

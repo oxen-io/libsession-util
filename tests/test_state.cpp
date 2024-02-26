@@ -8,7 +8,10 @@
 #include "session/config/namespaces.hpp"
 #include "session/config/user_profile.h"
 #include "session/config/user_profile.hpp"
+#include "session/config/user_groups.h"
+#include "session/config/groups/members.h"
 #include "session/state.h"
+#include "session/state_groups.h"
 #include "session/state.hpp"
 #include "utils.hpp"
 
@@ -43,18 +46,7 @@ static ustring send_response(std::vector<std::string_view> hashes) {
     return to_unsigned(result);
 }
 
-TEST_CASE("State", "[state][state]") {
-    auto ed_sk =
-            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab78862834829a"
-            "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f"_hexbytes;
-    const ustring admin2_seed =
-            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"_hexbytes;
-
-    auto state = State({ed_sk.data(), ed_sk.size()}, {});
-    std::vector<last_store_data> store_records;
-    std::vector<last_send_data> send_records;
-    std::vector<config_message> keys_messages;
-
+static void setup_store_hook(State& state, std::vector<last_store_data>& store_records) {
     state.on_store([&store_records](
                            config::Namespace namespace_,
                            std::string pubkey,
@@ -62,6 +54,9 @@ TEST_CASE("State", "[state][state]") {
                            ustring data) {
         store_records.push_back({namespace_, pubkey, timestamp_ms, data});
     });
+}
+
+static void setup_send_hook(State& state, std::vector<last_send_data>& send_records) {
     state.on_send(
             [&send_records](
                     std::string pubkey, ustring payload, response_callback_t received_response) {
@@ -91,6 +86,20 @@ TEST_CASE("State", "[state][state]") {
                          nullptr,
                          on_response.release()});
             });
+}
+
+TEST_CASE("State", "[state][state]") {
+    auto ed_sk =
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab78862834829a"
+            "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f"_hexbytes;
+    const ustring admin2_seed =
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"_hexbytes;
+
+    auto state = State({ed_sk.data(), ed_sk.size()}, {});
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    setup_store_hook(state, store_records);
+    setup_send_hook(state, send_records);
 
     // Sanity check direct config access
     CHECK_FALSE(state.config<UserProfile>().get_name().has_value());
@@ -288,7 +297,7 @@ TEST_CASE("State", "[state][state]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
-    send_res = send_res = send_response({"fakehash5"});
+    send_res = send_response({"fakehash5"});
     REQUIRE(send_records[2].response_cb(
             true,
             200,
@@ -349,47 +358,126 @@ TEST_CASE("State", "[state][state]") {
     REQUIRE(send_data[json_ptr("/params/requests/2/params/messages")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests/2/params/messages")].size() == 1);
     CHECK(send_data.value(json_ptr("/params/requests/2/params/messages/0"), "") == "fakehash4");
-    keys_messages.emplace_back(config_message{
-            Namespace::GroupKeys,
-            "fakehash5",
-            send_data.value(json_ptr("/params/requests/0/params/timestamp"), uint64_t(0)),
-            to_unsigned(oxenc::from_base64(
-                    send_data[json_ptr("/params/requests/0/params/data")].get<std::string>()))});
 
-    send_res = send_res = send_response({"fakehash5", "fakehash6"});
+    send_res = send_response({"fakehash5", "fakehash6"});
     REQUIRE(send_records[3].response_cb(
             true,
             200,
             send_res.data(),
             send_res.size(),
             send_records[3].callback_context));
-    auto last_keys = config_message{
-            Namespace::GroupKeys,
-            "fakehash5",
-            send_data.value(json_ptr("/params/requests/0/params/timestamp"), uint64_t(0)),
-            to_unsigned(oxenc::from_base64(
-                    send_data[json_ptr("/params/requests/0/params/data")].get<std::string>()))};
+}
 
-    // When 2 admins rekey a group at the same time (and create a conflict) the merge process will perform
-    // another rekey to resolve the conflict
-    std::vector<groups::member> new_admin;
-    new_admin.emplace_back("05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
-    new_admin[0].admin = true;
-    state.add_group_members(
-            group.id, false, new_admin, [](std::optional<std::string_view> error) {
-                CHECK(error.value_or("") == ""sv);
-                REQUIRE_FALSE(error.has_value());
-            });
+TEST_CASE("State", "[state][state][merge failure behaviour]") {
+    auto ed_sk =
+            "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab78862834829a"
+            "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f"_hexbytes;
 
-    REQUIRE(send_records.size() == 5);
-    send_data = nlohmann::json::parse(send_records[4].payload);
-    send_res = send_response({"fakehash7"});
-    REQUIRE(send_records[4].response_cb(
+    auto state = State({ed_sk.data(), ed_sk.size()}, {});
+    auto state2 = State({ed_sk.data(), ed_sk.size()}, {});
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    std::vector<last_store_data> store_records_2;
+    std::vector<last_send_data> send_records_2;
+    setup_store_hook(state, store_records);
+    setup_send_hook(state, send_records);
+    setup_store_hook(state2, store_records_2);
+    setup_send_hook(state2, send_records_2);
+
+    // Setup an initial state
+    state.mutable_config().user_profile.set_name("Test Name1");
+    REQUIRE(send_records.size() == 1);
+    CHECK(store_records.size() == 1);
+    ustring send_res = send_response({"fakehash1"});
+    REQUIRE(send_records[0].response_cb(
             true,
             200,
             send_res.data(),
             send_res.size(),
-            send_records[4].callback_context));
+            send_records[0].callback_context));
+    CHECK(store_records.size() == 2);
+
+    // Merge into state2 so they are consistent
+    std::vector<config_message> to_merge;
+    auto send_data = nlohmann::json::parse(send_records[0].payload);
+    to_merge.emplace_back(
+            Namespace::UserProfile,
+            "fakehash1",
+            send_data[json_ptr("/params/requests/0/params/timestamp")].get<long>(),
+            to_unsigned(oxenc::from_base64(
+                    send_data[json_ptr("/params/requests/0/params/data")].get<std::string>())));
+    auto merge_result = state2.merge(std::nullopt, to_merge);
+    REQUIRE(merge_result.size() == 1);
+    CHECK(merge_result[0] == "fakehash1");
+
+    // Modify state2 to generate valid data to merge
+    state2.mutable_config().user_profile.set_name("Test Name");
+    REQUIRE(send_records_2.size() == 1);
+    CHECK(store_records_2.size() == 2);
+    send_res = send_response({"fakehash2"});
+    REQUIRE(send_records_2[0].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records_2[0].callback_context));
+    CHECK(store_records.size() == 2);
+
+    state2.mutable_config().user_profile.set_name("Test Name2");
+    REQUIRE(send_records_2.size() == 2);
+    CHECK(store_records_2.size() == 4);
+    send_res = send_response({"fakehash3"});
+    REQUIRE(send_records_2[1].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records_2[1].callback_context));
+    CHECK(store_records_2.size() == 5);
+    REQUIRE(state2.config<UserProfile>().get_name().has_value());
+    CHECK(*state2.config<UserProfile>().get_name() == "Test Name2");
+
+    // Generate a valid and an invalid config for the merge (only the valid one should be merged)
+    send_data = nlohmann::json::parse(send_records_2[0].payload);
+    auto valid_timestamp = send_data[json_ptr("/params/requests/0/params/timestamp")].get<long>();
+    auto invalid_send_data = nlohmann::json::parse(send_records_2[1].payload);
+    auto invalid_payload = oxenc::from_base64(
+            invalid_send_data[json_ptr("/params/requests/0/params/data")].get<std::string>());
+    invalid_payload.replace(invalid_payload.begin(), invalid_payload.begin() + 4, "RAWR");
+    to_merge.clear();
+    to_merge.emplace_back(
+            Namespace::UserProfile,
+            "fakehash2",
+            valid_timestamp,
+            to_unsigned(oxenc::from_base64(
+                    send_data[json_ptr("/params/requests/0/params/data")].get<std::string>())));
+    to_merge.emplace_back(
+            Namespace::UserProfile,
+            "fakehash3",
+            3000000000000,
+            to_unsigned(invalid_payload));
+    merge_result = state.merge(std::nullopt, to_merge);
+    REQUIRE(merge_result.size() == 1);
+    CHECK(merge_result[0] == "fakehash2");
+    CHECK(send_records.size() == 1);    // Unchanged
+    REQUIRE(state.config<UserProfile>().get_name().has_value());
+    CHECK(*state.config<UserProfile>().get_name() == "Test Name");
+    REQUIRE(store_records.size() == 3);
+    CHECK(store_records[2].timestamp == valid_timestamp);
+
+    // Now try to merge solely invalid data, the send/store hooks shouldn't get called
+    CHECK(send_records.size() == 1);
+    CHECK(store_records.size() == 3);
+    to_merge.clear();
+    to_merge.emplace_back(
+            Namespace::UserProfile,
+            "fakehash3",
+            3000000000000,
+            to_unsigned(invalid_payload));
+    merge_result = state.merge(std::nullopt, to_merge);
+    CHECK(merge_result.size() == 0);
+    CHECK(send_records.size() == 1);    // Unchanged
+    CHECK(store_records.size() == 3);    // Unchanged
 }
 
 TEST_CASE("State", "[state][state][merge key conflict]") {
@@ -409,85 +497,15 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     auto state = State({ed_sk.data(), ed_sk.size()}, {});
     std::vector<last_store_data> store_records;
     std::vector<last_send_data> send_records;
-    std::vector<config_message> keys_messages;
+    setup_store_hook(state, store_records);
+    setup_send_hook(state, send_records);
 
-    state.on_store([&store_records](
-                           config::Namespace namespace_,
-                           std::string pubkey,
-                           uint64_t timestamp_ms,
-                           ustring data) {
-        store_records.push_back({namespace_, pubkey, timestamp_ms, data});
-    });
-    state.on_send(
-            [&send_records](
-                    std::string pubkey, ustring payload, response_callback_t received_response) {
-                // Replicate the behaviour in the C wrapper
-                auto on_response =
-                        std::make_unique<response_callback_t>(std::move(received_response));
-
-                send_records.push_back(
-                        {pubkey,
-                         payload,
-                         [](bool success,
-                            int16_t status_code,
-                            const unsigned char* res,
-                            size_t reslen,
-                            void* callback_context) {
-                             try {
-                                 // Recapture the std::function callback here in a unique_ptr so
-                                 // that we clean it up at the end of this lambda.
-                                 std::unique_ptr<response_callback_t> cb{
-                                         static_cast<response_callback_t*>(callback_context)};
-                                 (*cb)(success, status_code, {res, reslen});
-                                 return true;
-                             } catch (...) {
-                                 return false;
-                             }
-                         },
-                         nullptr,
-                         on_response.release()});
-            });
     auto admin2_sk = sk_from_seed({admin2_seed.data(), admin2_seed.size()});
     auto state_admin_2 = State({admin2_sk.data(), admin2_sk.size()}, {});
     std::vector<last_store_data> store_records_2;
     std::vector<last_send_data> send_records_2;
-
-    state_admin_2.on_store([&store_records_2](
-                           config::Namespace namespace_,
-                           std::string pubkey,
-                           uint64_t timestamp_ms,
-                           ustring data) {
-        store_records_2.push_back({namespace_, pubkey, timestamp_ms, data});
-    });
-    state_admin_2.on_send(
-            [&send_records_2](
-                    std::string pubkey, ustring payload, response_callback_t received_response) {
-                // Replicate the behaviour in the C wrapper
-                auto on_response =
-                        std::make_unique<response_callback_t>(std::move(received_response));
-
-                send_records_2.push_back(
-                        {pubkey,
-                         payload,
-                         [](bool success,
-                            int16_t status_code,
-                            const unsigned char* res,
-                            size_t reslen,
-                            void* callback_context) {
-                             try {
-                                 // Recapture the std::function callback here in a unique_ptr so
-                                 // that we clean it up at the end of this lambda.
-                                 std::unique_ptr<response_callback_t> cb{
-                                         static_cast<response_callback_t*>(callback_context)};
-                                 (*cb)(success, status_code, {res, reslen});
-                                 return true;
-                             } catch (...) {
-                                 return false;
-                             }
-                         },
-                         nullptr,
-                         on_response.release()});
-            });
+    setup_store_hook(state_admin_2, store_records_2);
+    setup_send_hook(state_admin_2, send_records_2);
 
     // Create the initial group
     std::vector<groups::member> members;
@@ -813,10 +831,23 @@ TEST_CASE("State c API", "[state][state][c]") {
     auto ed_sk =
             "4cb76fdc6d32278e3f83dbf608360ecc6b65727934b85d2fb86862ff98c46ab78862834829a"
             "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f"_hexbytes;
+    const ustring admin2_seed =
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"_hexbytes;
 
     char err[256];
     state_object* state;
+    state_object* state2;
+    auto admin2_sk = sk_from_seed({admin2_seed.data(), admin2_seed.size()});
     REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
+    REQUIRE(state_init(&state2, admin2_sk.data(), nullptr, 0, err));
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    std::vector<last_store_data> store_records_2;
+    std::vector<last_send_data> send_records_2;
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&store_records_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&send_records_2));
 
     // User Profile forwarding
     CHECK(state_get_profile_name(state) == nullptr);
@@ -857,9 +888,287 @@ TEST_CASE("State c API", "[state][state][c]") {
     unsigned char* dump1;
     size_t dump1len;
     state_dump_namespace(state, NAMESPACE_USER_PROFILE, nullptr, &dump1, &dump1len);
-    state_object* state2;
-    REQUIRE(state_init(&state2, ed_sk.data(), nullptr, 0, err));
-    CHECK(state_get_profile_name(state2) == nullptr);
-    CHECK(state_load(state2, NAMESPACE_USER_PROFILE, nullptr, dump1, dump1len));
-    CHECK(state_get_profile_name(state2) == "Test Name"sv);
+    state_object* state3;
+    REQUIRE(state_init(&state3, ed_sk.data(), nullptr, 0, err));
+    CHECK(state_get_profile_name(state3) == nullptr);
+    CHECK(state_load(state3, NAMESPACE_USER_PROFILE, nullptr, dump1, dump1len));
+    CHECK(state_get_profile_name(state3) == "Test Name"sv);
+
+    // Creating a group works correctly
+    auto pic = user_profile_pic();
+    strcpy(pic.url, "http://example.com/huge.bmp");
+    memcpy(pic.key, "qwerty78901234567890123456789012", 32);
+    auto members = new state_group_member[3];
+    members[0] = state_group_member{"05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628", "Member 0"};
+    members[1] = state_group_member{"053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c", "Member 1"};
+    members[2] = state_group_member{"05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e", "Admin 2"};
+
+    state_create_group(
+        state,
+        "TestName",
+        8,
+        "TestDesc",
+        8,
+        pic,
+        members,
+        3,
+        [](const char* group_id, unsigned const char* group_sk, const char* error, const size_t error_len, void* ctx) {
+            REQUIRE(error_len == 0);
+        },
+        nullptr
+    );
+    free(members);
+
+    REQUIRE(send_records.size() == 4);
+    auto send_data = nlohmann::json::parse(send_records[3].payload);
+    REQUIRE(send_data.contains(json_ptr("/params/requests")));
+    REQUIRE(send_data[json_ptr("/params/requests")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests")].size() == 3);
+    CHECK(send_data.value("method", "") == "sequence");
+    CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "").substr(0, 2) == "03");
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 5324);
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
+    CHECK(send_data.value(json_ptr("/params/requests/1/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/pubkey"), "").substr(0, 2) == "03");
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/1/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/data"), "").size() == 684);
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/1/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/ttl"), 0L) == 2592000000);
+    CHECK(send_data.value(json_ptr("/params/requests/2/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/pubkey"), "").substr(0, 2) == "03");
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/2/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/data"), "").size() == 684);
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/2/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/ttl"), 0L) == 2592000000);
+
+    CHECK_FALSE(unbox(state).config<UserGroups>().needs_push());
+    CHECK(store_records.size() == 3);  // Not stored until we process a success response
+    auto send_res = send_response({"fakehash2", "fakehash3", "fakehash4"});
+    REQUIRE(send_records[3].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records[3].callback_context));
+    CHECK(store_records.size() == 7);
+    CHECK(store_records[3].namespace_ == Namespace::UserGroups);
+    CHECK(store_records[4].namespace_ == Namespace::GroupKeys);
+    CHECK(store_records[5].namespace_ == Namespace::GroupInfo);
+    CHECK(store_records[6].namespace_ == Namespace::GroupMembers);
+    CHECK(unbox(state).config<UserGroups>().get_seqno() == 1);
+    CHECK(unbox(state).config<UserGroups>().needs_push());
+
+    auto gid = send_data.value(json_ptr("/params/requests/0/params/pubkey"), "");
+    auto g = ugroups_group_info();
+    REQUIRE(state_size_ugroups(state) == 1);
+    REQUIRE(state_get_ugroups_group(state, &g, gid.c_str(), nullptr));
+    CHECK(g.name == "TestName"sv);
+    CHECK(unbox(state).config<groups::Info>(gid).get_seqno() == 1);
+    CHECK(unbox(state).config<groups::Members>(gid).get_seqno() == 1);
+    CHECK(unbox(state).config<groups::Keys>(gid).current_generation() == 0);
+    CHECK(unbox(state).config<groups::Keys>(gid).admin());
+
+    // Keys only get loaded when merging so we need to trigger the merge
+    state_config_message* merge_data = new state_config_message[3];
+    session_string_list* accepted;
+    auto payload0 = to_unsigned(oxenc::from_base64(
+            send_data[json_ptr("/params/requests/0/params/data")].get<std::string>()));
+    auto payload1 = to_unsigned(oxenc::from_base64(
+            send_data[json_ptr("/params/requests/1/params/data")].get<std::string>()));
+    auto payload2 = to_unsigned(oxenc::from_base64(
+            send_data[json_ptr("/params/requests/2/params/data")].get<std::string>()));
+    merge_data[0] = {
+            NAMESPACE_GROUP_KEYS,
+            "fakehash2",
+            send_data[json_ptr("/params/requests/0/params/timestamp")].get<uint64_t>(),
+            payload0.data(),
+            payload0.size()};
+    merge_data[1] = {
+            NAMESPACE_GROUP_INFO,
+            "fakehash3",
+            send_data[json_ptr("/params/requests/1/params/timestamp")].get<uint64_t>(),
+            payload1.data(),
+            payload1.size()};
+    merge_data[2] = {
+            NAMESPACE_GROUP_MEMBERS,
+            "fakehash4",
+            send_data[json_ptr("/params/requests/2/params/timestamp")].get<uint64_t>(),
+            payload2.data(),
+            payload2.size()};
+    REQUIRE(state_merge(state, gid.c_str(), merge_data, 3, &accepted));
+    REQUIRE(accepted->len == 3);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    CHECK(accepted->value[1] == "fakehash3"sv);
+    CHECK(accepted->value[2] == "fakehash4"sv);
+    CHECK(send_records.size() == 5);
+    free(accepted);
+    free(merge_data);
+
+    // Check that the supplemental rotation calls everything correctly
+    members = new state_group_member[1];
+    members[0] = state_group_member{"05a2b03abdda4df8316f9d7aed5d2d1e483e9af269d0b39191b08321b8495bc118"};
+    state_add_group_members(state, gid.c_str(), true, members, 1, [](const char* error, size_t error_len, void* ctx){
+        REQUIRE(error_len == 0);
+    }, nullptr);
+    free(members);
+
+    REQUIRE(send_records.size() == 6);
+    send_data = nlohmann::json::parse(send_records[5].payload);
+    REQUIRE(send_data.contains(json_ptr("/params/requests")));
+    REQUIRE(send_data[json_ptr("/params/requests")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests")].size() == 3);
+    CHECK(send_data.value("method", "") == "sequence");
+    CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == gid);
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 264);
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
+    CHECK(send_data.value(json_ptr("/params/requests/1/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/pubkey"), "") == gid);
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/1/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/data"), "").size() == 1024);
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/1/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/ttl"), 0L) == 2592000000);
+    CHECK(send_data.value(json_ptr("/params/requests/2/method"), "") == "delete");
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/pubkey"), "") == gid);
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/2/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/signature"), "").size() == 88);
+    REQUIRE(send_data[json_ptr("/params/requests/2/params/messages")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests/2/params/messages")].size() == 1);
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/messages/0"), "") == "fakehash4");
+
+    send_res = send_response({"fakehash5", "fakehash6"});
+    REQUIRE(send_records[5].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records[5].callback_context));
+
+    // Load the group for admin2
+    state_approve_group(state2, gid.c_str());
+    REQUIRE(send_records_2.size() == 1);
+    send_data = nlohmann::json::parse(send_records_2[0].payload);
+    REQUIRE(send_data.contains(json_ptr("/params/requests")));
+    REQUIRE(send_data[json_ptr("/params/requests")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests")].size() == 1);
+    CHECK(send_data.value("method", "") == "sequence");
+    CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") == "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
+    send_res = send_response({"fakehash5"});
+    REQUIRE(send_records_2[0].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records_2[0].callback_context));
+    REQUIRE(send_records_2.size() == 1);  // Unchanged
+
+    send_data = nlohmann::json::parse(send_records[3].payload);
+    REQUIRE(send_data.contains(json_ptr("/params/requests")));
+    REQUIRE(send_data[json_ptr("/params/requests")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests")].size() == 3);
+    merge_data = new state_config_message[3];
+    merge_data[0] = {
+            NAMESPACE_GROUP_KEYS,
+            "fakehash2",
+            send_data[json_ptr("/params/requests/0/params/timestamp")].get<uint64_t>(),
+            payload0.data(),
+            payload0.size()};
+    merge_data[1] = {
+            NAMESPACE_GROUP_INFO,
+            "fakehash3",
+            send_data[json_ptr("/params/requests/1/params/timestamp")].get<uint64_t>(),
+            payload1.data(),
+            payload1.size()};
+    merge_data[2] = {
+            NAMESPACE_GROUP_MEMBERS,
+            "fakehash4",
+            send_data[json_ptr("/params/requests/2/params/timestamp")].get<uint64_t>(),
+            payload2.data(),
+            payload2.size()};
+    REQUIRE(state_merge(state2, gid.c_str(), merge_data, 3, &accepted));
+    REQUIRE(accepted->len == 3);
+    CHECK(accepted->value[0] == "fakehash2"sv);
+    CHECK(accepted->value[1] == "fakehash3"sv);
+    CHECK(accepted->value[2] == "fakehash4"sv);
+    CHECK(send_records_2.size() == 1);
+    free(accepted);
+    free(merge_data);
+
+    // Promote to admin
+    state_load_group_admin_key(state2, gid.c_str(), g.secretkey);
+    REQUIRE(send_records_2.size() == 3);
+
+    // UserGroups gets the admin key
+    send_data = nlohmann::json::parse(send_records_2[1].payload);
+    REQUIRE(send_data.contains(json_ptr("/params/requests")));
+    REQUIRE(send_data[json_ptr("/params/requests")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests")].size() == 2);
+    CHECK(send_data.value("method", "") == "sequence");
+    CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") == "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
+    REQUIRE(send_data[json_ptr("/params/requests/1/params/messages")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests/1/params/messages")].size() == 1);
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/messages/0"), "") == "fakehash5");
+    send_res = send_response({"fakehash6"});
+    REQUIRE(send_records_2[1].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records_2[1].callback_context));
+
+    // Member flagged as an admin
+    send_data = nlohmann::json::parse(send_records_2[2].payload);
+    REQUIRE(send_data.contains(json_ptr("/params/requests")));
+    REQUIRE(send_data[json_ptr("/params/requests")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests")].size() == 2);
+    CHECK(send_data.value("method", "") == "sequence");
+    CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == gid);
+    CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 1024);
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
+    CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
+    REQUIRE(send_data[json_ptr("/params/requests/1/params/messages")].is_array());
+    REQUIRE(send_data[json_ptr("/params/requests/1/params/messages")].size() == 1);
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/messages/0"), "") == "fakehash4");
+    send_res = send_response({"fakehash7"});
+    REQUIRE(send_records_2[2].response_cb(
+            true,
+            200,
+            send_res.data(),
+            send_res.size(),
+            send_records_2[2].callback_context));
+    REQUIRE(send_records_2.size() == 3);  // Unchanged
+    REQUIRE(unbox(state2).config<groups::Keys>(gid).admin());
 }

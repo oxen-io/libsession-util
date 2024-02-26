@@ -570,8 +570,8 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
         std::string user_session_id{session_id_from_ed(user_public_key)};
 
         state_object* state;
-        std::optional<last_store_data> last_store = std::nullopt;
-        std::optional<last_send_data> last_send = std::nullopt;
+        std::vector<last_store_data> store_records;
+        std::vector<last_send_data> send_records;
 
         pseudo_client(
                 ustring user_seed,
@@ -580,8 +580,8 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 user_secret_key{sk_from_seed(user_seed)} {
             char err[256];
             REQUIRE(state_init(&state, user_secret_key.data(), nullptr, 0, err));
-            state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
-            state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
+            state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+            state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
 
             // If we already have a group then just "approve" it
             if (group_id_) {
@@ -622,23 +622,19 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                         // Now that the group is created store the values
                         client->group_id = group_id;
                         memcpy(client->secret_key.data(), group_sk, 64);
-
-                        // Clear the 'last_send' and 'last_store' since we don't care about the
-                        // group creation
-                        client->last_send = std::nullopt;
-                        client->last_store = std::nullopt;
                     },
                     ctx);
+            REQUIRE(send_records.size() == 1);
             ustring send_response = session::to_unsigned(
                     "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}},{\"code\":200,"
                     "\"body\":{\"hash\":\"fakehash2\"}},{\"code\":200,\"body\":{\"hash\":"
                     "\"fakehash3\"}}]}");
-            last_send->response_cb(
+            send_records[0].response_cb(
                     true,
                     200,
                     send_response.data(),
                     send_response.size(),
-                    last_send->callback_context);
+                    send_records[0].callback_context);
         }
 
         ~pseudo_client() { state_free(state); }
@@ -710,24 +706,24 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                   .config<groups::Members>(admin1.group_id)
                   .needs_push());
 
+    REQUIRE(admin1.send_records.size() == 3);
     CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_INFO) == 2);
     CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_MEMBERS) == 2);
-    REQUIRE(admin1.last_send.has_value());
     ustring send_response = session::to_unsigned(
             "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}},{\"code\":200,"
             "\"body\":{\"hash\":\"fakehash2\"}},{\"code\":200,\"body\":{\"hash\":\"fakehash3\"}"
             "}]}");
-    admin1.last_send->response_cb(
+    admin1.send_records[2].response_cb(
             true,
             200,
             send_response.data(),
             send_response.size(),
-            admin1.last_send->callback_context);
+            admin1.send_records[2].callback_context);
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
     auto second_request_data = nlohmann::json::json_pointer("/params/requests/1/params/data");
     auto third_request_data = nlohmann::json::json_pointer("/params/requests/2/params/data");
-    auto last_send_json = nlohmann::json::parse(admin1.last_send->payload);
+    auto last_send_json = nlohmann::json::parse(admin1.send_records[2].payload);
     REQUIRE(last_send_json.contains(first_request_data));
     REQUIRE(last_send_json.contains(second_request_data));
     REQUIRE(last_send_json.contains(third_request_data));
@@ -852,19 +848,20 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
             },
             nullptr);
     
+    REQUIRE(admin1.send_records.size() == 4);
     send_response = session::to_unsigned(
             "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash4\"}},{\"code\":200,"
             "\"body\":{\"hash\":\"fakehash5\"}}]}");
-    admin1.last_send->response_cb(
+    admin1.send_records[3].response_cb(
             true,
             200,
             send_response.data(),
             send_response.size(),
-            admin1.last_send->callback_context);
+            admin1.send_records[3].callback_context);
 
     CHECK(state_current_seqno(admin1.state, admin1.group_id.c_str(), NAMESPACE_GROUP_MEMBERS) == 3);
 
-    last_send_json = nlohmann::json::parse(admin1.last_send->payload);
+    last_send_json = nlohmann::json::parse(admin1.send_records[3].payload);
     REQUIRE(last_send_json.contains(first_request_data));
     REQUIRE(last_send_json.contains(second_request_data));
     last_send_data_0 = session::to_unsigned(

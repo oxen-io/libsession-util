@@ -240,13 +240,13 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     char err[256];
     state_object* state;
     REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
-    std::optional<last_store_data> last_store = std::nullopt;
-    std::optional<last_send_data> last_send = std::nullopt;
-    std::optional<last_store_data> last_store_2 = std::nullopt;
-    std::optional<last_send_data> last_send_2 = std::nullopt;
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    std::vector<last_store_data> store_records_2;
+    std::vector<last_send_data> send_records_2;
 
-    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
-    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
 
     const char* const definitely_real_id =
             "050000000000000000000000000000000000000000000000000000000000000000";
@@ -288,20 +288,22 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     CHECK_FALSE(c2.blocked);
     CHECK(strlen(c2.profile_pic.url) == 0);
 
-    CHECK((*last_store).pubkey ==
+    REQUIRE(store_records.size() == 1);
+    REQUIRE(send_records.size() == 1);
+    CHECK(store_records[0].pubkey ==
           "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46");
-    CHECK((*last_send).pubkey ==
+    CHECK(send_records[0].pubkey ==
           "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61"
           "f46");
     CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONTACTS) == 1);
 
     state_object* state2;
     REQUIRE(state_init(&state2, ed_sk.data(), nullptr, 0, nullptr));
-    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
-    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&store_records_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&send_records_2));
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send->payload);
+    auto last_send_json = nlohmann::json::parse(send_records[0].payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
@@ -321,8 +323,8 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
 
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
-    last_send->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
+    send_records[0].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
 
     contacts_contact c3;
     REQUIRE(state_get_contact(state2, &c3, definitely_real_id, nullptr));
@@ -352,7 +354,8 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
             },
             &c4);
 
-    auto last_send_json_2 = nlohmann::json::parse(last_send_2->payload);
+    REQUIRE(send_records_2.size() == 1);
+    auto last_send_json_2 = nlohmann::json::parse(send_records_2[0].payload);
     REQUIRE(last_send_json_2.contains(first_request_data));
     auto last_send_data_2 = to_unsigned(
             oxenc::from_base64(last_send_json_2[first_request_data].get<std::string>()));
@@ -370,8 +373,8 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     free(merge_data);
 
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash2\"}}]}");
-    last_send_2->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send_2->callback_context);
+    send_records_2[0].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records_2[0].callback_context);
 
     auto messages_key = nlohmann::json::json_pointer("/params/requests/1/params/messages");
     REQUIRE(last_send_json_2.contains(messages_key));

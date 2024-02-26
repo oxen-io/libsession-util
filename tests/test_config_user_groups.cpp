@@ -581,13 +581,13 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     char err[256];
     state_object* state;
     REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
-    std::optional<last_store_data> last_store = std::nullopt;
-    std::optional<last_send_data> last_send = std::nullopt;
-    std::optional<last_store_data> last_store_2 = std::nullopt;
-    std::optional<last_send_data> last_send_2 = std::nullopt;
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    std::vector<last_store_data> store_records_2;
+    std::vector<last_send_data> send_records_2;
 
-    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
-    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
 
     constexpr auto definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000";
@@ -691,17 +691,19 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     CHECK(hashes->len == 0);
     free(hashes);
 
-    CHECK((*last_store).pubkey ==
+    REQUIRE(store_records.size() == 1);
+    REQUIRE(send_records.size() == 1);
+    CHECK(store_records[0].pubkey ==
           "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3a72");
-    CHECK((*last_send).pubkey ==
+    CHECK(send_records[0].pubkey ==
           "05d2ad010eeb72d72e561d9de7bd7b6989af77dcabffa03a5111a6c859ae5c3"
           "a72");
 
     CHECK(state_current_seqno(state, nullptr, NAMESPACE_USER_GROUPS) == 1);
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
-    last_send->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
+    send_records[0].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
 
     REQUIRE(state_current_hashes(state, nullptr, &hashes));
     REQUIRE(hashes);
@@ -717,11 +719,11 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
 
     state_object* state2;
     REQUIRE(state_init(&state2, ed_sk.data(), nullptr, 0, nullptr));
-    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
-    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&store_records_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&send_records_2));
 
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send->payload);
+    auto last_send_json = nlohmann::json::parse(send_records[0].payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));

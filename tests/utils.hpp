@@ -116,11 +116,12 @@ inline void c_store_callback(
         const unsigned char* data,
         size_t data_len,
         void* ctx) {
-    *static_cast<std::optional<last_store_data>*>(ctx) = last_store_data{
+    static_cast<std::vector<last_store_data>*>(ctx)->emplace_back(
+        last_store_data{
             static_cast<session::config::Namespace>(namespace_),
             {pubkey, 66},
             timestamp_ms,
-            {data, data_len}};
+            {data, data_len}});
 }
 
 inline void c_send_callback(
@@ -135,6 +136,6 @@ inline void c_send_callback(
                 void* callback_context),
         void* app_ctx,
         void* callback_context) {
-    *static_cast<std::optional<last_send_data>*>(app_ctx) =
-            last_send_data{{pubkey, 66}, {data, data_len}, response_cb, app_ctx, callback_context};
+    static_cast<std::vector<last_send_data>*>(app_ctx)->emplace_back(
+            last_send_data{{pubkey, 66}, {data, data_len}, response_cb, app_ctx, callback_context});
 }

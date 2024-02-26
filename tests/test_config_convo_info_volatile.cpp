@@ -253,13 +253,13 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     memset(err, 0, 255);
     state_object* state;
     REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
-    std::optional<last_store_data> last_store = std::nullopt;
-    std::optional<last_send_data> last_send = std::nullopt;
-    std::optional<last_store_data> last_store_2 = std::nullopt;
-    std::optional<last_send_data> last_send_2 = std::nullopt;
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    std::vector<last_store_data> store_records_2;
+    std::vector<last_send_data> send_records_2;
 
-    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
-    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
 
     const char* const definitely_real_id =
             "055000000000000000000000000000000000000000000000000000000000000000";
@@ -345,24 +345,26 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 1);
 
     // Pretend we uploaded it
+    REQUIRE(send_records.size() == 1);
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash1\"}}]}");
-    last_send->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
+    send_records[0].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
 
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
 
+    REQUIRE(store_records.size() == 2);
     state_namespaced_dump* dumps = new state_namespaced_dump[1];
     dumps[0] = {
-            static_cast<NAMESPACE>((*last_store).namespace_),
-            (*last_store).pubkey.c_str(),
-            (*last_store).data.data(),
-            (*last_store).data.size()};
+            static_cast<NAMESPACE>(store_records[1].namespace_),
+            store_records[1].pubkey.c_str(),
+            store_records[1].data.data(),
+            store_records[1].data.size()};
     state_object* state2;
     REQUIRE(state_init(&state2, ed_sk.data(), dumps, 1, nullptr));
-    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
-    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&store_records_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&send_records_2));
     free(dumps);
 
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
@@ -409,8 +411,9 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
     CHECK(state_current_seqno(state2, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 2);
 
+    REQUIRE(send_records_2.size() == 1);
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send_2->payload);
+    auto last_send_json = nlohmann::json::parse(send_records_2[0].payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
@@ -429,8 +432,8 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     free(merge_data);
 
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash123\"}}]}");
-    last_send_2->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send_2->callback_context);
+    send_records_2[0].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records_2[0].callback_context);
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
 
     std::vector<std::string> seen;
@@ -651,13 +654,13 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     char err[256];
     state_object* state;
     REQUIRE(state_init(&state, ed_sk.data(), nullptr, 0, err));
-    std::optional<last_store_data> last_store = std::nullopt;
-    std::optional<last_send_data> last_send = std::nullopt;
-    std::optional<last_store_data> last_store_2 = std::nullopt;
-    std::optional<last_send_data> last_send_2 = std::nullopt;
+    std::vector<last_store_data> store_records;
+    std::vector<last_send_data> send_records;
+    std::vector<last_store_data> store_records_2;
+    std::vector<last_send_data> send_records_2;
 
-    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&last_store));
-    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&last_send));
+    state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+    state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
 
     convo_info_volatile_1to1 c;
     CHECK(state_get_or_construct_convo_info_volatile_1to1(
@@ -674,23 +677,25 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
             &c);
 
     // Fake push:
+    REQUIRE(send_records.size() == 1);
     CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 1);
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"somehash\"}}]}");
-    last_send->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
+    send_records[0].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
 
     // Load the dump:
+    REQUIRE(store_records.size() == 2);
     state_namespaced_dump* dumps = new state_namespaced_dump[1];
     dumps[0] = {
-            static_cast<NAMESPACE>((*last_store).namespace_),
-            (*last_store).pubkey.c_str(),
-            (*last_store).data.data(),
-            (*last_store).data.size()};
+            static_cast<NAMESPACE>(store_records[1].namespace_),
+            store_records[1].pubkey.c_str(),
+            store_records[1].data.data(),
+            store_records[1].data.size()};
     state_object* state2;
     REQUIRE(state_init(&state2, ed_sk.data(), dumps, 1, nullptr));
-    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&last_store_2));
-    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&last_send_2));
+    state_set_store_callback(state2, c_store_callback, reinterpret_cast<void*>(&store_records_2));
+    state_set_send_callback(state2, c_send_callback, reinterpret_cast<void*>(&send_records_2));
     free(dumps);
 
     // Change the original again, then push it for conf2:
@@ -710,10 +715,11 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
             },
             &c);
 
+    REQUIRE(send_records.size() == 2);
     CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 2);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash5235\"}}]}");
-    last_send->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send->callback_context);
+    send_records[1].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records[1].callback_context);
 
     // But *before* we load the push make a dirtying change to conf2 that we *don't* push (so that
     // we'll be merging into a dirty-state config):
@@ -735,7 +741,7 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
 
     // And now, *before* we push the dirty config, also merge the incoming push from `state`:
     auto first_request_data = nlohmann::json::json_pointer("/params/requests/0/params/data");
-    auto last_send_json = nlohmann::json::parse(last_send->payload);
+    auto last_send_json = nlohmann::json::parse(send_records[1].payload);
     REQUIRE(last_send_json.contains(first_request_data));
     auto last_send_data =
             to_unsigned(oxenc::from_base64(last_send_json[first_request_data].get<std::string>()));
@@ -773,11 +779,12 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
             },
             &c1);
 
+    REQUIRE(send_records_2.size() == 3);
     CHECK(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
     CHECK(state_current_seqno(state2, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 4);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hashz\"}}]}");
-    last_send_2->response_cb(
-            true, 200, send_response.data(), send_response.size(), last_send_2->callback_context);
+    send_records_2[2].response_cb(
+            true, 200, send_response.data(), send_response.size(), send_records_2[2].callback_context);
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_dump());
 }
