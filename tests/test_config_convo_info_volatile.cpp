@@ -349,7 +349,11 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash1\"}}]}");
     send_records[0].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records[0].callback_context);
 
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_dump());
@@ -433,7 +437,11 @@ TEST_CASE("Conversations (C API)", "[config][conversations][c]") {
 
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash123\"}}]}");
     send_records_2[0].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records_2[0].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records_2[0].callback_context);
     CHECK_FALSE(session::state::unbox(state).config<config::ConvoInfoVolatile>().needs_push());
 
     std::vector<std::string> seen;
@@ -682,7 +690,11 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"somehash\"}}]}");
     send_records[0].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records[0].callback_context);
 
     // Load the dump:
     REQUIRE(store_records.size() == 2);
@@ -719,7 +731,11 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     CHECK(state_current_seqno(state, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 2);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hash5235\"}}]}");
     send_records[1].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records[1].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records[1].callback_context);
 
     // But *before* we load the push make a dirtying change to conf2 that we *don't* push (so that
     // we'll be merging into a dirty-state config):
@@ -784,7 +800,11 @@ TEST_CASE("Conversation dump/load state bug", "[config][conversations][dump-load
     CHECK(state_current_seqno(state2, nullptr, NAMESPACE_CONVO_INFO_VOLATILE) == 4);
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"hashz\"}}]}");
     send_records_2[2].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records_2[2].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records_2[2].callback_context);
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_push());
     CHECK_FALSE(session::state::unbox(state2).config<config::ConvoInfoVolatile>().needs_dump());
 }

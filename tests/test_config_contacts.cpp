@@ -324,7 +324,11 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
     send_records[0].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records[0].callback_context);
 
     contacts_contact c3;
     REQUIRE(state_get_contact(state2, &c3, definitely_real_id, nullptr));
@@ -374,7 +378,11 @@ TEST_CASE("State contacts (C API)", "[state][contacts][c]") {
 
     send_response = to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash2\"}}]}");
     send_records_2[0].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records_2[0].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records_2[0].callback_context);
 
     auto messages_key = nlohmann::json::json_pointer("/params/requests/1/params/messages");
     REQUIRE(last_send_json_2.contains(messages_key));

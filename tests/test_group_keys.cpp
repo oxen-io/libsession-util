@@ -580,7 +580,8 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                 user_secret_key{sk_from_seed(user_seed)} {
             char err[256];
             REQUIRE(state_init(&state, user_secret_key.data(), nullptr, 0, err));
-            state_set_store_callback(state, c_store_callback, reinterpret_cast<void*>(&store_records));
+            state_set_store_callback(
+                    state, c_store_callback, reinterpret_cast<void*>(&store_records));
             state_set_send_callback(state, c_send_callback, reinterpret_cast<void*>(&send_records));
 
             // If we already have a group then just "approve" it
@@ -782,7 +783,7 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
         CHECK(accepted->value[2] == "fakehash3"sv);
         free(accepted);
     }
-    
+
     // Due to the 'load_admin_key' behaviour admin2 will contain both admin1 and admin2
     REQUIRE(state_size_group_members(admin1.state, admin1.group_id.c_str()) == 2);
     REQUIRE(state_size_group_members(admin2.state, admin2.group_id.c_str()) == 3);
@@ -817,9 +818,15 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
     free(merge_data_no_keys);
     free(merge_data);
 
-    CHECK_FALSE(session::state::unbox(admin1.state).config<groups::Info>(admin1.group_id).needs_push());
-    CHECK_FALSE(session::state::unbox(admin1.state).config<groups::Members>(admin1.group_id).needs_push());
-    CHECK_FALSE(session::state::unbox(admin1.state).config<groups::Keys>(admin1.group_id).pending_config().has_value());
+    CHECK_FALSE(
+            session::state::unbox(admin1.state).config<groups::Info>(admin1.group_id).needs_push());
+    CHECK_FALSE(session::state::unbox(admin1.state)
+                        .config<groups::Members>(admin1.group_id)
+                        .needs_push());
+    CHECK_FALSE(session::state::unbox(admin1.state)
+                        .config<groups::Keys>(admin1.group_id)
+                        .pending_config()
+                        .has_value());
 
     std::vector<state_group_member> new_members;
     new_members.reserve(members.size());
@@ -843,11 +850,9 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
             true,
             new_members.data(),
             new_members.size(),
-            [](const char* error, size_t error_len, void* ctx) {
-                REQUIRE(error_len == 0);
-            },
+            [](const char* error, size_t error_len, void* ctx) { REQUIRE(error_len == 0); },
             nullptr);
-    
+
     REQUIRE(admin1.send_records.size() == 4);
     send_response = session::to_unsigned(
             "{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash4\"}},{\"code\":200,"
@@ -882,7 +887,8 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
             last_send_data_1.data(),
             last_send_data_1.size()};
 
-    /*  Admins will store the hash for supplemental keys messages but won't actually consider them merged so the 'accepted' array won't contain the hash */
+    /*  Admins will store the hash for supplemental keys messages but won't actually consider them
+     * merged so the 'accepted' array won't contain the hash */
     for (auto& a : admins) {
         session_string_list* accepted;
         REQUIRE(state_merge(a.state, a.group_id.c_str(), merge_data, 2, &accepted));

@@ -1,18 +1,18 @@
 #include <oxenc/base64.h>
+#include <sodium/crypto_sign_ed25519.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
-#include <sodium/crypto_sign_ed25519.h>
 
 #include "session/config/contacts.h"
+#include "session/config/groups/members.h"
 #include "session/config/namespaces.hpp"
+#include "session/config/user_groups.h"
 #include "session/config/user_profile.h"
 #include "session/config/user_profile.hpp"
-#include "session/config/user_groups.h"
-#include "session/config/groups/members.h"
 #include "session/state.h"
-#include "session/state_groups.h"
 #include "session/state.hpp"
+#include "session/state_groups.h"
 #include "utils.hpp"
 
 using namespace std::literals;
@@ -38,7 +38,7 @@ static ustring send_response(std::vector<std::string_view> hashes) {
 
     for (auto& hash : hashes)
         result += "{\"code\":200,\"body\":{\"hash\":\"" + std::string(hash) + "\"}},";
-    
+
     if (!hashes.empty())
         result.pop_back();  // Remove last comma
 
@@ -125,7 +125,8 @@ TEST_CASE("State", "[state][state]") {
           "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") ==
           "8862834829a87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserProfile));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserProfile));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "") ==
           "CAESqwMKABIAGqIDCAYoAUKbA02D9u45MzHN7luC80geUgdkpzPP8LNtakE7og80impxF++vn+"
           "piV1rPki0Quo5Zp34MwwdZXqMFEwRpKGZJwpFPSre6jln5XlmH8tnq8djJo/"
@@ -144,11 +145,7 @@ TEST_CASE("State", "[state][state]") {
     // Confirm the push
     ustring send_res = send_response({"fakehash1"});
     REQUIRE(send_records[0].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[0].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[0].callback_context));
     CHECK(store_records.size() == 2);  // Should call store after confirming the push
     CHECK_FALSE(state.config<UserProfile>().needs_push());
 
@@ -219,7 +216,8 @@ TEST_CASE("State", "[state][state]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "").substr(0, 2) == "03");
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 5324);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -227,7 +225,8 @@ TEST_CASE("State", "[state][state]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/1/params/pubkey"), "").substr(0, 2) == "03");
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/1/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupInfo));
     CHECK(send_data.value(json_ptr("/params/requests/1/params/data"), "").size() == 684);
     CHECK(send_data.value(json_ptr("/params/requests/1/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/1/params/timestamp")));
@@ -235,7 +234,8 @@ TEST_CASE("State", "[state][state]") {
     CHECK(send_data.value(json_ptr("/params/requests/2/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/2/params/pubkey"), "").substr(0, 2) == "03");
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/2/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     CHECK(send_data.value(json_ptr("/params/requests/2/params/data"), "").size() == 684);
     CHECK(send_data.value(json_ptr("/params/requests/2/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/2/params/timestamp")));
@@ -245,11 +245,7 @@ TEST_CASE("State", "[state][state]") {
     CHECK(store_records.size() == 2);  // Not stored until we process a success response
     send_res = send_response({"fakehash2", "fakehash3", "fakehash4"});
     REQUIRE(send_records[1].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[1].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[1].callback_context));
     CHECK(store_records.size() == 6);
     CHECK(store_records[2].namespace_ == Namespace::UserGroups);
     CHECK(store_records[3].namespace_ == Namespace::GroupKeys);
@@ -292,18 +288,15 @@ TEST_CASE("State", "[state][state]") {
           "0577cb6c50ed49a2c45e383ac3ca855375c68300f7ff0c803ea93cb18437d61f46");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") ==
           "8862834829a87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserGroups));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
     send_res = send_response({"fakehash5"});
     REQUIRE(send_records[2].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[2].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[2].callback_context));
 
     REQUIRE(state.config<UserGroups>().size_groups() == 1);
     auto member4_sid = "050a41669a06c098f22633aee2eba03764ef6813bd4f770a3a2b9033b868ca470d";
@@ -338,7 +331,8 @@ TEST_CASE("State", "[state][state]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == group.id);
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 264);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -346,7 +340,8 @@ TEST_CASE("State", "[state][state]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/1/params/pubkey"), "") == group.id);
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/1/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     CHECK(send_data.value(json_ptr("/params/requests/1/params/data"), "").size() == 684);
     CHECK(send_data.value(json_ptr("/params/requests/1/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/1/params/timestamp")));
@@ -361,11 +356,7 @@ TEST_CASE("State", "[state][state]") {
 
     send_res = send_response({"fakehash5", "fakehash6"});
     REQUIRE(send_records[3].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[3].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[3].callback_context));
 }
 
 TEST_CASE("State", "[state][state][merge failure behaviour]") {
@@ -390,11 +381,7 @@ TEST_CASE("State", "[state][state][merge failure behaviour]") {
     CHECK(store_records.size() == 1);
     ustring send_res = send_response({"fakehash1"});
     REQUIRE(send_records[0].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[0].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[0].callback_context));
     CHECK(store_records.size() == 2);
 
     // Merge into state2 so they are consistent
@@ -416,11 +403,7 @@ TEST_CASE("State", "[state][state][merge failure behaviour]") {
     CHECK(store_records_2.size() == 2);
     send_res = send_response({"fakehash2"});
     REQUIRE(send_records_2[0].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[0].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[0].callback_context));
     CHECK(store_records.size() == 2);
 
     state2.mutable_config().user_profile.set_name("Test Name2");
@@ -428,11 +411,7 @@ TEST_CASE("State", "[state][state][merge failure behaviour]") {
     CHECK(store_records_2.size() == 4);
     send_res = send_response({"fakehash3"});
     REQUIRE(send_records_2[1].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[1].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[1].callback_context));
     CHECK(store_records_2.size() == 5);
     REQUIRE(state2.config<UserProfile>().get_name().has_value());
     CHECK(*state2.config<UserProfile>().get_name() == "Test Name2");
@@ -452,14 +431,11 @@ TEST_CASE("State", "[state][state][merge failure behaviour]") {
             to_unsigned(oxenc::from_base64(
                     send_data[json_ptr("/params/requests/0/params/data")].get<std::string>())));
     to_merge.emplace_back(
-            Namespace::UserProfile,
-            "fakehash3",
-            3000000000000,
-            to_unsigned(invalid_payload));
+            Namespace::UserProfile, "fakehash3", 3000000000000, to_unsigned(invalid_payload));
     merge_result = state.merge(std::nullopt, to_merge);
     REQUIRE(merge_result.size() == 1);
     CHECK(merge_result[0] == "fakehash2");
-    CHECK(send_records.size() == 1);    // Unchanged
+    CHECK(send_records.size() == 1);  // Unchanged
     REQUIRE(state.config<UserProfile>().get_name().has_value());
     CHECK(*state.config<UserProfile>().get_name() == "Test Name");
     REQUIRE(store_records.size() == 3);
@@ -470,14 +446,11 @@ TEST_CASE("State", "[state][state][merge failure behaviour]") {
     CHECK(store_records.size() == 3);
     to_merge.clear();
     to_merge.emplace_back(
-            Namespace::UserProfile,
-            "fakehash3",
-            3000000000000,
-            to_unsigned(invalid_payload));
+            Namespace::UserProfile, "fakehash3", 3000000000000, to_unsigned(invalid_payload));
     merge_result = state.merge(std::nullopt, to_merge);
     CHECK(merge_result.size() == 0);
-    CHECK(send_records.size() == 1);    // Unchanged
-    CHECK(store_records.size() == 3);    // Unchanged
+    CHECK(send_records.size() == 1);   // Unchanged
+    CHECK(store_records.size() == 3);  // Unchanged
 }
 
 TEST_CASE("State", "[state][state][merge key conflict]") {
@@ -486,7 +459,8 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
             "87e0afadfed763fa8785e893dbde7f2c001ff1071aa55005c347f"_hexbytes;
     const ustring admin2_seed =
             "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"_hexbytes;
-    const std::string admin2_sid = "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e";
+    const std::string admin2_sid =
+            "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e";
     const std::array member_seeds = {
             "05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628",  // member1
             "053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c",  // member2
@@ -525,36 +499,30 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
             [&state](
                     std::string_view group_id,
                     ustring_view group_sk,
-                    std::optional<std::string> error) {
-                REQUIRE_FALSE(error.has_value());
-            });
+                    std::optional<std::string> error) { REQUIRE_FALSE(error.has_value()); });
 
     REQUIRE(send_records.size() == 1);
     auto send_data = nlohmann::json::parse(send_records[0].payload);
     REQUIRE(send_data[json_ptr("/params/requests")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 3);
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
-    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     ustring send_res = send_response({"fakehash1", "fakehash2", "fakehash3"});
     REQUIRE(send_records[0].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[0].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[0].callback_context));
     REQUIRE(send_records.size() == 2);  // Group added to UserGroups
     send_data = nlohmann::json::parse(send_records[1].payload);
     REQUIRE(send_data[json_ptr("/params/requests")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 1);
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserGroups));
     send_res = send_response({"fakehash4"});
     REQUIRE(send_records[1].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[1].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[1].callback_context));
     REQUIRE(state.config<UserGroups>().size_groups() == 1);
     auto group = *state.config<UserGroups>().begin_groups();
 
@@ -570,7 +538,7 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     auto merge_result = state.merge(group.id, to_merge);
     REQUIRE(merge_result.size() == 1);
     CHECK(merge_result[0] == "fakehash1");
-    CHECK(send_records.size() == 2);    // Unchanged
+    CHECK(send_records.size() == 2);  // Unchanged
 
     // Load the group for admin2
     state_admin_2.approve_group(group.id);
@@ -581,20 +549,19 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 1);
     CHECK(send_data.value("method", "") == "sequence");
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") == "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") ==
+          "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") ==
+          "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserGroups));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
     send_res = send_response({"fakehash5"});
     REQUIRE(send_records_2[0].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[0].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[0].callback_context));
     REQUIRE(send_records_2.size() == 1);  // Unchanged
 
     send_data = nlohmann::json::parse(send_records[0].payload);
@@ -637,9 +604,12 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 2);
     CHECK(send_data.value("method", "") == "sequence");
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") == "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") ==
+          "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") ==
+          "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserGroups));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -649,11 +619,7 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/params/messages/0"), "") == "fakehash5");
     send_res = send_response({"fakehash6"});
     REQUIRE(send_records_2[1].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[1].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[1].callback_context));
 
     // Member flagged as an admin
     send_data = nlohmann::json::parse(send_records_2[2].payload);
@@ -664,7 +630,8 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == group.id);
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 684);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -674,11 +641,7 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/params/messages/0"), "") == "fakehash3");
     send_res = send_response({"fakehash7"});
     REQUIRE(send_records_2[2].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[2].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[2].callback_context));
     REQUIRE(send_records_2.size() == 3);  // Unchanged
     REQUIRE(state_admin_2.config<groups::Keys>(group.id).admin());
 
@@ -712,9 +675,12 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     send_data = nlohmann::json::parse(send_records[2].payload);
     REQUIRE(send_data[json_ptr("/params/requests")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 4);
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
-    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     REQUIRE(send_data[json_ptr("/params/requests/3/params/messages")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests/3/params/messages")].size() == 3);
     CHECK(send_data.value(json_ptr("/params/requests/3/params/messages/0"), "") == "fakehash2");
@@ -722,12 +688,8 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     CHECK(send_data.value(json_ptr("/params/requests/3/params/messages/2"), "") == "fakehash3");
     send_res = send_response({"fakehash8", "fakehash9", "fakehash10"});
     REQUIRE(send_records[2].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[2].callback_context));
-    
+            true, 200, send_res.data(), send_res.size(), send_records[2].callback_context));
+
     // Group keys aren't finalised until they have been retrieved and merged in
     to_merge.clear();
     send_data = nlohmann::json::parse(send_records[2].payload);
@@ -740,27 +702,26 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     merge_result = state.merge(group.id, to_merge);
     REQUIRE(merge_result.size() == 1);
     CHECK(merge_result[0] == "fakehash8");
-    CHECK(send_records.size() == 3);    // Unchanged
+    CHECK(send_records.size() == 3);  // Unchanged
 
     REQUIRE(send_records_2.size() == 4);
     send_data = nlohmann::json::parse(send_records_2[3].payload);
     REQUIRE(send_data[json_ptr("/params/requests")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 4);
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
-    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     REQUIRE(send_data[json_ptr("/params/requests/3/params/messages")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests/3/params/messages")].size() == 2);
     CHECK(send_data.value(json_ptr("/params/requests/3/params/messages/0"), "") == "fakehash2");
     CHECK(send_data.value(json_ptr("/params/requests/3/params/messages/1"), "") == "fakehash7");
     send_res = send_response({"fakehash11", "fakehash12", "fakehash13"});
     REQUIRE(send_records_2[3].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[3].callback_context));
-    
+            true, 200, send_res.data(), send_res.size(), send_records_2[3].callback_context));
+
     // Group keys aren't finalised until they have been retrieved and merged in
     to_merge.clear();
     send_data = nlohmann::json::parse(send_records_2[3].payload);
@@ -773,13 +734,14 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     merge_result = state_admin_2.merge(group.id, to_merge);
     REQUIRE(merge_result.size() == 1);
     CHECK(merge_result[0] == "fakehash11");
-    CHECK(send_records_2.size() == 4);    // Unchanged
+    CHECK(send_records_2.size() == 4);  // Unchanged
 
     // Both configs are one the same generation (with a conflict)
     REQUIRE(state.config<groups::Keys>(group.id).current_generation() == 1);
     REQUIRE(state_admin_2.config<groups::Keys>(group.id).current_generation() == 1);
 
-    // Merge the changes from admin2 across to admin1 (the merge function should handle the conflict)
+    // Merge the changes from admin2 across to admin1 (the merge function should handle the
+    // conflict)
     send_data = nlohmann::json::parse(send_records_2[3].payload);
     REQUIRE(send_data.contains(json_ptr("/params/requests")));
     REQUIRE(send_data[json_ptr("/params/requests")].is_array());
@@ -809,16 +771,20 @@ TEST_CASE("State", "[state][state][merge key conflict]") {
     CHECK(merge_result[0] == "fakehash11");
     CHECK(merge_result[1] == "fakehash12");
     CHECK(merge_result[2] == "fakehash13");
-    
-    // Admin1 should have performed a rekey as part of the merge (updating each of the group configs)
+
+    // Admin1 should have performed a rekey as part of the merge (updating each of the group
+    // configs)
     REQUIRE(send_records.size() == 4);
     send_data = nlohmann::json::parse(send_records[3].payload);
     REQUIRE(send_data.contains(json_ptr("/params/requests")));
     REQUIRE(send_data[json_ptr("/params/requests")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 4);
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
-    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     REQUIRE(send_data[json_ptr("/params/requests/3/params/messages")].is_array());
     REQUIRE(send_data[json_ptr("/params/requests/3/params/messages")].size() == 4);
     CHECK(send_data.value(json_ptr("/params/requests/3/params/messages/0"), "") == "fakehash9");
@@ -899,24 +865,28 @@ TEST_CASE("State c API", "[state][state][c]") {
     strcpy(pic.url, "http://example.com/huge.bmp");
     memcpy(pic.key, "qwerty78901234567890123456789012", 32);
     auto members = new state_group_member[3];
-    members[0] = state_group_member{"05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628", "Member 0"};
-    members[1] = state_group_member{"053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c", "Member 1"};
-    members[2] = state_group_member{"05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e", "Admin 2"};
+    members[0] = state_group_member{
+            "05ece06dd8e02fb2f7d9497f956a1996e199953c651f4016a2f79a3b3e38d55628", "Member 0"};
+    members[1] = state_group_member{
+            "053ac269b71512776b0bd4a1234aaf93e67b4e9068a2c252f3b93a20acb590ae3c", "Member 1"};
+    members[2] = state_group_member{
+            "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e", "Admin 2"};
 
     state_create_group(
-        state,
-        "TestName",
-        8,
-        "TestDesc",
-        8,
-        pic,
-        members,
-        3,
-        [](const char* group_id, unsigned const char* group_sk, const char* error, const size_t error_len, void* ctx) {
-            REQUIRE(error_len == 0);
-        },
-        nullptr
-    );
+            state,
+            "TestName",
+            8,
+            "TestDesc",
+            8,
+            pic,
+            members,
+            3,
+            [](const char* group_id,
+               unsigned const char* group_sk,
+               const char* error,
+               const size_t error_len,
+               void* ctx) { REQUIRE(error_len == 0); },
+            nullptr);
     free(members);
 
     REQUIRE(send_records.size() == 4);
@@ -928,7 +898,8 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "").substr(0, 2) == "03");
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 5324);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -936,7 +907,8 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/1/params/pubkey"), "").substr(0, 2) == "03");
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/1/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupInfo));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupInfo));
     CHECK(send_data.value(json_ptr("/params/requests/1/params/data"), "").size() == 684);
     CHECK(send_data.value(json_ptr("/params/requests/1/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/1/params/timestamp")));
@@ -944,7 +916,8 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/2/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/2/params/pubkey"), "").substr(0, 2) == "03");
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/2/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/2/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     CHECK(send_data.value(json_ptr("/params/requests/2/params/data"), "").size() == 684);
     CHECK(send_data.value(json_ptr("/params/requests/2/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/2/params/timestamp")));
@@ -954,11 +927,7 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(store_records.size() == 3);  // Not stored until we process a success response
     auto send_res = send_response({"fakehash2", "fakehash3", "fakehash4"});
     REQUIRE(send_records[3].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[3].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[3].callback_context));
     CHECK(store_records.size() == 7);
     CHECK(store_records[3].namespace_ == Namespace::UserGroups);
     CHECK(store_records[4].namespace_ == Namespace::GroupKeys);
@@ -1015,10 +984,16 @@ TEST_CASE("State c API", "[state][state][c]") {
 
     // Check that the supplemental rotation calls everything correctly
     members = new state_group_member[1];
-    members[0] = state_group_member{"05a2b03abdda4df8316f9d7aed5d2d1e483e9af269d0b39191b08321b8495bc118"};
-    state_add_group_members(state, gid.c_str(), true, members, 1, [](const char* error, size_t error_len, void* ctx){
-        REQUIRE(error_len == 0);
-    }, nullptr);
+    members[0] = state_group_member{
+            "05a2b03abdda4df8316f9d7aed5d2d1e483e9af269d0b39191b08321b8495bc118"};
+    state_add_group_members(
+            state,
+            gid.c_str(),
+            true,
+            members,
+            1,
+            [](const char* error, size_t error_len, void* ctx) { REQUIRE(error_len == 0); },
+            nullptr);
     free(members);
 
     REQUIRE(send_records.size() == 6);
@@ -1030,7 +1005,8 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == gid);
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupKeys));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupKeys));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 264);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -1038,7 +1014,8 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/1/params/pubkey"), "") == gid);
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/1/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/1/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     CHECK(send_data.value(json_ptr("/params/requests/1/params/data"), "").size() == 1024);
     CHECK(send_data.value(json_ptr("/params/requests/1/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/1/params/timestamp")));
@@ -1053,11 +1030,7 @@ TEST_CASE("State c API", "[state][state][c]") {
 
     send_res = send_response({"fakehash5", "fakehash6"});
     REQUIRE(send_records[5].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records[5].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records[5].callback_context));
 
     // Load the group for admin2
     state_approve_group(state2, gid.c_str());
@@ -1068,20 +1041,19 @@ TEST_CASE("State c API", "[state][state][c]") {
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 1);
     CHECK(send_data.value("method", "") == "sequence");
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") == "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") ==
+          "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") ==
+          "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserGroups));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/ttl"), 0L) == 2592000000);
     send_res = send_response({"fakehash5"});
     REQUIRE(send_records_2[0].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[0].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[0].callback_context));
     REQUIRE(send_records_2.size() == 1);  // Unchanged
 
     send_data = nlohmann::json::parse(send_records[3].payload);
@@ -1127,9 +1099,12 @@ TEST_CASE("State c API", "[state][state][c]") {
     REQUIRE(send_data[json_ptr("/params/requests")].size() == 2);
     CHECK(send_data.value("method", "") == "sequence");
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") == "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::UserGroups));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") ==
+          "05c5ba413c336f2fe1fb9a2c525f8a86a412a1db128a7841b4e0e217fa9eb7fd5e");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey_ed25519"), "") ==
+          "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b");
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::UserGroups));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 576);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -1139,11 +1114,7 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/params/messages/0"), "") == "fakehash5");
     send_res = send_response({"fakehash6"});
     REQUIRE(send_records_2[1].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[1].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[1].callback_context));
 
     // Member flagged as an admin
     send_data = nlohmann::json::parse(send_records_2[2].payload);
@@ -1154,7 +1125,8 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/0/method"), "") == "store");
     CHECK(send_data.value(json_ptr("/params/requests/0/params/pubkey"), "") == gid);
     CHECK_FALSE(send_data.contains(json_ptr("/params/requests/0/params/pubkey_ed25519")));
-    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) == static_cast<int>(Namespace::GroupMembers));
+    CHECK(send_data.value(json_ptr("/params/requests/0/params/namespace"), 0) ==
+          static_cast<int>(Namespace::GroupMembers));
     CHECK(send_data.value(json_ptr("/params/requests/0/params/data"), "").size() == 1024);
     CHECK(send_data.value(json_ptr("/params/requests/0/params/signature"), "").size() == 88);
     CHECK(send_data.contains(json_ptr("/params/requests/0/params/timestamp")));
@@ -1164,11 +1136,7 @@ TEST_CASE("State c API", "[state][state][c]") {
     CHECK(send_data.value(json_ptr("/params/requests/1/params/messages/0"), "") == "fakehash4");
     send_res = send_response({"fakehash7"});
     REQUIRE(send_records_2[2].response_cb(
-            true,
-            200,
-            send_res.data(),
-            send_res.size(),
-            send_records_2[2].callback_context));
+            true, 200, send_res.data(), send_res.size(), send_records_2[2].callback_context));
     REQUIRE(send_records_2.size() == 3);  // Unchanged
     REQUIRE(unbox(state2).config<groups::Keys>(gid).admin());
 }

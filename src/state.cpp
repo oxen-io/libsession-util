@@ -471,7 +471,10 @@ PreparedPush State::prepare_push(
 
     for (auto& request : sorted_requests) {
         push_info.push_back(
-                {true, true, request["namespace"].get<Namespace>(), request["seqno"].get<seqno_t>()});
+                {true,
+                 true,
+                 request["namespace"].get<Namespace>(),
+                 request["seqno"].get<seqno_t>()});
         request.erase("seqno");  // Erase the 'seqno' as it shouldn't be in the request payload
 
         nlohmann::json request_json{{"method", "store"}, {"params", request}};
@@ -1094,6 +1097,7 @@ void State::create_group(
                   cb(gid, secretkey, std::nullopt);
               } catch (const std::exception& e) {
                   cb(""sv, ""_usv, e.what());
+                  throw;
               }
           });
 }
@@ -1179,9 +1183,8 @@ void State::add_group_members(
         group->members->set(m);
 
     // Don't bother rotating the keys if there are only admins
-    size_t non_admin_count = std::count_if(members.begin(), members.end(), [](const groups::member& m) {
-        return !m.admin;
-    });
+    size_t non_admin_count = std::count_if(
+            members.begin(), members.end(), [](const groups::member& m) { return !m.admin; });
 
     // If there are non-admins and it's not a supplemental rotation then do a rekey
     if (non_admin_count > 0 && !supplemental_rotation) {
@@ -1194,8 +1197,8 @@ void State::add_group_members(
     std::vector<config::ConfigBase*> configs = {group->info.get(), group->members.get()};
     auto push = prepare_push(gid, timestamp, configs);
 
-    // If there are non-admins and it's a supplemental rotation then we want to include the key supplement within the batch
-    // request we are going to send
+    // If there are non-admins and it's a supplemental rotation then we want to include the key
+    // supplement within the batch request we are going to send
     if (non_admin_count > 0 && supplemental_rotation) {
         std::vector<std::string> sids;
         std::transform(
@@ -1220,7 +1223,8 @@ void State::add_group_members(
         auto updated_requests = updated_payload[requests_ptr];
         updated_requests.insert(updated_requests.begin(), payload_json);
         updated_payload[requests_ptr] = updated_requests;
-        updated_push_info.insert(updated_push_info.begin(), {false, true, Namespace::UserProfile, 0});
+        updated_push_info.insert(
+                updated_push_info.begin(), {false, true, Namespace::UserProfile, 0});
         push = {to_unsigned(updated_payload.dump()), updated_push_info};
     }
 
@@ -1235,6 +1239,7 @@ void State::add_group_members(
                   cb(std::nullopt);
               } catch (const std::exception& e) {
                   cb(e.what());
+                  throw;
               }
           });
 }

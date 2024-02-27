@@ -703,7 +703,11 @@ TEST_CASE("User Groups members C API", "[config][groups][c]") {
     ustring send_response =
             to_unsigned("{\"results\":[{\"code\":200,\"body\":{\"hash\":\"fakehash1\"}}]}");
     send_records[0].response_cb(
-            true, 200, send_response.data(), send_response.size(), send_records[0].callback_context);
+            true,
+            200,
+            send_response.data(),
+            send_response.size(),
+            send_records[0].callback_context);
 
     REQUIRE(state_current_hashes(state, nullptr, &hashes));
     REQUIRE(hashes);

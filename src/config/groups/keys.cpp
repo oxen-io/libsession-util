@@ -551,8 +551,9 @@ std::pair<std::string, ustring> Keys::prepare_supplement_payload(
     // Ed25519 signature of `("store" || namespace || timestamp)`, where namespace and
     // `timestamp` are the base10 expression of the namespace and `timestamp` values
     std::array<unsigned char, 64> sig;
-    ustring verification = to_unsigned("store") + static_cast<unsigned char>(storage_namespace()) +
-                           static_cast<unsigned char>(timestamp.count());
+    ustring verification = to_unsigned("store");
+    verification += to_unsigned_sv(std::to_string(static_cast<int>(storage_namespace())));
+    verification += to_unsigned_sv(std::to_string(timestamp.count()));
 
     if (0 !=
         crypto_sign_ed25519_detached(

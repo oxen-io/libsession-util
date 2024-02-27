@@ -116,8 +116,7 @@ inline void c_store_callback(
         const unsigned char* data,
         size_t data_len,
         void* ctx) {
-    static_cast<std::vector<last_store_data>*>(ctx)->emplace_back(
-        last_store_data{
+    static_cast<std::vector<last_store_data>*>(ctx)->emplace_back(last_store_data{
             static_cast<session::config::Namespace>(namespace_),
             {pubkey, 66},
             timestamp_ms,
