@@ -907,9 +907,9 @@ void State::handle_config_push_response(
             std::count_if(push_info.begin(), push_info.end(), [](const PreparedPush::Info& info) {
                 return info.requires_response;
             });
-    if (results.size() != required_response_count)
+    if (results.size() < required_response_count)
         throw std::invalid_argument{
-                "handle_config_push_response: Invalid response - Number of responses doesn't match "
+                "handle_config_push_response: Invalid response - Number of responses smaller than "
                 "the number of requests requiring responses."};
 
     for (int i = 0, n = results.size(); i < n; ++i) {
