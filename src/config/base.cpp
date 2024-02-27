@@ -15,6 +15,7 @@
 #include "internal.hpp"
 #include "session/config/encrypt.hpp"
 #include "session/config/protos.hpp"
+#include "session/errors.hpp"
 #include "session/export.h"
 #include "session/util.hpp"
 
@@ -24,7 +25,7 @@ namespace session::config {
 
 void ConfigBase::set_state(ConfigState s) {
     if (s == ConfigState::Dirty && is_readonly())
-        throw std::runtime_error{"Unable to make changes to a read-only config object"};
+        throw std::runtime_error{Error::READ_ONLY_CONFIG};
 
     if (_state == ConfigState::Clean && !_curr_hash.empty()) {
         _old_hashes.insert(std::move(_curr_hash));

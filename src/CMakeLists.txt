@@ -73,6 +73,7 @@ add_libsession_util_library(config
     config/protos.cpp
     config/user_groups.cpp
     config/user_profile.cpp
+    errors.cpp
     fields.cpp
 )
 
