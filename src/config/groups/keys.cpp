@@ -1453,8 +1453,8 @@ LIBSESSION_C_API bool state_rekey_group(mutable_group_state_object* state) {
         unbox(state).keys.rekey(unbox(state).info, unbox(state).members);
         return true;
     } catch (const std::exception& e) {
-        if (auto set_error = unbox(state).set_error; set_error.has_value())
-            set_error.value()(e.what());
+        if (auto on_error = unbox(state).on_error; on_error.has_value())
+            (*on_error)(e.what());
         return false;
     }
 }

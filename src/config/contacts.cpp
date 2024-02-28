@@ -120,6 +120,7 @@ void contact_info::into(contacts_contact& c) const {
     c.blocked = blocked;
     c.priority = priority;
     c.notifications = static_cast<CONVO_NOTIFY_MODE>(notifications);
+    c.mute_until = mute_until;
     c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
     c.exp_seconds = exp_timer.count();
     if (c.exp_seconds <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
@@ -142,6 +143,7 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     blocked = c.blocked;
     priority = c.priority;
     notifications = static_cast<notify_mode>(c.notifications);
+    mute_until = c.mute_until;
     exp_mode = static_cast<expiration_mode>(c.exp_mode);
     exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
     if (exp_timer <= 0s && exp_mode != expiration_mode::none)

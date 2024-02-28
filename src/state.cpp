@@ -177,19 +177,19 @@ void State::load(
 
     // Reload the specified namespace with the dump
     if (namespace_ == Namespace::GroupInfo) {
-        _config_groups[gid]->info =
+        _config_groups.at(gid)->info =
                 std::make_unique<groups::Info>(pubkey_sv, group_ed25519_secretkey, dump);
-        add_child_logger(_config_groups[gid]->info);
+        add_child_logger(_config_groups.at(gid)->info);
     } else if (namespace_ == Namespace::GroupMembers) {
-        _config_groups[gid]->members =
+        _config_groups.at(gid)->members =
                 std::make_unique<groups::Members>(pubkey_sv, group_ed25519_secretkey, dump);
-        add_child_logger(_config_groups[gid]->members);
+        add_child_logger(_config_groups.at(gid)->members);
     } else if (namespace_ == Namespace::GroupKeys) {
-        auto info = _config_groups[gid]->info.get();
-        auto members = _config_groups[gid]->members.get();
+        auto info = _config_groups.at(gid)->info.get();
+        auto members = _config_groups.at(gid)->members.get();
         auto keys = std::make_unique<groups::Keys>(
                 user_ed25519_secretkey, pubkey_sv, group_ed25519_secretkey, dump, *info, *members);
-        _config_groups[gid]->keys = std::move(keys);
+        _config_groups.at(gid)->keys = std::move(keys);
     } else
         throw std::runtime_error{"Attempted to load unknown namespace"};
 }
@@ -292,8 +292,8 @@ void State::config_changed(
         }
 
         // GroupKeys needs special handling as it's not a `ConfigBase`
-        if (is_group_pubkey && _config_groups[target_pubkey_hex]->keys->needs_dump()) {
-            auto config = _config_groups[target_pubkey_hex]->keys.get();
+        if (is_group_pubkey && _config_groups.at(target_pubkey_hex)->keys->needs_dump()) {
+            auto config = _config_groups.at(target_pubkey_hex)->keys.get();
             sorted_stores.emplace_back(config->storage_namespace(), config->dump());
         }
 
@@ -353,7 +353,7 @@ PreparedPush State::prepare_push(
         if (group_sk)
             memcpy(seckey.data(), group_sk->data(), 64);
         else {
-            auto config = _config_groups[pubkey_hex]->keys.get();
+            auto config = _config_groups.at(pubkey_hex)->keys.get();
             auto user_group = _config_user_groups->get_group(pubkey_hex);
 
             if (!config->admin() || !user_group || user_group->secretkey.empty())
@@ -416,7 +416,7 @@ PreparedPush State::prepare_push(
 
     // GroupKeys needs special handling as it's not a `ConfigBase`
     if (is_group_pubkey) {
-        auto config = _config_groups[pubkey_hex]->keys.get();
+        auto config = _config_groups.at(pubkey_hex)->keys.get();
         auto pending = config->pending_config();
 
         if (pending) {
@@ -811,9 +811,12 @@ ustring State::dump(config::Namespace namespace_, std::optional<std::string_view
     }
 }
 
-std::optional<std::string> extract_error(int status_code, ustring response) {
-    if (response.empty())
-        return std::nullopt;
+std::optional<std::string> extract_error(bool success, int status_code, ustring response) {
+    // If we have an explicit failure and there is no response data then return an error
+    if (!success && response.empty())
+        return "Failed with status code: " + std::to_string(status_code) + ".";
+    else if (response.empty())
+        return std::nullopt;  // An empty response might be valid but we can't parse
 
     std::string response_string = {from_unsigned(response.data()), response.size()};
 
@@ -880,7 +883,7 @@ void State::handle_config_push_response(
         uint16_t status_code,
         ustring response) {
     // If the request failed then just error
-    if (auto error = extract_error(status_code, response); error)
+    if (auto error = extract_error(success, status_code, response); error)
         throw std::runtime_error{*error};
 
     log(LogLevel::debug, "handle_config_push_response: No simple error detected.");
@@ -916,7 +919,7 @@ void State::handle_config_push_response(
                 "the number of requests requiring responses."};
 
     for (int i = 0, n = results.size(); i < n; ++i) {
-        if (!push_info[i].is_config_push)
+        if (push_info.size() <= i || !push_info[i].is_config_push)
             continue;
 
         auto result_code = results[i]["code"].get<int>();
@@ -1017,7 +1020,6 @@ void State::create_group(
     }
 
     // Store the group info
-    assert(_config_groups[group_id]);
     auto& group = _config_groups.at(group_id);
     group->info = std::make_unique<groups::Info>(ed_pk, ed_sk, std::nullopt);
     group->info->set_name(name);
@@ -1188,8 +1190,8 @@ void State::add_group_members(
 
     // If there are non-admins and it's not a supplemental rotation then do a rekey
     if (non_admin_count > 0 && !supplemental_rotation) {
-        auto info = _config_groups[gid]->info.get();
-        auto members = _config_groups[gid]->members.get();
+        auto info = _config_groups.at(gid)->info.get();
+        auto members = _config_groups.at(gid)->members.get();
         group->keys->rekey(*info, *members);
     }
 
@@ -1321,33 +1323,35 @@ const groups::Keys& State::config(std::string_view pubkey_hex) const {
 };
 
 MutableUserConfigs State::mutable_config(
-        std::optional<std::function<void(std::string_view err)>> set_error) {
+        std::optional<std::function<void(std::string_view err)>> on_error) {
     return MutableUserConfigs(
             this,
             *_config_contacts,
             *_config_convo_info_volatile,
             *_config_user_groups,
             *_config_user_profile,
-            set_error);
+            on_error);
 };
 
 MutableUserConfigs::~MutableUserConfigs() {
-    parent_state->config_changed(std::nullopt, true, true, std::nullopt);
+    try {
+        parent_state->config_changed(std::nullopt, true, true, std::nullopt);
+    } catch (const std::exception& e) {
+        if (!on_error)
+            throw;
+
+        (*on_error)(e.what());
+    }
 };
 
 MutableGroupConfigs State::mutable_config(
         std::string_view pubkey_hex,
-        std::optional<std::function<void(std::string_view err)>> set_error) {
+        std::optional<std::function<void(std::string_view err)>> on_error) {
     if (pubkey_hex.size() != 66)
         throw std::invalid_argument{"config: Invalid pubkey_hex - expected 66 bytes"};
 
-    std::string gid = {pubkey_hex.data(), pubkey_hex.size()};
-    return MutableGroupConfigs(
-            *this,
-            *_config_groups[gid]->info,
-            *_config_groups[gid]->members,
-            *_config_groups[gid]->keys,
-            set_error);
+    auto& group = _config_groups.at({pubkey_hex.data(), pubkey_hex.size()});
+    return MutableGroupConfigs(*this, *group->info, *group->members, *group->keys, on_error);
 };
 
 std::chrono::milliseconds MutableGroupConfigs::get_network_offset() const {
@@ -1355,7 +1359,14 @@ std::chrono::milliseconds MutableGroupConfigs::get_network_offset() const {
 };
 
 MutableGroupConfigs::~MutableGroupConfigs() {
-    parent_state.config_changed(info.id, true, true, std::nullopt);
+    try {
+        parent_state.config_changed(info.id, true, true, std::nullopt);
+    } catch (const std::exception& e) {
+        if (!on_error)
+            throw;
+
+        (*on_error)(e.what());
+    }
 };
 
 }  // namespace session::state

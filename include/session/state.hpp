@@ -49,19 +49,19 @@ class MutableUserConfigs {
             session::config::ConvoInfoVolatile& convo_info_volatile,
             session::config::UserGroups& user_groups,
             session::config::UserProfile& user_profile,
-            std::optional<std::function<void(std::string_view err)>> set_error) :
+            std::optional<std::function<void(std::string_view err)>> on_error) :
             parent_state(state),
             contacts(contacts),
             convo_info_volatile(convo_info_volatile),
             user_groups(user_groups),
             user_profile(user_profile),
-            set_error(set_error) {}
+            on_error(on_error) {}
 
     session::config::Contacts& contacts;
     session::config::ConvoInfoVolatile& convo_info_volatile;
     session::config::UserGroups& user_groups;
     session::config::UserProfile& user_profile;
-    std::optional<std::function<void(std::string_view err)>> set_error;
+    std::optional<std::function<void(std::string_view err)>> on_error;
 
     ~MutableUserConfigs();
 };
@@ -76,13 +76,13 @@ class MutableGroupConfigs {
             session::config::groups::Info& info,
             session::config::groups::Members& members,
             session::config::groups::Keys& keys,
-            std::optional<std::function<void(std::string_view err)>> set_error) :
-            parent_state(state), info(info), members(members), keys(keys), set_error(set_error) {}
+            std::optional<std::function<void(std::string_view err)>> on_error) :
+            parent_state(state), info(info), members(members), keys(keys), on_error(on_error) {}
 
     session::config::groups::Info& info;
     session::config::groups::Members& members;
     session::config::groups::Keys& keys;
-    std::optional<std::function<void(std::string_view err)>> set_error;
+    std::optional<std::function<void(std::string_view err)>> on_error;
 
     std::chrono::milliseconds get_network_offset() const;
 
@@ -473,13 +473,13 @@ class State {
     // Retrieves an editable version of the user config. Once the returned value is deconstructed it
     // will trigger the `send` and `store` hooks.
     MutableUserConfigs mutable_config(
-            std::optional<std::function<void(std::string_view err)>> set_error = std::nullopt);
+            std::optional<std::function<void(std::string_view err)>> on_error = std::nullopt);
 
     // Retrieves an editable version of the group config for the given public key. Once the returned
     // value is deconstructed it will trigger the `send` and `store` hooks.
     MutableGroupConfigs mutable_config(
             std::string_view pubkey_hex,
-            std::optional<std::function<void(std::string_view err)>> set_error = std::nullopt);
+            std::optional<std::function<void(std::string_view err)>> on_error = std::nullopt);
 
   private:
     template <typename ConfigType>

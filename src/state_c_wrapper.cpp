@@ -392,9 +392,8 @@ LIBSESSION_C_API void state_create_group(
         std::vector<groups::member> members = {};
         members.reserve(members_len);
 
-        for (size_t i = 0; i < members_len; i++) {
+        for (size_t i = 0; i < members_len; i++)
             members.emplace_back(groups::member{members_[i]});
-        }
 
         unbox(state).create_group(
                 {name, name_len},
@@ -417,7 +416,6 @@ LIBSESSION_C_API void state_create_group(
                 });
     } catch (const std::exception& e) {
         std::string_view err = e.what();
-        set_error(state, err);
         callback(nullptr, nullptr, e.what(), err.size(), ctx);
     }
 }
@@ -494,10 +492,16 @@ LIBSESSION_C_API bool state_mutate_user(
         });
         s_object->internals = &mutable_state;
         callback(s_object, ctx);
-        return true;
     } catch (const std::exception& e) {
-        return set_error(state, e.what());
+        set_error(state, e.what());
     }
+
+    // If the state has an error the it was most likely set above (even if not then it means the
+    // state has an unhandled error which should be handled then cleared by the caller)
+    if (state->last_error)
+        return false;
+
+    return true;
 }
 
 LIBSESSION_C_API bool state_mutate_group(
@@ -517,22 +521,28 @@ LIBSESSION_C_API bool state_mutate_group(
                 });
         s_object->internals = &mutable_state;
         callback(s_object, ctx);
-        return true;
     } catch (const std::exception& e) {
-        return set_error(state, e.what());
+        set_error(state, e.what());
     }
+
+    // If the state has an error the it was most likely set above (even if not then it means the
+    // state has an unhandled error which should be handled then cleared by the caller)
+    if (state->last_error)
+        return false;
+
+    return true;
 }
 
 LIBSESSION_C_API void mutable_user_state_set_error_if_empty(
         mutable_user_state_object* state, const char* err, size_t err_len) {
-    if (auto set_error = unbox(state).set_error; set_error.has_value())
-        set_error.value()({err, err_len});
+    if (auto on_error = unbox(state).on_error; on_error.has_value())
+        (*on_error)({err, err_len});
 }
 
 LIBSESSION_C_API void mutable_group_state_set_error_if_empty(
         mutable_group_state_object* state, const char* err, size_t err_len) {
-    if (auto set_error = unbox(state).set_error; set_error.has_value())
-        set_error.value()({err, err_len});
+    if (auto on_error = unbox(state).on_error; on_error.has_value())
+        (*on_error)({err, err_len});
 }
 
 }  // extern "C"
