@@ -105,6 +105,7 @@ target_link_libraries(state
     PUBLIC
     crypto
     common
+    config
     libsession::protos
     PRIVATE
     nlohmann_json::nlohmann_json

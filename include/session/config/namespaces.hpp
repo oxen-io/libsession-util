@@ -39,6 +39,8 @@ namespace {
 
             case Namespace::RevokedRetrievableGroupMessages:
                 return "RevokedRetrievableGroupMessages";
+
+            default: return "Invalid";
         }
     }
 

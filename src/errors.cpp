@@ -1,5 +1,6 @@
 #include "session/errors.hpp"
 
+#include "session/errors.h"
 #include "session/export.h"
 
 namespace session {

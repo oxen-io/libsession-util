@@ -15,6 +15,7 @@
 #include "session/config/contacts.hpp"
 #include "session/config/convo_info_volatile.hpp"
 #include "session/config/groups/members.hpp"
+#include "session/config/groups/keys.hpp"
 #include "session/config/namespaces.h"
 #include "session/config/namespaces.hpp"
 #include "session/config/user_groups.hpp"
@@ -1337,10 +1338,8 @@ MutableUserConfigs::~MutableUserConfigs() {
     try {
         parent_state->config_changed(std::nullopt, true, true, std::nullopt);
     } catch (const std::exception& e) {
-        if (!on_error)
-            throw;
-
-        (*on_error)(e.what());
+        if (on_error)
+            (*on_error)(e.what());
     }
 };
 
@@ -1362,10 +1361,8 @@ MutableGroupConfigs::~MutableGroupConfigs() {
     try {
         parent_state.config_changed(info.id, true, true, std::nullopt);
     } catch (const std::exception& e) {
-        if (!on_error)
-            throw;
-
-        (*on_error)(e.what());
+        if (on_error)
+            (*on_error)(e.what());
     }
 };
 
