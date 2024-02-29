@@ -27,6 +27,9 @@ inline const unsigned char* to_unsigned(const std::byte* x) {
 inline unsigned char* to_unsigned(std::byte* x) {
     return reinterpret_cast<unsigned char*>(x);
 }
+inline ustring to_unsigned(std::string x) {
+    return {to_unsigned(x.data()), x.size()};
+}
 // These do nothing, but having them makes template metaprogramming easier:
 inline const unsigned char* to_unsigned(const unsigned char* x) {
     return x;
@@ -47,6 +50,10 @@ inline ustring_view to_unsigned_sv(std::string_view v) {
 inline ustring_view to_unsigned_sv(std::basic_string_view<std::byte> v) {
     return {to_unsigned(v.data()), v.size()};
 }
+template <size_t N>
+inline ustring_view to_unsigned_sv(const std::array<unsigned char, N>& v) {
+    return {v.data(), v.size()};
+}
 inline ustring_view to_unsigned_sv(ustring_view v) {
     return v;  // no-op, but helps with template metaprogamming
 }
@@ -66,8 +73,16 @@ inline std::basic_string_view<Char> to_sv(const std::array<Char, N>& v) {
     return {v.data(), N};
 }
 
+inline ustring_view operator""_usv(const char* __str, size_t __len) {
+    return {to_unsigned(__str), __len};
+}
+
 inline uint64_t get_timestamp() {
     return std::chrono::steady_clock::now().time_since_epoch().count();
+}
+
+inline std::string bool_to_string(bool v) {
+    return (v ? "true" : "false");
 }
 
 /// Returns true if the first string is equal to the second string, compared case-insensitively.

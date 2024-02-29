@@ -73,10 +73,11 @@ add_libsession_util_library(config
     config/protos.cpp
     config/user_groups.cpp
     config/user_profile.cpp
+    errors.cpp
+    state.cpp
+    state_c_wrapper.cpp
     fields.cpp
 )
-
-
 
 target_link_libraries(crypto
     PUBLIC
@@ -91,6 +92,7 @@ target_link_libraries(config
     common
     libsession::protos
     PRIVATE
+    nlohmann_json::nlohmann_json
     libsodium::sodium-internal
     libzstd::static
 )

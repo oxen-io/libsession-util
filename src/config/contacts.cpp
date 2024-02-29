@@ -9,6 +9,8 @@
 #include "session/config/contacts.h"
 #include "session/config/error.h"
 #include "session/export.h"
+#include "session/state.h"
+#include "session/state.hpp"
 #include "session/types.hpp"
 #include "session/util.hpp"
 
@@ -31,10 +33,6 @@ static_assert(CONVO_NOTIFY_ALL == static_cast<int>(notify_mode::all));
 static_assert(CONVO_NOTIFY_DISABLED == static_cast<int>(notify_mode::disabled));
 static_assert(CONVO_NOTIFY_MENTIONS_ONLY == static_cast<int>(notify_mode::mentions_only));
 
-LIBSESSION_C_API bool session_id_is_valid(const char* session_id) {
-    return std::strlen(session_id) == 66 && oxenc::is_hex(session_id, session_id + 66);
-}
-
 contact_info::contact_info(std::string sid) : session_id{std::move(sid)} {
     check_session_id(session_id);
 }
@@ -54,15 +52,6 @@ void contact_info::set_nickname(std::string n) {
 Contacts::Contacts(ustring_view ed25519_secretkey, std::optional<ustring_view> dumped) :
         ConfigBase{dumped} {
     load_key(ed25519_secretkey);
-}
-
-LIBSESSION_C_API int contacts_init(
-        config_object** conf,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dumpstr,
-        size_t dumplen,
-        char* error) {
-    return c_wrapper_init<Contacts>(conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
 }
 
 void contact_info::load(const dict& info_dict) {
@@ -131,6 +120,7 @@ void contact_info::into(contacts_contact& c) const {
     c.blocked = blocked;
     c.priority = priority;
     c.notifications = static_cast<CONVO_NOTIFY_MODE>(notifications);
+    c.mute_until = mute_until;
     c.exp_mode = static_cast<CONVO_EXPIRATION_MODE>(exp_mode);
     c.exp_seconds = exp_timer.count();
     if (c.exp_seconds <= 0 && c.exp_mode != CONVO_EXPIRATION_NONE)
@@ -153,6 +143,7 @@ contact_info::contact_info(const contacts_contact& c) : session_id{c.session_id,
     blocked = c.blocked;
     priority = c.priority;
     notifications = static_cast<notify_mode>(c.notifications);
+    mute_until = c.mute_until;
     exp_mode = static_cast<expiration_mode>(c.exp_mode);
     exp_timer = exp_mode == expiration_mode::none ? 0s : std::chrono::seconds{c.exp_seconds};
     if (exp_timer <= 0s && exp_mode != expiration_mode::none)
@@ -172,39 +163,11 @@ std::optional<contact_info> Contacts::get(std::string_view pubkey_hex) const {
     return result;
 }
 
-LIBSESSION_C_API bool contacts_get(
-        config_object* conf, contacts_contact* contact, const char* session_id) {
-    try {
-        conf->last_error = nullptr;
-        if (auto c = unbox<Contacts>(conf)->get(session_id)) {
-            c->into(*contact);
-            return true;
-        }
-    } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-    }
-    return false;
-}
-
 contact_info Contacts::get_or_construct(std::string_view pubkey_hex) const {
     if (auto maybe = get(pubkey_hex))
         return *std::move(maybe);
 
     return contact_info{std::string{pubkey_hex}};
-}
-
-LIBSESSION_C_API bool contacts_get_or_construct(
-        config_object* conf, contacts_contact* contact, const char* session_id) {
-    try {
-        conf->last_error = nullptr;
-        unbox<Contacts>(conf)->get_or_construct(session_id).into(*contact);
-        return true;
-    } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-        return false;
-    }
 }
 
 void Contacts::set(const contact_info& contact) {
@@ -243,10 +206,6 @@ void Contacts::set(const contact_info& contact) {
             contact.exp_timer.count());
 
     set_positive_int(info["j"], contact.created);
-}
-
-LIBSESSION_C_API void contacts_set(config_object* conf, const contacts_contact* contact) {
-    unbox<Contacts>(conf)->set(contact_info{*contact});
 }
 
 void Contacts::set_name(std::string_view session_id, std::string name) {
@@ -314,22 +273,10 @@ bool Contacts::erase(std::string_view session_id) {
     return ret;
 }
 
-LIBSESSION_C_API bool contacts_erase(config_object* conf, const char* session_id) {
-    try {
-        return unbox<Contacts>(conf)->erase(session_id);
-    } catch (...) {
-        return false;
-    }
-}
-
 size_t Contacts::size() const {
     if (auto* c = data["c"].dict())
         return c->size();
     return 0;
-}
-
-LIBSESSION_C_API size_t contacts_size(const config_object* conf) {
-    return unbox<Contacts>(conf)->size();
 }
 
 /// Load _val from the current iterator position; if it is invalid, skip to the next key until we
@@ -372,9 +319,55 @@ Contacts::iterator& Contacts::iterator::operator++() {
     return *this;
 }
 
-LIBSESSION_C_API contacts_iterator* contacts_iterator_new(const config_object* conf) {
+using namespace session::state;
+using namespace session::config;
+
+extern "C" {
+
+LIBSESSION_C_API bool state_get_contact(
+        const state_object* state, contacts_contact* contact, const char* session_id, char* error) {
+    try {
+        if (auto c = unbox(state).config<Contacts>().get(session_id)) {
+            c->into(*contact);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        set_error_value(error, e.what());
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool state_get_or_construct_contact(
+        const state_object* state, contacts_contact* contact, const char* session_id, char* error) {
+    try {
+        unbox(state).config<Contacts>().get_or_construct(session_id).into(*contact);
+        return true;
+    } catch (const std::exception& e) {
+        return set_error_value(error, e.what());
+    }
+}
+
+LIBSESSION_C_API void state_set_contact(
+        mutable_user_state_object* state, const contacts_contact* contact) {
+    unbox(state).contacts.set(contact_info{*contact});
+}
+
+LIBSESSION_C_API bool state_erase_contact(
+        mutable_user_state_object* state, const char* session_id) {
+    try {
+        return unbox(state).contacts.erase(session_id);
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API size_t state_size_contacts(const state_object* state) {
+    return unbox(state).config<Contacts>().size();
+}
+
+LIBSESSION_C_API contacts_iterator* contacts_iterator_new(const state_object* state) {
     auto* it = new contacts_iterator{};
-    it->_internals = new Contacts::iterator{unbox<Contacts>(conf)->begin()};
+    it->_internals = new Contacts::iterator{unbox(state).config<Contacts>().begin()};
     return it;
 }
 
@@ -394,3 +387,5 @@ LIBSESSION_C_API bool contacts_iterator_done(contacts_iterator* it, contacts_con
 LIBSESSION_C_API void contacts_iterator_advance(contacts_iterator* it) {
     ++*static_cast<Contacts::iterator*>(it->_internals);
 }
+
+}  // extern "C"

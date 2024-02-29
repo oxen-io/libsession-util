@@ -38,7 +38,7 @@ ustring ResponseParser::decrypt(ustring ciphertext) const {
                     ciphertext,
                     destination_x25519_public_key_);
         else
-            throw e;
+            throw;
     }
 }
 

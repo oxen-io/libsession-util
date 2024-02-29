@@ -10,7 +10,8 @@
 #include <string_view>
 #include <vector>
 
-#include "session/config/base.h"
+#include "session/config/namespaces.h"
+#include "session/config/namespaces.hpp"
 
 using ustring = std::basic_string<unsigned char>;
 using ustring_view = std::basic_string_view<unsigned char>;
@@ -87,4 +88,53 @@ std::vector<std::basic_string_view<C>> view_vec(const std::vector<std::basic_str
     vv.reserve(v.size());
     std::copy(v.begin(), v.end(), std::back_inserter(vv));
     return vv;
+}
+
+struct last_store_data {
+    session::config::Namespace namespace_;
+    std::string pubkey;
+    uint64_t timestamp;
+    ustring data;
+};
+struct last_send_data {
+    std::string pubkey;
+    ustring payload;
+    bool (*response_cb)(
+            bool success,
+            int16_t status_code,
+            const unsigned char* res,
+            size_t reslen,
+            void* callback_context);
+    void* app_ctx;
+    void* callback_context;
+};
+
+inline void c_store_callback(
+        NAMESPACE namespace_,
+        const char* pubkey,
+        uint64_t timestamp_ms,
+        const unsigned char* data,
+        size_t data_len,
+        void* ctx) {
+    static_cast<std::vector<last_store_data>*>(ctx)->emplace_back(last_store_data{
+            static_cast<session::config::Namespace>(namespace_),
+            {pubkey, 66},
+            timestamp_ms,
+            {data, data_len}});
+}
+
+inline void c_send_callback(
+        const char* pubkey,
+        const unsigned char* data,
+        size_t data_len,
+        bool (*response_cb)(
+                bool success,
+                int16_t status_code,
+                const unsigned char* res,
+                size_t reslen,
+                void* callback_context),
+        void* app_ctx,
+        void* callback_context) {
+    static_cast<std::vector<last_send_data>*>(app_ctx)->emplace_back(
+            last_send_data{{pubkey, 66}, {data, data_len}, response_cb, app_ctx, callback_context});
 }

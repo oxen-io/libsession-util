@@ -16,6 +16,8 @@
 #include "session/config/error.h"
 #include "session/config/user_groups.h"
 #include "session/export.h"
+#include "session/state.h"
+#include "session/state.hpp"
 #include "session/types.hpp"
 #include "session/util.hpp"
 
@@ -456,6 +458,7 @@ bool UserGroups::erase(const community_info& c) {
             server_info.erase();
         }
     }
+
     return gone;
 }
 bool UserGroups::erase(const group_info& c) {
@@ -604,76 +607,164 @@ UserGroups::iterator& UserGroups::iterator::operator++() {
 }  // namespace session::config
 
 using namespace session::config;
+using namespace session::state;
 
 extern "C" {
 struct user_groups_iterator {
     UserGroups::iterator it;
 };
-}
+}  // extern "C"
 
-LIBSESSION_C_API
-int user_groups_init(
-        config_object** conf,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dumpstr,
-        size_t dumplen,
-        char* error) {
-    return c_wrapper_init<UserGroups>(conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
-}
-
-LIBSESSION_C_API bool user_groups_get_community(
-        config_object* conf, ugroups_community_info* comm, const char* base_url, const char* room) {
-    try {
-        conf->last_error = nullptr;
-        if (auto c = unbox<UserGroups>(conf)->get_community(base_url, room)) {
-            c->into(*comm);
-            return true;
-        }
-    } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
+namespace {
+template <typename Cpp, typename C>
+bool user_groups_it_is_impl(user_groups_iterator* it, C* c) {
+    auto& convo = *it->it;
+    if (auto* d = std::get_if<Cpp>(&convo)) {
+        d->into(*c);
+        return true;
     }
     return false;
 }
-LIBSESSION_C_API bool user_groups_get_or_construct_community(
-        config_object* conf,
-        ugroups_community_info* comm,
-        const char* base_url,
-        const char* room,
-        unsigned const char* pubkey) {
+}  // namespace
+
+extern "C" {
+
+LIBSESSION_C_API bool state_get_ugroups_group(
+        const state_object* state, ugroups_group_info* group, const char* group_id, char* error) {
     try {
-        conf->last_error = nullptr;
-        unbox<UserGroups>(conf)
-                ->get_or_construct_community(base_url, room, ustring_view{pubkey, 32})
-                .into(*comm);
-        return true;
-    } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-        return false;
-    }
-}
-LIBSESSION_C_API bool user_groups_get_group(
-        config_object* conf, ugroups_group_info* group, const char* group_id) {
-    try {
-        conf->last_error = nullptr;
-        if (auto g = unbox<UserGroups>(conf)->get_group(group_id)) {
+        if (auto g = unbox(state).config<UserGroups>().get_group(group_id)) {
             g->into(*group);
             return true;
         }
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
+        set_error_value(error, e.what());
     }
     return false;
 }
-LIBSESSION_C_API bool user_groups_get_or_construct_group(
-        config_object* conf, ugroups_group_info* group, const char* group_id) {
+
+LIBSESSION_C_API bool state_get_or_construct_ugroups_group(
+        const state_object* state, ugroups_group_info* group, const char* group_id, char* error) {
     try {
-        conf->last_error = nullptr;
-        unbox<UserGroups>(conf)->get_or_construct_group(group_id).into(*group);
+        unbox(state).config<UserGroups>().get_or_construct_group(group_id).into(*group);
         return true;
     } catch (const std::exception& e) {
-        set_error(conf, e.what());
+        return set_error_value(error, e.what());
+    }
+}
+
+LIBSESSION_C_API bool state_get_ugroups_community(
+        const state_object* state,
+        ugroups_community_info* comm,
+        const char* base_url,
+        const char* room,
+        char* error) {
+    try {
+        if (auto c = unbox(state).config<UserGroups>().get_community(base_url, room)) {
+            c->into(*comm);
+            return true;
+        }
+    } catch (const std::exception& e) {
+        set_error_value(error, e.what());
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool state_get_or_construct_ugroups_community(
+        const state_object* state,
+        ugroups_community_info* comm,
+        const char* base_url,
+        const char* room,
+        unsigned const char* pubkey,
+        char* error) {
+    try {
+        unbox(state)
+                .config<UserGroups>()
+                .get_or_construct_community(base_url, room, ustring_view{pubkey, 32})
+                .into(*comm);
+        return true;
+    } catch (const std::exception& e) {
+        return set_error_value(error, e.what());
+    }
+}
+
+LIBSESSION_C_API bool state_get_ugroups_legacy_group(
+        const state_object* state,
+        ugroups_legacy_group_info** legacy_group_info,
+        const char* id,
+        char* error) {
+    try {
+        auto group = std::make_unique<ugroups_legacy_group_info>();
+        group->_internal = nullptr;
+        if (auto c = unbox(state).config<UserGroups>().get_legacy_group(id)) {
+            std::move(c)->into(*group);
+            *legacy_group_info = group.release();
+            return true;
+        }
+    } catch (const std::exception& e) {
+        set_error_value(error, e.what());
+    }
+    return false;
+}
+
+LIBSESSION_C_API bool state_get_or_construct_ugroups_legacy_group(
+        const state_object* state,
+        ugroups_legacy_group_info** legacy_group_info,
+        const char* id,
+        char* error) {
+    try {
+        auto group = std::make_unique<ugroups_legacy_group_info>();
+        group->_internal = nullptr;
+        unbox(state).config<UserGroups>().get_or_construct_legacy_group(id).into(*group);
+        *legacy_group_info = group.release();
+        return true;
+    } catch (const std::exception& e) {
+        return set_error_value(error, e.what());
+    }
+}
+
+LIBSESSION_C_API void state_set_ugroups_community(
+        mutable_user_state_object* state, const ugroups_community_info* comm) {
+    unbox(state).user_groups.set(community_info{*comm});
+}
+
+LIBSESSION_C_API void state_set_ugroups_group(
+        mutable_user_state_object* state, const ugroups_group_info* group) {
+    unbox(state).user_groups.set(group_info{*group});
+}
+
+LIBSESSION_C_API void state_set_ugroups_legacy_group(
+        mutable_user_state_object* state, const ugroups_legacy_group_info* group) {
+    unbox(state).user_groups.set(legacy_group_info{*group});
+}
+
+LIBSESSION_C_API void state_set_free_ugroups_legacy_group(
+        mutable_user_state_object* state, ugroups_legacy_group_info* group) {
+    unbox(state).user_groups.set(legacy_group_info{std::move(*group)});
+}
+
+LIBSESSION_C_API bool state_erase_ugroups_community(
+        mutable_user_state_object* state, const char* base_url, const char* room) {
+    try {
+        return unbox(state).user_groups.erase_community(base_url, room);
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool state_erase_ugroups_group(
+        mutable_user_state_object* state, const char* group_id) {
+    try {
+        return unbox(state).user_groups.erase_group(group_id);
+    } catch (...) {
+        return false;
+    }
+}
+
+LIBSESSION_C_API bool state_erase_ugroups_legacy_group(
+        mutable_user_state_object* state, const char* group_id) {
+    try {
+        return unbox(state).user_groups.erase_legacy_group(group_id);
+    } catch (...) {
         return false;
     }
 }
@@ -682,77 +773,6 @@ LIBSESSION_C_API void ugroups_legacy_group_free(ugroups_legacy_group_info* group
     if (group && group->_internal) {
         delete static_cast<ugroups_internals*>(group->_internal);
         group->_internal = nullptr;
-    }
-}
-
-LIBSESSION_C_API ugroups_legacy_group_info* user_groups_get_legacy_group(
-        config_object* conf, const char* id) {
-    try {
-        conf->last_error = nullptr;
-        auto group = std::make_unique<ugroups_legacy_group_info>();
-        group->_internal = nullptr;
-        if (auto c = unbox<UserGroups>(conf)->get_legacy_group(id)) {
-            std::move(c)->into(*group);
-            return group.release();
-        }
-    } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-    }
-    return nullptr;
-}
-
-LIBSESSION_C_API ugroups_legacy_group_info* user_groups_get_or_construct_legacy_group(
-        config_object* conf, const char* id) {
-    try {
-        conf->last_error = nullptr;
-        auto group = std::make_unique<ugroups_legacy_group_info>();
-        group->_internal = nullptr;
-        unbox<UserGroups>(conf)->get_or_construct_legacy_group(id).into(*group);
-        return group.release();
-    } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-        return nullptr;
-    }
-}
-
-LIBSESSION_C_API void user_groups_set_community(
-        config_object* conf, const ugroups_community_info* comm) {
-    unbox<UserGroups>(conf)->set(community_info{*comm});
-}
-LIBSESSION_C_API void user_groups_set_group(config_object* conf, const ugroups_group_info* group) {
-    unbox<UserGroups>(conf)->set(group_info{*group});
-}
-LIBSESSION_C_API void user_groups_set_legacy_group(
-        config_object* conf, const ugroups_legacy_group_info* group) {
-    unbox<UserGroups>(conf)->set(legacy_group_info{*group});
-}
-LIBSESSION_C_API void user_groups_set_free_legacy_group(
-        config_object* conf, ugroups_legacy_group_info* group) {
-    unbox<UserGroups>(conf)->set(legacy_group_info{std::move(*group)});
-}
-
-LIBSESSION_C_API bool user_groups_erase_community(
-        config_object* conf, const char* base_url, const char* room) {
-    try {
-        return unbox<UserGroups>(conf)->erase_community(base_url, room);
-    } catch (...) {
-        return false;
-    }
-}
-LIBSESSION_C_API bool user_groups_erase_group(config_object* conf, const char* group_id) {
-    try {
-        return unbox<UserGroups>(conf)->erase_group(group_id);
-    } catch (...) {
-        return false;
-    }
-}
-LIBSESSION_C_API bool user_groups_erase_legacy_group(config_object* conf, const char* group_id) {
-    try {
-        return unbox<UserGroups>(conf)->erase_legacy_group(group_id);
-    } catch (...) {
-        return false;
     }
 }
 
@@ -793,19 +813,16 @@ LIBSESSION_C_API bool ugroups_legacy_members_next(
     return false;
 }
 
-LIBSESSION_C_API
-void ugroups_legacy_members_erase(ugroups_legacy_members_iterator* it) {
+LIBSESSION_C_API void ugroups_legacy_members_erase(ugroups_legacy_members_iterator* it) {
     it->it = it->members.erase(it->it);
     it->need_advance = false;
 }
 
-LIBSESSION_C_API
-void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it) {
+LIBSESSION_C_API void ugroups_legacy_members_free(ugroups_legacy_members_iterator* it) {
     delete it;
 }
 
-LIBSESSION_C_API
-bool ugroups_legacy_member_add(
+LIBSESSION_C_API bool ugroups_legacy_member_add(
         ugroups_legacy_group_info* group, const char* session_id, bool admin) {
     try {
         check_session_id(session_id);
@@ -823,8 +840,8 @@ bool ugroups_legacy_member_add(
     return true;
 }
 
-LIBSESSION_C_API
-bool ugroups_legacy_member_remove(ugroups_legacy_group_info* group, const char* session_id) {
+LIBSESSION_C_API bool ugroups_legacy_member_remove(
+        ugroups_legacy_group_info* group, const char* session_id) {
     return static_cast<ugroups_internals*>(group->_internal)->members.erase(session_id);
 }
 
@@ -849,33 +866,36 @@ LIBSESSION_C_API size_t ugroups_legacy_members_count(
     return mems.size();
 }
 
-LIBSESSION_C_API size_t user_groups_size(const config_object* conf) {
-    return unbox<UserGroups>(conf)->size();
-}
-LIBSESSION_C_API size_t user_groups_size_communities(const config_object* conf) {
-    return unbox<UserGroups>(conf)->size_communities();
-}
-LIBSESSION_C_API size_t user_groups_size_groups(const config_object* conf) {
-    return unbox<UserGroups>(conf)->size_groups();
-}
-LIBSESSION_C_API size_t user_groups_size_legacy_groups(const config_object* conf) {
-    return unbox<UserGroups>(conf)->size_legacy_groups();
+LIBSESSION_C_API size_t state_size_ugroups(const state_object* state) {
+    return unbox(state).config<UserGroups>().size();
 }
 
-LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new(const config_object* conf) {
-    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin()}};
+LIBSESSION_C_API size_t state_size_ugroups_communities(const state_object* state) {
+    return unbox(state).config<UserGroups>().size_communities();
+}
+
+LIBSESSION_C_API size_t state_size_ugroups_groups(const state_object* state) {
+    return unbox(state).config<UserGroups>().size_groups();
+}
+
+LIBSESSION_C_API size_t state_size_ugroups_legacy_groups(const state_object* state) {
+    return unbox(state).config<UserGroups>().size_legacy_groups();
+}
+
+LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new(const state_object* state) {
+    return new user_groups_iterator{{unbox(state).config<UserGroups>().begin()}};
 }
 
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_communities(
-        const config_object* conf) {
-    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_communities()}};
+        const state_object* state) {
+    return new user_groups_iterator{{unbox(state).config<UserGroups>().begin_communities()}};
 }
-LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_groups(const config_object* conf) {
-    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_groups()}};
+LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_groups(const state_object* state) {
+    return new user_groups_iterator{{unbox(state).config<UserGroups>().begin_groups()}};
 }
 LIBSESSION_C_API user_groups_iterator* user_groups_iterator_new_legacy_groups(
-        const config_object* conf) {
-    return new user_groups_iterator{{unbox<UserGroups>(conf)->begin_legacy_groups()}};
+        const state_object* state) {
+    return new user_groups_iterator{{unbox(state).config<UserGroups>().begin_legacy_groups()}};
 }
 
 LIBSESSION_C_API void user_groups_iterator_free(user_groups_iterator* it) {
@@ -890,18 +910,6 @@ LIBSESSION_C_API void user_groups_iterator_advance(user_groups_iterator* it) {
     ++it->it;
 }
 
-namespace {
-template <typename Cpp, typename C>
-bool user_groups_it_is_impl(user_groups_iterator* it, C* c) {
-    auto& convo = *it->it;
-    if (auto* d = std::get_if<Cpp>(&convo)) {
-        d->into(*c);
-        return true;
-    }
-    return false;
-}
-}  // namespace
-
 LIBSESSION_C_API bool user_groups_it_is_community(
         user_groups_iterator* it, ugroups_community_info* c) {
     return user_groups_it_is_impl<community_info>(it, c);
@@ -915,3 +923,5 @@ LIBSESSION_C_API bool user_groups_it_is_legacy_group(
         user_groups_iterator* it, ugroups_legacy_group_info* g) {
     return user_groups_it_is_impl<legacy_group_info>(it, g);
 }
+
+}  // extern "C"

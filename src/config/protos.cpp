@@ -8,6 +8,7 @@
 
 #include "SessionProtos.pb.h"
 #include "WebSocketResources.pb.h"
+#include "session/config/namespaces.hpp"
 #include "session/session_encrypt.hpp"
 
 namespace session::config::protos {

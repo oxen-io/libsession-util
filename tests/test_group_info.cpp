@@ -8,6 +8,7 @@
 #include <session/config/groups/info.hpp>
 #include <string_view>
 
+#include "session/errors.hpp"
 #include "utils.hpp"
 
 using namespace std::literals;
@@ -161,10 +162,8 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
     for (const auto& k : enc_keys1)  // Just for testing, as above.
         ginfo.add_key(k, false);
 
-    REQUIRE_THROWS_WITH(
-            ginfo.set_name("Super Group!"), "Unable to make changes to a read-only config object");
-    REQUIRE_THROWS_WITH(
-            ginfo.set_name("Super Group!"), "Unable to make changes to a read-only config object");
+    REQUIRE_THROWS_WITH(ginfo.set_name("Super Group!"), session::Error::READ_ONLY_CONFIG);
+    REQUIRE_THROWS_WITH(ginfo.set_name("Super Group!"), session::Error::READ_ONLY_CONFIG);
     CHECK(!ginfo.is_dirty());
 
     // This one is good and has the right signature:
@@ -201,8 +200,7 @@ TEST_CASE("Verify-only Group Info", "[config][groups][verify-only]") {
 
     CHECK(ginfo.get_name() == "Super Group!!");
 
-    REQUIRE_THROWS_WITH(
-            ginfo.set_name("Super Group11"), "Unable to make changes to a read-only config object");
+    REQUIRE_THROWS_WITH(ginfo.set_name("Super Group11"), session::Error::READ_ONLY_CONFIG);
     // This shouldn't throw because it isn't *actually* changing a config value (i.e. re-setting the
     // same value does not dirty the config).  It isn't clear why you'd need to do this, but still.
     ginfo.set_name("Super Group!!");

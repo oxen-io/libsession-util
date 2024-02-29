@@ -15,6 +15,8 @@
 #include "session/config/convo_info_volatile.h"
 #include "session/config/error.h"
 #include "session/export.h"
+#include "session/state.h"
+#include "session/state.hpp"
 #include "session/types.hpp"
 #include "session/util.hpp"
 
@@ -476,6 +478,7 @@ ConvoInfoVolatile::iterator& ConvoInfoVolatile::iterator::operator++() {
 
 }  // namespace session::config
 
+using namespace session::state;
 using namespace session::config;
 
 extern "C" {
@@ -484,233 +487,224 @@ struct convo_info_volatile_iterator {
 };
 }
 
-LIBSESSION_C_API
-int convo_info_volatile_init(
-        config_object** conf,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dumpstr,
-        size_t dumplen,
+LIBSESSION_C_API bool state_get_convo_info_volatile_1to1(
+        const state_object* state,
+        convo_info_volatile_1to1* convo,
+        const char* session_id,
         char* error) {
-    return c_wrapper_init<ConvoInfoVolatile>(
-            conf, ed25519_secretkey_bytes, dumpstr, dumplen, error);
-}
-
-LIBSESSION_C_API bool convo_info_volatile_get_1to1(
-        config_object* conf, convo_info_volatile_1to1* convo, const char* session_id) {
     try {
-        conf->last_error = nullptr;
-        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_1to1(session_id)) {
+        if (auto c = unbox(state).config<ConvoInfoVolatile>().get_1to1(session_id)) {
             c->into(*convo);
             return true;
         }
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
+        set_error_value(error, e.what());
     }
     return false;
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_or_construct_1to1(
-        config_object* conf, convo_info_volatile_1to1* convo, const char* session_id) {
+LIBSESSION_C_API bool state_get_or_construct_convo_info_volatile_1to1(
+        const state_object* state,
+        convo_info_volatile_1to1* convo,
+        const char* session_id,
+        char* error) {
     try {
-        conf->last_error = nullptr;
-        unbox<ConvoInfoVolatile>(conf)->get_or_construct_1to1(session_id).into(*convo);
+        unbox(state).config<ConvoInfoVolatile>().get_or_construct_1to1(session_id).into(*convo);
         return true;
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_community(
-        config_object* conf,
+LIBSESSION_C_API bool state_get_convo_info_volatile_community(
+        const state_object* state,
         convo_info_volatile_community* og,
         const char* base_url,
-        const char* room) {
+        const char* room,
+        char* error) {
     try {
-        conf->last_error = nullptr;
-        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_community(base_url, room)) {
+        if (auto c = unbox(state).config<ConvoInfoVolatile>().get_community(base_url, room)) {
             c->into(*og);
             return true;
         }
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
+        set_error_value(error, e.what());
     }
     return false;
 }
-LIBSESSION_C_API bool convo_info_volatile_get_or_construct_community(
-        config_object* conf,
+LIBSESSION_C_API bool state_get_or_construct_convo_info_volatile_community(
+        const state_object* state,
         convo_info_volatile_community* convo,
         const char* base_url,
         const char* room,
-        unsigned const char* pubkey) {
+        unsigned const char* pubkey,
+        char* error) {
     try {
-        conf->last_error = nullptr;
-        unbox<ConvoInfoVolatile>(conf)
-                ->get_or_construct_community(base_url, room, ustring_view{pubkey, 32})
+        unbox(state)
+                .config<ConvoInfoVolatile>()
+                .get_or_construct_community(base_url, room, ustring_view{pubkey, 32})
                 .into(*convo);
         return true;
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_group(
-        config_object* conf, convo_info_volatile_group* convo, const char* id) {
+LIBSESSION_C_API bool state_get_convo_info_volatile_group(
+        const state_object* state, convo_info_volatile_group* convo, const char* id, char* error) {
     try {
-        conf->last_error = nullptr;
-        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_group(id)) {
+        if (auto c = unbox(state).config<ConvoInfoVolatile>().get_group(id)) {
             c->into(*convo);
             return true;
         }
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
+        set_error_value(error, e.what());
     }
     return false;
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_or_construct_group(
-        config_object* conf, convo_info_volatile_group* convo, const char* id) {
+LIBSESSION_C_API bool state_get_or_construct_convo_info_volatile_group(
+        const state_object* state, convo_info_volatile_group* convo, const char* id, char* error) {
     try {
-        conf->last_error = nullptr;
-        unbox<ConvoInfoVolatile>(conf)->get_or_construct_group(id).into(*convo);
+        unbox(state).config<ConvoInfoVolatile>().get_or_construct_group(id).into(*convo);
         return true;
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
-        return false;
+        return set_error_value(error, e.what());
     }
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_legacy_group(
-        config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
+LIBSESSION_C_API bool state_get_convo_info_volatile_legacy_group(
+        const state_object* state,
+        convo_info_volatile_legacy_group* convo,
+        const char* id,
+        char* error) {
     try {
-        conf->last_error = nullptr;
-        if (auto c = unbox<ConvoInfoVolatile>(conf)->get_legacy_group(id)) {
+        if (auto c = unbox(state).config<ConvoInfoVolatile>().get_legacy_group(id)) {
             c->into(*convo);
             return true;
         }
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
+        set_error_value(error, e.what());
     }
     return false;
 }
 
-LIBSESSION_C_API bool convo_info_volatile_get_or_construct_legacy_group(
-        config_object* conf, convo_info_volatile_legacy_group* convo, const char* id) {
+LIBSESSION_C_API bool state_get_or_construct_convo_info_volatile_legacy_group(
+        const state_object* state,
+        convo_info_volatile_legacy_group* convo,
+        const char* id,
+        char* error) {
     try {
-        conf->last_error = nullptr;
-        unbox<ConvoInfoVolatile>(conf)->get_or_construct_legacy_group(id).into(*convo);
+        unbox(state).config<ConvoInfoVolatile>().get_or_construct_legacy_group(id).into(*convo);
         return true;
     } catch (const std::exception& e) {
-        copy_c_str(conf->_error_buf, e.what());
-        conf->last_error = conf->_error_buf;
+        return set_error_value(error, e.what());
+    }
+}
+
+LIBSESSION_C_API void state_set_convo_info_volatile_1to1(
+        mutable_user_state_object* state, const convo_info_volatile_1to1* convo) {
+    unbox(state).convo_info_volatile.set(convo::one_to_one{*convo});
+}
+
+LIBSESSION_C_API void state_set_convo_info_volatile_community(
+        mutable_user_state_object* state, const convo_info_volatile_community* convo) {
+    unbox(state).convo_info_volatile.set(convo::community{*convo});
+}
+
+LIBSESSION_C_API void state_set_convo_info_volatile_group(
+        mutable_user_state_object* state, const convo_info_volatile_group* convo) {
+    unbox(state).convo_info_volatile.set(convo::group{*convo});
+}
+
+LIBSESSION_C_API void state_set_convo_info_volatile_legacy_group(
+        mutable_user_state_object* state, const convo_info_volatile_legacy_group* convo) {
+    unbox(state).convo_info_volatile.set(convo::legacy_group{*convo});
+}
+
+LIBSESSION_C_API bool state_erase_convo_info_volatile_1to1(
+        mutable_user_state_object* state, const char* session_id) {
+    try {
+        return unbox(state).convo_info_volatile.erase_1to1(session_id);
+    } catch (...) {
+        return false;
+    }
+}
+LIBSESSION_C_API bool state_erase_convo_info_volatile_community(
+        mutable_user_state_object* state, const char* base_url, const char* room) {
+    try {
+        return unbox(state).convo_info_volatile.erase_community(base_url, room);
+    } catch (...) {
+        return false;
+    }
+}
+LIBSESSION_C_API bool state_erase_convo_info_volatile_group(
+        mutable_user_state_object* state, const char* group_id) {
+    try {
+        return unbox(state).convo_info_volatile.erase_group(group_id);
+    } catch (...) {
+        return false;
+    }
+}
+LIBSESSION_C_API bool state_erase_convo_info_volatile_legacy_group(
+        mutable_user_state_object* state, const char* group_id) {
+    try {
+        return unbox(state).convo_info_volatile.erase_legacy_group(group_id);
+    } catch (...) {
         return false;
     }
 }
 
-LIBSESSION_C_API void convo_info_volatile_set_1to1(
-        config_object* conf, const convo_info_volatile_1to1* convo) {
-    unbox<ConvoInfoVolatile>(conf)->set(convo::one_to_one{*convo});
+LIBSESSION_C_API size_t state_size_convo_info_volatile(const state_object* state) {
+    return unbox(state).config<ConvoInfoVolatile>().size();
 }
-LIBSESSION_C_API void convo_info_volatile_set_community(
-        config_object* conf, const convo_info_volatile_community* convo) {
-    unbox<ConvoInfoVolatile>(conf)->set(convo::community{*convo});
+LIBSESSION_C_API size_t state_size_convo_info_volatile_1to1(const state_object* state) {
+    return unbox(state).config<ConvoInfoVolatile>().size_1to1();
 }
-LIBSESSION_C_API void convo_info_volatile_set_group(
-        config_object* conf, const convo_info_volatile_group* convo) {
-    unbox<ConvoInfoVolatile>(conf)->set(convo::group{*convo});
+LIBSESSION_C_API size_t state_size_convo_info_volatile_communities(const state_object* state) {
+    return unbox(state).config<ConvoInfoVolatile>().size_communities();
 }
-LIBSESSION_C_API void convo_info_volatile_set_legacy_group(
-        config_object* conf, const convo_info_volatile_legacy_group* convo) {
-    unbox<ConvoInfoVolatile>(conf)->set(convo::legacy_group{*convo});
+LIBSESSION_C_API size_t state_size_convo_info_volatile_groups(const state_object* state) {
+    return unbox(state).config<ConvoInfoVolatile>().size_groups();
 }
-
-LIBSESSION_C_API bool convo_info_volatile_erase_1to1(config_object* conf, const char* session_id) {
-    try {
-        return unbox<ConvoInfoVolatile>(conf)->erase_1to1(session_id);
-    } catch (...) {
-        return false;
-    }
-}
-LIBSESSION_C_API bool convo_info_volatile_erase_community(
-        config_object* conf, const char* base_url, const char* room) {
-    try {
-        return unbox<ConvoInfoVolatile>(conf)->erase_community(base_url, room);
-    } catch (...) {
-        return false;
-    }
-}
-LIBSESSION_C_API bool convo_info_volatile_erase_group(config_object* conf, const char* group_id) {
-    try {
-        return unbox<ConvoInfoVolatile>(conf)->erase_group(group_id);
-    } catch (...) {
-        return false;
-    }
-}
-LIBSESSION_C_API bool convo_info_volatile_erase_legacy_group(
-        config_object* conf, const char* group_id) {
-    try {
-        return unbox<ConvoInfoVolatile>(conf)->erase_legacy_group(group_id);
-    } catch (...) {
-        return false;
-    }
-}
-
-LIBSESSION_C_API size_t convo_info_volatile_size(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size();
-}
-LIBSESSION_C_API size_t convo_info_volatile_size_1to1(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size_1to1();
-}
-LIBSESSION_C_API size_t convo_info_volatile_size_communities(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size_communities();
-}
-LIBSESSION_C_API size_t convo_info_volatile_size_groups(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size_groups();
-}
-LIBSESSION_C_API size_t convo_info_volatile_size_legacy_groups(const config_object* conf) {
-    return unbox<ConvoInfoVolatile>(conf)->size_legacy_groups();
+LIBSESSION_C_API size_t state_size_convo_info_volatile_legacy_groups(const state_object* state) {
+    return unbox(state).config<ConvoInfoVolatile>().size_legacy_groups();
 }
 
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new(
-        const config_object* conf) {
+        const state_object* state) {
     auto* it = new convo_info_volatile_iterator{};
-    it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin()};
+    it->_internals =
+            new ConvoInfoVolatile::iterator{unbox(state).config<ConvoInfoVolatile>().begin()};
     return it;
 }
 
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_1to1(
-        const config_object* conf) {
+        const state_object* state) {
     auto* it = new convo_info_volatile_iterator{};
-    it->_internals = new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_1to1()};
+    it->_internals =
+            new ConvoInfoVolatile::iterator{unbox(state).config<ConvoInfoVolatile>().begin_1to1()};
     return it;
 }
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_communities(
-        const config_object* conf) {
+        const state_object* state) {
     auto* it = new convo_info_volatile_iterator{};
-    it->_internals =
-            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_communities()};
+    it->_internals = new ConvoInfoVolatile::iterator{
+            unbox(state).config<ConvoInfoVolatile>().begin_communities()};
     return it;
 }
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_groups(
-        const config_object* conf) {
+        const state_object* state) {
     auto* it = new convo_info_volatile_iterator{};
-    it->_internals =
-            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_groups()};
+    it->_internals = new ConvoInfoVolatile::iterator{
+            unbox(state).config<ConvoInfoVolatile>().begin_groups()};
     return it;
 }
 LIBSESSION_C_API convo_info_volatile_iterator* convo_info_volatile_iterator_new_legacy_groups(
-        const config_object* conf) {
+        const state_object* state) {
     auto* it = new convo_info_volatile_iterator{};
-    it->_internals =
-            new ConvoInfoVolatile::iterator{unbox<ConvoInfoVolatile>(conf)->begin_legacy_groups()};
+    it->_internals = new ConvoInfoVolatile::iterator{
+            unbox(state).config<ConvoInfoVolatile>().begin_legacy_groups()};
     return it;
 }
 

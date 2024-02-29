@@ -1,5 +1,6 @@
 #include "session/ed25519.hpp"
 
+#include <sodium/core.h>
 #include <sodium/crypto_sign.h>
 #include <sodium/crypto_sign_ed25519.h>
 
@@ -17,6 +18,9 @@ using uc32 = std::array<unsigned char, 32>;
 using cleared_uc64 = cleared_array<64>;
 
 std::pair<std::array<unsigned char, 32>, std::array<unsigned char, 64>> ed25519_key_pair() {
+    if (sodium_init() == -1)
+        throw std::runtime_error{"libsodium initialization failed!"};
+
     std::array<unsigned char, 32> ed_pk;
     std::array<unsigned char, 64> ed_sk;
     crypto_sign_ed25519_keypair(ed_pk.data(), ed_sk.data());

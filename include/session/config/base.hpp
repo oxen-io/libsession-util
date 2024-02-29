@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <session/config.hpp>
 #include <session/util.hpp>
@@ -10,7 +11,6 @@
 #include <variant>
 #include <vector>
 
-#include "base.h"
 #include "namespaces.hpp"
 
 namespace session::config {
@@ -868,6 +868,16 @@ class ConfigBase : public ConfigSig {
     /// - `std::optional<int>` -- Returns the compression level
     virtual std::optional<int> compression_level() const { return 1; }
 
+    /// API: base/ConfigBase::default_ttl
+    ///
+    /// The default duration the config message should last for before it expires.
+    ///
+    /// Inputs: None
+    ///
+    /// Outputs:
+    /// - `std::chrono::milliseconds` -- Duration the mesage should last for in milliseconds.
+    virtual std::chrono::milliseconds default_ttl() const { return std::chrono::hours(30 * 24); }
+
     /// API: base/ConfigBase::config_lags
     ///
     /// How many config lags should be used for this object; default to 5.  Implementing subclasses
@@ -1224,6 +1234,15 @@ class ConfigBase : public ConfigSig {
         assert(i < _keys.size());
         return {_keys[i].data(), _keys[i].size()};
     }
+
+    /// API: base/ConfigBase::get_seqno
+    ///
+    /// Retrieves the current seqno for the config. If there is a pending push then this will return
+    /// the updated seqno.
+    ///
+    /// Outputs:
+    /// - `seqno_t` -- current seqno
+    seqno_t get_seqno() const { return _config->seqno(); };
 };
 
 // The C++ struct we hold opaquely inside the C internals struct.  This is designed so that any
@@ -1258,31 +1277,6 @@ struct internals final {
     ConfigT& operator*() { return *operator->(); }
     const ConfigT& operator*() const { return *operator->(); }
 };
-
-template <typename T = ConfigBase, std::enable_if_t<std::is_base_of_v<ConfigBase, T>, int> = 0>
-inline internals<T>& unbox(config_object* conf) {
-    return *static_cast<internals<T>*>(conf->internals);
-}
-template <typename T = ConfigBase, std::enable_if_t<std::is_base_of_v<ConfigBase, T>, int> = 0>
-inline const internals<T>& unbox(const config_object* conf) {
-    return *static_cast<const internals<T>*>(conf->internals);
-}
-
-// Sets an error message in the internals.error string and updates the last_error pointer in the
-// outer (C) config_object struct to point at it.
-void set_error(config_object* conf, std::string e);
-
-// Same as above, but gets the error string out of an exception and passed through a return value.
-// Intended to simplify catch-and-return-error such as:
-//     try {
-//         whatever();
-//     } catch (const std::exception& e) {
-//         return set_error(conf, LIB_SESSION_ERR_OHNOES, e);
-//     }
-inline int set_error(config_object* conf, int errcode, const std::exception& e) {
-    set_error(conf, e.what());
-    return errcode;
-}
 
 // Copies a value contained in a string into a new malloced char buffer, returning the buffer and
 // size via the two pointer arguments.

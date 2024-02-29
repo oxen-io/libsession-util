@@ -7,72 +7,12 @@
 #include <string_view>
 #include <type_traits>
 
-#include "session/config/base.h"
+#include "session/config.h"
 #include "session/config/base.hpp"
 #include "session/config/error.h"
 #include "session/types.hpp"
 
 namespace session::config {
-
-template <typename ConfigT, typename... Args>
-[[nodiscard]] int c_wrapper_init_generic(config_object** conf, char* error, Args&&... args) {
-    auto c = std::make_unique<internals<ConfigT>>();
-    auto c_conf = std::make_unique<config_object>();
-
-    try {
-        c->config = std::make_unique<ConfigT>(std::forward<Args>(args)...);
-    } catch (const std::exception& e) {
-        if (error) {
-            std::string msg = e.what();
-            if (msg.size() > 255)
-                msg.resize(255);
-            std::memcpy(error, msg.c_str(), msg.size() + 1);
-        }
-        return SESSION_ERR_INVALID_DUMP;
-    }
-
-    c_conf->internals = c.release();
-    c_conf->last_error = nullptr;
-    *conf = c_conf.release();
-    return SESSION_ERR_NONE;
-}
-
-template <typename ConfigT>
-[[nodiscard]] int c_wrapper_init(
-        config_object** conf,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dumpstr,
-        size_t dumplen,
-        char* error) {
-    assert(ed25519_secretkey_bytes);
-    ustring_view ed25519_secretkey{ed25519_secretkey_bytes, 64};
-    std::optional<ustring_view> dump;
-    if (dumpstr && dumplen)
-        dump.emplace(dumpstr, dumplen);
-    return c_wrapper_init_generic<ConfigT>(conf, error, ed25519_secretkey, dump);
-}
-
-template <typename ConfigT>
-[[nodiscard]] int c_group_wrapper_init(
-        config_object** conf,
-        const unsigned char* ed25519_pubkey_bytes,
-        const unsigned char* ed25519_secretkey_bytes,
-        const unsigned char* dump_bytes,
-        size_t dumplen,
-        char* error) {
-
-    assert(ed25519_pubkey_bytes);
-
-    ustring_view ed25519_pubkey{ed25519_pubkey_bytes, 32};
-    std::optional<ustring_view> ed25519_secretkey;
-    if (ed25519_secretkey_bytes)
-        ed25519_secretkey.emplace(ed25519_secretkey_bytes, 64);
-    std::optional<ustring_view> dump;
-    if (dump_bytes && dumplen)
-        dump.emplace(dump_bytes, dumplen);
-
-    return c_wrapper_init_generic<ConfigT>(conf, error, ed25519_pubkey, ed25519_secretkey, dump);
-}
 
 template <size_t N>
 void copy_c_str(char (&dest)[N], std::string_view src) {
@@ -82,34 +22,34 @@ void copy_c_str(char (&dest)[N], std::string_view src) {
     dest[src.size()] = 0;
 }
 
-// Copies a container of std::strings into a self-contained malloc'ed config_string_list for
+// Copies a container of std::strings into a self-contained malloc'ed session_string_list for
 // returning to C code with the strings and pointers of the string list in the same malloced space,
 // hanging off the end (so that everything, including string values, is freed by a single `free()`).
 template <
         typename Container,
         typename = std::enable_if_t<std::is_same_v<typename Container::value_type, std::string>>>
-config_string_list* make_string_list(Container vals) {
-    // We malloc space for the config_string_list struct itself, plus the required number of string
+session_string_list* make_string_list(Container vals) {
+    // We malloc space for the session_string_list struct itself, plus the required number of string
     // pointers to store its strings, and the space to actually contain a copy of the string data.
     // When we're done, the malloced memory we grab is going to look like this:
     //
-    // {config_string_list}
+    // {session_string_list}
     // {pointer1}{pointer2}...
     // {string data 1\0}{string data 2\0}...
     //
-    // where config_string_list.value points at the beginning of {pointer1}, and each pointerN
+    // where session_string_list.value points at the beginning of {pointer1}, and each pointerN
     // points at the beginning of the {string data N\0} c string.
     //
     // Since we malloc it all at once, when the user frees it, they also free the entire thing.
-    size_t sz = sizeof(config_string_list) + vals.size() * sizeof(char*);
+    size_t sz = sizeof(session_string_list) + vals.size() * sizeof(char*);
     // plus, for each string, the space to store it (including the null)
     for (auto& v : vals)
         sz += v.size() + 1;
 
-    auto* ret = static_cast<config_string_list*>(std::malloc(sz));
+    auto* ret = static_cast<session_string_list*>(std::malloc(sz));
     ret->len = vals.size();
 
-    static_assert(alignof(config_string_list) >= alignof(char*));
+    static_assert(alignof(session_string_list) >= alignof(char*));
 
     // value points at the space immediately after the struct itself, which is the first element in
     // the array of c string pointers.
