@@ -74,14 +74,10 @@ add_libsession_util_library(config
     config/user_groups.cpp
     config/user_profile.cpp
     errors.cpp
-    fields.cpp
-)
-
-add_libsession_util_library(state
     state.cpp
     state_c_wrapper.cpp
+    fields.cpp
 )
-
 
 target_link_libraries(crypto
     PUBLIC
@@ -94,18 +90,6 @@ target_link_libraries(config
     PUBLIC
     crypto
     common
-    libsession::protos
-    PRIVATE
-    nlohmann_json::nlohmann_json
-    libsodium::sodium-internal
-    libzstd::static
-)
-
-target_link_libraries(state
-    PUBLIC
-    crypto
-    common
-    config
     libsession::protos
     PRIVATE
     nlohmann_json::nlohmann_json
