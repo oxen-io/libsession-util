@@ -14,8 +14,8 @@
 #include "session/config/base.hpp"
 #include "session/config/contacts.hpp"
 #include "session/config/convo_info_volatile.hpp"
-#include "session/config/groups/members.hpp"
 #include "session/config/groups/keys.hpp"
+#include "session/config/groups/members.hpp"
 #include "session/config/namespaces.h"
 #include "session/config/namespaces.hpp"
 #include "session/config/user_groups.hpp"
@@ -319,10 +319,7 @@ void State::config_changed(
         log(LogLevel::debug, "config_changed: Call 'send'");
         _send(target_pubkey_hex,
               push.payload,
-              [this,
-               pubkey = std::move(target_pubkey_hex),
-               push,
-               after_send = std::move(after_send)](
+              [this, pubkey = target_pubkey_hex, push, after_send = std::move(after_send)](
                       bool success, uint16_t status_code, ustring response) {
                   handle_config_push_response(pubkey, push.info, success, status_code, response);
 
@@ -1066,7 +1063,7 @@ void State::create_group(
     _send(group_id,
           push.payload,
           [this,
-           gid = std::move(group_id),
+           gid = group_id,
            push_info = push.info,
            secretkey = std::move(ed_sk),
            n = std::move(name),
@@ -1233,7 +1230,7 @@ void State::add_group_members(
 
     _send(gid,
           push.payload,
-          [this, gid = std::move(gid), push_info = push.info, cb = std::move(callback)](
+          [this, gid = gid, push_info = push.info, cb = std::move(callback)](
                   bool success, int16_t status_code, ustring response) {
               try {
                   // Call through to the default 'handle_config_push_response' first to update it's

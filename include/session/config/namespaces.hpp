@@ -39,9 +39,9 @@ namespace {
 
             case Namespace::RevokedRetrievableGroupMessages:
                 return "RevokedRetrievableGroupMessages";
-
-            default: return "Invalid";
         }
+
+        return "Invalid";
     }
 
     /// Returns a number indicating the order that the config dumps should be loaded in, we need to
