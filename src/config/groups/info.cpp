@@ -31,7 +31,7 @@ std::optional<std::string_view> Info::get_name() const {
 
 void Info::set_name(std::string_view new_name) {
     if (new_name.size() > NAME_MAX_LENGTH)
-        new_name = new_name.substr(0, NAME_MAX_LENGTH);
+        throw std::invalid_argument{"Invalid group name: exceeds maximum length"};
     set_nonempty_str(data["n"], new_name);
 }
 
@@ -43,7 +43,7 @@ std::optional<std::string_view> Info::get_description() const {
 
 void Info::set_description(std::string_view new_desc) {
     if (new_desc.size() > DESCRIPTION_MAX_LENGTH)
-        new_desc = new_desc.substr(0, DESCRIPTION_MAX_LENGTH);
+        throw std::invalid_argument{"Invalid group description: exceeds maximum length"};
     set_nonempty_str(data["o"], new_desc);
 }
 

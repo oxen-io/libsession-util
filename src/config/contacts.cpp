@@ -41,7 +41,7 @@ contact_info::contact_info(std::string sid) : session_id{std::move(sid)} {
 
 void contact_info::set_name(std::string n) {
     if (n.size() > MAX_NAME_LENGTH)
-        throw std::invalid_argument{"Invalid contact name: exceeds maximum length"};
+        n = n.substr(0, MAX_NAME_LENGTH);
     name = std::move(n);
 }
 

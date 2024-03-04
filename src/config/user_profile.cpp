@@ -4,6 +4,7 @@
 
 #include "internal.hpp"
 #include "session/config/error.h"
+#include "session/config/contacts.hpp"
 #include "session/config/user_profile.hpp"
 #include "session/export.h"
 #include "session/types.hpp"
@@ -39,6 +40,8 @@ LIBSESSION_C_API const char* user_profile_get_name(const config_object* conf) {
 }
 
 void UserProfile::set_name(std::string_view new_name) {
+    if (new_name.size() > contact_info::MAX_NAME_LENGTH)
+        throw std::invalid_argument{"Invalid profile name: exceeds maximum length"};
     set_nonempty_str(data["n"], new_name);
 }
 LIBSESSION_C_API int user_profile_set_name(config_object* conf, const char* name) {
