@@ -540,9 +540,10 @@ TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
             admin1.keys.dump()};
     admin1b.info.set_name("Test New Name");
     admin1b.info.set_description("Test New Desc");
-    CHECK_THROWS(admin1b.info.set_name(
-            "Test New Name Really long "
-            "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"));
+    CHECK_THROWS(
+            admin1b.info.set_name("Test New Name Really long "
+                                  "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl"
+                                  "mnopqrstuvwxyz"));
     CHECK_THROWS(admin1b.info.set_description(std::string(2050, 'z')));
     CHECK_NOTHROW(admin1b.info.push());
     admin1b.members.set(
