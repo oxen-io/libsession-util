@@ -83,7 +83,10 @@ struct pseudo_client {
                  admin ? std::make_optional<ustring_view>({*gsk, 64}) : std::nullopt,
                  keys_dump,
                  info,
-                 members} {}
+                 members} {
+        if (gsk)
+            keys.rekey(info, members);
+    }
 };
 
 TEST_CASE("Group Keys - C++ API", "[config][groups][keys][cpp]") {
@@ -588,6 +591,9 @@ TEST_CASE("Group Keys - C API", "[config][groups][keys][c]") {
                     0,
                     NULL);
             REQUIRE(rv == 0);
+
+            if (is_admin)
+                REQUIRE(groups_keys_rekey(keys, info, members, nullptr, nullptr));
         }
 
         ~pseudo_client() {
