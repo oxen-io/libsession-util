@@ -31,6 +31,11 @@ typedef struct config_group_keys {
 /// `config_free()` and similar methods from `session/config/base.h`; instead it must be managed by
 /// the functions declared in the header.
 ///
+/// When no dump is provided the initial config_group_keys object will be created with no keys
+/// loaded at all, these will be loaded later into this and the info/members objects when loading
+/// keys via received config messages. If this is a brand new group then groups_keys_rekey() MUST be
+/// called, otherwise the group will be in an invalid state.
+///
 /// Inputs:
 /// - `conf` -- [out] Pointer-pointer to a `config_group_keys` pointer (i.e. double pointer); the
 ///   pointer will be set to a new config_group_keys object on success.
