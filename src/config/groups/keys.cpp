@@ -59,8 +59,6 @@ Keys::Keys(
         auto key_list = group_keys();
         members.replace_keys(key_list, /*dirty=*/false);
         info.replace_keys(key_list, /*dirty=*/false);
-    } else if (admin()) {
-        rekey(info, members);
     }
 }
 
@@ -1472,7 +1470,7 @@ LIBSESSION_C_API bool groups_keys_rekey(
         config_object* members,
         const unsigned char** out,
         size_t* outlen) {
-    assert(info && members && out && outlen);
+    assert(info && members);
     auto& keys = unbox(conf);
     ustring_view to_push;
     try {
@@ -1481,8 +1479,10 @@ LIBSESSION_C_API bool groups_keys_rekey(
         set_error(conf, e.what());
         return false;
     }
-    *out = to_push.data();
-    *outlen = to_push.size();
+    if (out && outlen) {
+        *out = to_push.data();
+        *outlen = to_push.size();
+    }
     return true;
 }
 
