@@ -57,6 +57,9 @@ macro(system_or_submodule BIGNAME smallname pkgconf subdir)
   if(NOT TARGET ${smallname}::${smallname})
     add_library(${smallname}::${smallname} ALIAS ${smallname})
   endif()
+  if(BUILD_STATIC_DEPS AND STATIC_BUNDLE)
+      libsession_static_bundle(${smallname}::${smallname})
+  endif()
 endmacro()
 
 
