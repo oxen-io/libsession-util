@@ -6,7 +6,7 @@
 set(LOCAL_MIRROR "" CACHE STRING "local mirror path/URL for lib downloads")
 
 set(GMP_VERSION 6.3.0 CACHE STRING "gmp version")
-set(GMP_MIRROR ${LOCAL_MIRROR} https://gmplib.org/download/gmp
+set(GMP_MIRROR ${LOCAL_MIRROR} https://ftp.gnu.org/gnu/gmp
     CACHE STRING "gmp mirror(s)")
 set(GMP_SOURCE gmp-${GMP_VERSION}.tar.xz)
 set(GMP_HASH SHA512=e85a0dab5195889948a3462189f0e0598d331d3457612e2d3350799dba2e244316d256f8161df5219538eb003e4b5343f989aaa00f96321559063ed8c8f29fd2
