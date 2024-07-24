@@ -104,7 +104,7 @@ struct sodium_ptr {
   public:
     sodium_ptr() : x{nullptr} {}
     sodium_ptr(std::nullptr_t) : sodium_ptr{} {}
-    ~sodium_ptr() { reset(x); }
+    ~sodium_ptr() { reset(); }
 
     // Allocates and constructs a new `T` in-place, forwarding any given arguments to the `T`
     // constructor.  If this sodium_ptr already has an object, `reset()` is first called implicitly
@@ -244,7 +244,7 @@ struct sodium_array {
     }
 
     // Loads the array from a pointer and size; this first resets a value (if present), allocates a
-    // new array of the given size, the copies the given value(s) into the new buffer.  T must be
+    // new array of the given size, then copies the given value(s) into the new buffer.  T must be
     // copyable.  This is *not* safe to use if `buf` points into the currently allocated data.
     template <typename = std::enable_if_t<std::is_copy_constructible_v<T>>>
     void load(const T* data, size_t length) {
@@ -255,7 +255,7 @@ struct sodium_array {
         if constexpr (std::is_trivially_copyable_v<T>)
             std::memcpy(buf, data, sizeof(T) * length);
         else
-            for (; len < length; len++)
+            for (len = 0; len < length; len++)
                 new (buf[len]) T(data[len]);
     }
 

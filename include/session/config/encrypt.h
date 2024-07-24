@@ -27,7 +27,7 @@ extern "C" {
 /// ```
 ///
 /// Inputs:
-/// - `message` -- [in] The message to encrypted in binary
+/// - `message` -- [in] The message to encrypt in binary
 /// - `mlen` -- [in] Length of the message provided
 /// - `key_base` -- [in] Key, must be binary
 /// - `domain` -- [in] Text

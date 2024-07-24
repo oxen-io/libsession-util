@@ -6,7 +6,6 @@ extern "C" {
 
 #include "../base.h"
 #include "../profile_pic.h"
-#include "../util.h"
 
 LIBSESSION_EXPORT extern const size_t GROUP_INFO_NAME_MAX_LENGTH;
 LIBSESSION_EXPORT extern const size_t GROUP_INFO_DESCRIPTION_MAX_LENGTH;
@@ -116,7 +115,7 @@ LIBSESSION_EXPORT user_profile_pic groups_info_get_pic(const config_object* conf
 
 /// API: groups_info/groups_info_set_pic
 ///
-/// Sets a user profile
+/// Sets a profile picture
 ///
 /// Inputs:
 /// - `conf` -- [in] Pointer to the config object
@@ -199,7 +198,7 @@ LIBSESSION_EXPORT void groups_info_set_delete_before(config_object* conf, int64_
 /// - `conf` -- [in] Pointer to the config object
 ///
 /// Outputs:
-/// - `int64_t` -- Unix timestamp before which messages should be deleted.  Returns 0 if not set.
+/// - `int64_t` -- Unix timestamp before which attachments should be deleted.  Returns 0 if not set.
 LIBSESSION_EXPORT int64_t groups_info_get_attach_delete_before(const config_object* conf);
 
 /// API: groups_info/groups_info_set_attach_delete_before

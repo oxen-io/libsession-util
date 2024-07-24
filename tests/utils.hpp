@@ -10,10 +10,10 @@
 #include <string_view>
 #include <vector>
 
-#include "session/config/base.h"
+#include "session/types.hpp"
 
-using ustring = std::basic_string<unsigned char>;
-using ustring_view = std::basic_string_view<unsigned char>;
+using session::ustring;
+using session::ustring_view;
 
 inline ustring operator""_bytes(const char* x, size_t n) {
     return {reinterpret_cast<const unsigned char*>(x), n};

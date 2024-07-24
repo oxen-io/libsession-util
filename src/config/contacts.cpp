@@ -7,10 +7,8 @@
 
 #include "internal.hpp"
 #include "session/config/contacts.h"
-#include "session/config/error.h"
 #include "session/export.h"
 #include "session/types.hpp"
-#include "session/util.hpp"
 
 using namespace std::literals;
 using namespace session::config;
